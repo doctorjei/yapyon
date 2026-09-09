@@ -1,0 +1,38 @@
+# yapyon example — every v0.1 feature that the lexer handles today.
+
+name: "api-gateway"
+version: 3.10                  # splices as "3.10", not "3.1"
+port: 8080
+debug: False
+owner: None
+
+limits: {burst: 100, sustained: 25}
+weights: [0.5, 0.3, 0.2]
+allowed:
+  - "https://example.com"
+  - "https://app.example.com"
+
+paths:
+  root: "/srv/gateway"
+  logs: y"{root}/logs"                    # nearest wins: sibling `root`
+  banner: y"{name} v{version}"            # outer scope, lexeme splice
+  pattern: ry"^{name}-\d+$"               # raw: backslash literal, hole live
+  greeting: yt"Hello {user}, {count} new" # deferred to the consumer
+
+magic:
+  png: b"\x89PNG\r\n\x1a\n"
+  token: b64"aGVsbG8gd29ybGQ="
+  frame: yb"*{port}\r\n"                  # ASCII lexeme into a byte stream
+
+note: """He said "hi" — inline, no escaping needed"""
+inline_block: """First line sits after the delimiter; the anchor comes
+              from this line, so aligning either way is clean."""
+
+motd:
+  """
+  Welcome to the gateway.
+
+  The newline after the delimiter is dropped, blank lines are exempt,
+  and lines indented deeper than the anchor keep the extra:
+      like this one.
+  Please behave."""

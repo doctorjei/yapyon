@@ -1,0 +1,543 @@
+"""yapyon reference lexer — v0.1
+
+YAMLちゃうで。やぴょんやぴょん。
+
+All context-sensitivity is quarantined here, in exactly two pieces of state:
+an indent stack (which also carries dash frames) and a bracket depth. The
+parser downstream sees a plain context-free token stream.
+
+Design decisions implemented (from the design session):
+  * Indentation: spaces only; a tab in indentation is akan.
+  * DASH frames: "- " at line-content start emits DASH INDENT, anchored at
+    the dash's column + 2.  Nested "- - x" stacks frames.
+  * Inside [ ] or { }: newlines and indentation are suppressed entirely
+    (Python implicit line joining); commas are the parser's business.
+  * Strings: single-quoted, double-quoted, and triple-double-quoted
+    (dedent anchored at the opening delimiter's column; blank lines exempt;
+    closing may not sit shallower than the anchor).
+  * Prefixes (lowercase, canonical spellings only):
+        b, b64          — bytes spellings
+        r, rb           — raw (backslash is literal); rb = raw bytes
+        y, yb, yt, ry   — the y-family (holes live; {{ }} escapes)
+    Unknown or non-canonical prefixes (F, BR, yr, ...) are akan by name.
+  * Holes: strict braces. Every "{" opens a well-formed hole or is "{{";
+    every lone "}" is akan. Hole = NAME ("." NAME)*, __ROOT__ allowed as
+    first segment only; other dunder segments are reserved (akan).
+  * Numbers: Python literals (0x/0o/0b, underscores, floats, exponents),
+    optional leading sign. No inf/nan spellings.
+  * Keywords: True / False / None. Any other bare word is a NAME token
+    (legal as a key; the parser akans it in value position).
+  * Escapes: Python's table minus \\N{...}; unknown escapes are akan
+    (stricter than Python, by design).
+
+Diagnostics: AkanError ("akan: ..."), warnings collect as "shiran: ..."
+strings, internal invariant failures raise Yakamashiwa.
+"""
+
+from __future__ import annotations
+
+import base64
+from dataclasses import dataclass, field
+
+
+# --------------------------------------------------------------------------- #
+# Diagnostics
+# --------------------------------------------------------------------------- #
+class AkanError(Exception):
+    """A yapyon syntax error.  あかん。"""
+
+    def __init__(self, msg: str, line: int, col: int):
+        self.msg, self.line, self.col = msg, line, col
+        super().__init__(f"akan: line {line}, col {col}: {msg}")
+
+
+class Yakamashiwa(Exception):
+    """Internal lexer invariant violated — a bug in yapyon, not your file."""
+
+
+# --------------------------------------------------------------------------- #
+# Tokens
+# --------------------------------------------------------------------------- #
+# kinds: NEWLINE INDENT DEDENT DASH NAME KEYWORD INT FLOAT STRING BYTES
+#        YSTR YBSTR YTSTR COLON COMMA LBRACKET RBRACKET LBRACE RBRACE EOF
+@dataclass
+class Token:
+    kind: str
+    value: object = None
+    line: int = 0
+    col: int = 0
+    prefix: str = ""          # original string prefix, for tooling
+    parts: list = field(default_factory=list)  # y-family: [("text", x)|("hole", "a.b")]
+
+    def __repr__(self):
+        v = "" if self.value is None else f" {self.value!r}"
+        return f"<{self.kind}{v} @{self.line}:{self.col}>"
+
+
+STRING_PREFIXES = {"b", "b64", "r", "rb", "y", "yb", "yt", "ry"}
+RAW_PREFIXES = {"r", "rb", "ry"}
+BYTES_PREFIXES = {"b", "rb", "yb"}          # b64 handled separately
+Y_PREFIXES = {"y", "yb", "yt", "ry"}
+KEYWORDS = {"True": True, "False": False, "None": None}
+
+_TOKEN_KIND_FOR_PREFIX = {
+    "": "STRING", "r": "STRING",
+    "b": "BYTES", "b64": "BYTES", "rb": "BYTES",
+    "y": "YSTR", "ry": "YSTR", "yb": "YBSTR", "yt": "YTSTR",
+}
+
+_PREFIX_HINTS = {
+    "f": "yapyon has no f-strings; use y for document splicing",
+    "t": "yeeted; use yt",
+    "u": "just remove it (all yapyon strings are Unicode)",
+    "br": "canonical order is rb",
+    "yr": "canonical order is ry",
+    "fb": "bytes and templates don't combine; use yb",
+    "bf": "bytes and templates don't combine; use yb",
+    "yb64": "reserved for a future version",
+    "ytb": "reserved for a future version",
+}
+
+_ESCAPES = {                                 # Python's table minus \N{...}
+    "\n": "", "\\": "\\", "'": "'", '"': '"',
+    "a": "\a", "b": "\b", "f": "\f", "n": "\n",
+    "r": "\r", "t": "\t", "v": "\v",
+}
+
+
+# --------------------------------------------------------------------------- #
+# Lexer
+# --------------------------------------------------------------------------- #
+class Lexer:
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+        self.line = 1
+        self.col = 0                          # 0-based column
+        self.indents: list[int] = [0]         # indent anchors (incl. dash frames)
+        self.depth = 0                        # bracket nesting depth
+        self.tokens: list[Token] = []
+        self.warnings: list[str] = []         # shiran: ...
+
+    # -- character helpers ---------------------------------------------------
+    def _peek(self, n: int = 0) -> str:
+        i = self.pos + n
+        return self.text[i] if i < len(self.text) else ""
+
+    def _advance(self, n: int = 1) -> str:
+        out = self.text[self.pos:self.pos + n]
+        for ch in out:
+            if ch == "\n":
+                self.line += 1
+                self.col = 0
+            else:
+                self.col += 1
+        self.pos += n
+        return out
+
+    def _emit(self, kind: str, value=None, line=None, col=None, **kw):
+        self.tokens.append(Token(kind, value,
+                                 self.line if line is None else line,
+                                 self.col if col is None else col, **kw))
+
+    def _akan(self, msg: str, line=None, col=None):
+        raise AkanError(msg, self.line if line is None else line,
+                        self.col if col is None else col)
+
+    # -- top level -----------------------------------------------------------
+    def tokenize(self) -> list[Token]:
+        at_line_start = True
+        while self.pos < len(self.text):
+            if at_line_start and self.depth == 0:
+                if self._handle_line_start():
+                    continue                   # blank/comment line consumed
+                at_line_start = False
+            ch = self._peek()
+            if ch == "\n":
+                if self.depth == 0:
+                    self._emit("NEWLINE")
+                    at_line_start = True
+                self._advance()                # inside brackets: soft, dropped
+            elif ch and ch in " \t":
+                self._advance()                # interior whitespace
+            elif ch == "#":
+                while self._peek() and self._peek() != "\n":
+                    self._advance()
+            else:
+                self._lex_token()
+        # EOF housekeeping: close the last logical line, then all frames.
+        if self.depth != 0:
+            self._akan("unclosed bracket at end of file")
+        if self.tokens and self.tokens[-1].kind not in ("NEWLINE", "DEDENT"):
+            self._emit("NEWLINE")
+        while len(self.indents) > 1:
+            self.indents.pop()
+            self._emit("DEDENT")
+        self._emit("EOF")
+        return self.tokens
+
+    # -- line starts: indentation + dash frames ------------------------------
+    def _handle_line_start(self) -> bool:
+        """Measure indentation; emit INDENT/DEDENT/DASH.  True if the line
+        was blank or comment-only (fully consumed, caller should loop)."""
+        start = self.pos
+        width = 0
+        while self._peek() and self._peek() in " \t":
+            if self._peek() == "\t":
+                self._akan("tab in indentation (spaces only)")
+            self._advance()
+            width += 1
+        nxt = self._peek()
+        if nxt in ("", "\n"):                  # blank line: no tokens at all
+            if nxt:
+                self._advance()
+            return True
+        if nxt == "#":                         # comment-only line
+            while self._peek() and self._peek() != "\n":
+                self._advance()
+            if self._peek():
+                self._advance()
+            return True
+
+        top = self.indents[-1]
+        if width > top:
+            self.indents.append(width)
+            self._emit("INDENT", col=width)
+        else:
+            while width < self.indents[-1]:
+                self.indents.pop()
+                self._emit("DEDENT", col=width)
+            if width != self.indents[-1]:
+                self._akan(f"indent {width} matches no open block "
+                           f"(open: {self.indents})", col=width)
+
+        # DASH frames: "- " (or "-" at EOL) at content start, stackable.
+        while self._peek() == "-" and self._peek(1) in (" ", "\n", ""):
+            dash_col = self.col
+            self._emit("DASH")
+            self._advance()                    # the "-"
+            if self._peek() == " ":
+                self._advance()
+            anchor = dash_col + 2
+            if anchor <= self.indents[-1]:
+                raise Yakamashiwa("dash frame anchor not deeper than stack top")
+            self.indents.append(anchor)
+            self._emit("INDENT", col=anchor)
+        return False
+
+    # -- ordinary tokens -----------------------------------------------------
+    def _lex_token(self):
+        ch = self._peek()
+        line, col = self.line, self.col
+
+        single = {":": "COLON", ",": "COMMA",
+                  "[": "LBRACKET", "]": "RBRACKET",
+                  "{": "LBRACE", "}": "RBRACE"}
+        if ch in single:
+            if ch in "[{":
+                self.depth += 1
+            elif ch in "]}":
+                if self.depth == 0:
+                    self._akan(f"unmatched {ch!r}")
+                self.depth -= 1
+            self._emit(single[ch], ch)
+            self._advance()
+            return
+
+        if ch in "'\"":
+            self._lex_string("", line, col)
+            return
+
+        if ch.isdigit() or (ch in "+-." and self._peek(1).isdigit()) \
+                or (ch in "+-" and self._peek(1) == "." and self._peek(2).isdigit()):
+            self._lex_number(line, col)
+            return
+
+        if ch.isidentifier():                  # identifier, keyword, or prefix
+            name = self._scan_identifier()
+            if self._peek() in ("'", '"'):
+                if name not in STRING_PREFIXES:
+                    hint = _PREFIX_HINTS.get(
+                        name, "use one of: " + ", ".join(sorted(STRING_PREFIXES)))
+                    self._akan(f"unknown string prefix {name!r}; {hint}",
+                               line, col)
+                self._lex_string(name, line, col)
+            elif name in KEYWORDS:
+                self._emit("KEYWORD", KEYWORDS[name], line, col)
+            else:
+                self._emit("NAME", name, line, col)
+            return
+
+        self._akan(f"unexpected character {ch!r}")
+
+    def _scan_identifier(self) -> str:
+        """Scan one identifier.  First char must start an identifier; later
+        chars may be alphanumeric or '_' (which admits b64's digits)."""
+        if not (self._peek().isidentifier() or self._peek() == "_"):
+            raise Yakamashiwa("_scan_identifier called off an identifier")
+        out = [self._advance()]
+        while True:
+            ch = self._peek()
+            if not ch:
+                break
+            if ch.isalnum() or ch == "_":
+                out.append(self._advance())
+            else:
+                break
+        return "".join(out)
+
+    # -- numbers -------------------------------------------------------------
+    def _lex_number(self, line, col):
+        start = self.pos
+        if self._peek() and self._peek() in "+-":
+            self._advance()
+        is_float = False
+        if self._peek() == "0" and self._peek(1) in "xXoObB":
+            self._advance(2)
+            while self._peek().isalnum() or self._peek() == "_":
+                self._advance()
+        else:
+            while self._peek().isdigit() or self._peek() == "_":
+                self._advance()
+            if self._peek() == ".":
+                is_float = True
+                self._advance()
+                while self._peek().isdigit() or self._peek() == "_":
+                    self._advance()
+            if self._peek() and self._peek() in "eE" and (self._peek(1).isdigit()
+                                         or (self._peek(1) in "+-"
+                                             and self._peek(2).isdigit())):
+                is_float = True
+                self._advance()
+                if self._peek() and self._peek() in "+-":
+                    self._advance()
+                while self._peek().isdigit():
+                    self._advance()
+        lexeme = self.text[start:self.pos]
+        try:                                   # Python's own rules judge validity
+            import ast
+            value = ast.literal_eval(lexeme)
+        except (ValueError, SyntaxError):
+            self._akan(f"malformed number {lexeme!r}", line, col)
+        if isinstance(value, float) and not is_float:
+            raise Yakamashiwa("number classified inconsistently")
+        self._emit("FLOAT" if is_float else "INT", value, line, col)
+        self.tokens[-1].prefix = lexeme        # keep the lexeme for y-splicing
+
+    # -- strings -------------------------------------------------------------
+    def _lex_string(self, prefix: str, line: int, col: int):
+        quote = self._peek()
+        # Anchor = the column where the literal *starts*, prefix included, so
+        # y"""...""" aligns with its block just as """...""" does.
+        triple = self._peek(1) == quote and self._peek(2) == quote
+        self._advance(3 if triple else 1)
+        raw_chars = self._scan_string_body(quote, triple, line, col)
+
+        is_raw = prefix in RAW_PREFIXES
+        is_bytes = prefix in BYTES_PREFIXES
+        if prefix == "b64":
+            value = self._decode_b64(raw_chars, line, col)
+        elif is_raw:
+            value = raw_chars.encode("ascii") if is_bytes else raw_chars
+            if is_bytes:
+                try:
+                    raw_chars.encode("ascii")
+                except UnicodeEncodeError:
+                    self._akan("non-ASCII character in bytes literal", line, col)
+                value = raw_chars.encode("ascii")
+        else:
+            value = self._process_escapes(raw_chars, is_bytes, line, col)
+
+        parts = []
+        if prefix in Y_PREFIXES:
+            scan_text = value.decode("latin-1") if isinstance(value, bytes) else value
+            parts = self._scan_holes(scan_text, line, col)
+            if isinstance(value, bytes):
+                parts = [(k, v.encode("latin-1") if k == "text" else v)
+                         for k, v in parts]
+        self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
+                   prefix=prefix, parts=parts)
+
+    def _scan_string_body(self, quote, triple, line, col) -> str:
+        """Scan a string body, dedenting block strings (SPEC 4.1).
+
+        The dedent anchor is the indentation of the first non-blank
+        continuation line, so an inline opening after a key and an own-line
+        opening both behave as they look.  A newline immediately after the opening
+        delimiter is dropped.  Blank lines are exempt and set no anchor.
+        Single pass, no lookahead: consume the leading spaces, then decide.
+        """
+        out = []
+        closer = quote * (3 if triple else 1)
+        anchor = None          # discovered at the first content continuation line
+        pristine = True        # nothing emitted yet -> a newline here is dropped
+        while True:
+            if self.pos >= len(self.text):
+                self._akan("unterminated string", line, col)
+            if self.text.startswith(closer, self.pos):
+                if triple and anchor is not None and self.col < anchor:
+                    self._akan(f"closing delimiter outdents past the string's "
+                               f"indentation (col {self.col} < {anchor})")
+                self._advance(len(closer))
+                return "".join(out)
+            ch = self._peek()
+            if ch == "\n":
+                if not triple:
+                    self._akan("newline in single-line string", line, col)
+                self._advance()
+                if not pristine:
+                    out.append("\n")
+                pristine = False
+                width = 0
+                while self._peek() == " ":
+                    self._advance()
+                    width += 1
+                if self._peek() == "\n" or self.pos >= len(self.text):
+                    continue                      # blank line: exempt
+                if self.text.startswith(closer, self.pos):
+                    continue                      # closing line: checked above
+                if anchor is None:
+                    anchor = width                # first content line sets it
+                elif width < anchor:
+                    self._akan(f"line outdents past the string's indentation "
+                               f"(needs {anchor} leading spaces, found {width})")
+                else:
+                    out.append(" " * (width - anchor))
+                continue
+            out.append(self._advance())
+            pristine = False
+
+    def _process_escapes(self, s: str, is_bytes: bool, line: int, col: int):
+        out_s, out_b = [], bytearray()
+        put = (out_b.append if is_bytes else
+               (lambda cp: out_s.append(chr(cp))))
+        i = 0
+        while i < len(s):
+            ch = s[i]
+            if ch != "\\":
+                if is_bytes:
+                    cp = ord(ch)
+                    if cp > 127:
+                        self._akan("non-ASCII character in bytes literal", line, col)
+                    put(cp)
+                else:
+                    out_s.append(ch)
+                i += 1
+                continue
+            i += 1
+            if i >= len(s):
+                self._akan("dangling backslash in string", line, col)
+            e = s[i]
+            if e in _ESCAPES:
+                text = _ESCAPES[e]
+                for c in text:
+                    put(ord(c)) if is_bytes else out_s.append(c)
+                i += 1
+            elif e == "x":
+                hexpart = s[i + 1:i + 3]
+                if len(hexpart) < 2 or any(c not in "0123456789abcdefABCDEF"
+                                           for c in hexpart):
+                    self._akan(r"malformed \x escape", line, col)
+                put(int(hexpart, 16)) if is_bytes else out_s.append(chr(int(hexpart, 16)))
+                i += 3
+            elif e in "01234567":
+                j = i
+                while j < len(s) and j - i < 3 and s[j] in "01234567":
+                    j += 1
+                cp = int(s[i:j], 8)
+                put(cp) if is_bytes else out_s.append(chr(cp))
+                i = j
+            elif e in "uU" and not is_bytes:
+                width = 4 if e == "u" else 8
+                hexpart = s[i + 1:i + 1 + width]
+                if len(hexpart) < width:
+                    self._akan(rf"malformed \{e} escape", line, col)
+                try:
+                    out_s.append(chr(int(hexpart, 16)))
+                except (ValueError, OverflowError):
+                    self._akan(rf"malformed \{e} escape", line, col)
+                i += 1 + width
+            else:
+                self._akan(f"unknown escape \\{e} "
+                           f"(yapyon escapes are Python's minus \\N)", line, col)
+        return bytes(out_b) if is_bytes else "".join(out_s)
+
+    def _decode_b64(self, s: str, line: int, col: int) -> bytes:
+        cleaned = "".join(s.split())           # permit interior whitespace
+        try:
+            return base64.b64decode(cleaned, validate=True)
+        except (ValueError, base64.binascii.Error):
+            self._akan("invalid base64 content", line, col)
+
+    # -- y-family hole scanning ----------------------------------------------
+    def _scan_holes(self, s: str, line: int, col: int) -> list:
+        parts, buf, i = [], [], 0
+
+        def flush():
+            if buf:
+                parts.append(("text", "".join(buf)))
+                buf.clear()
+
+        while i < len(s):
+            ch = s[i]
+            if ch == "{":
+                if s[i + 1:i + 2] == "{":
+                    buf.append("{")
+                    i += 2
+                    continue
+                end = s.find("}", i + 1)
+                if end < 0:
+                    self._akan("unclosed hole '{' (write '{{' for a literal brace)",
+                               line, col)
+                name = s[i + 1:end].strip()
+                self._check_hole_name(name, line, col)
+                flush()
+                parts.append(("hole", name))
+                i = end + 1
+            elif ch == "}":
+                if s[i + 1:i + 2] == "}":
+                    buf.append("}")
+                    i += 2
+                else:
+                    self._akan("lone '}' (write '}}' for a literal brace)",
+                               line, col)
+            else:
+                buf.append(ch)
+                i += 1
+        flush()
+        return parts
+
+    def _check_hole_name(self, name: str, line: int, col: int):
+        if not name:
+            self._akan("empty hole '{}'", line, col)
+        segs = name.split(".")
+        for idx, seg in enumerate(segs):
+            if seg == "__ROOT__":
+                if idx != 0:
+                    self._akan("__ROOT__ is only valid as the first segment",
+                               line, col)
+                continue
+            if seg.startswith("__") and seg.endswith("__"):
+                self._akan(f"reserved name {seg!r} in hole "
+                           f"(only __ROOT__ is defined)", line, col)
+            if not seg.isidentifier():
+                self._akan(f"holes name document values; {seg!r} is not an "
+                           f"identifier (quantifiers need doubled braces: "
+                           f"{{{{n,m}}}})", line, col)
+            if seg in KEYWORDS:
+                self._akan(f"{seg!r} cannot be a hole name", line, col)
+
+
+def tokenize(text: str) -> list[Token]:
+    return Lexer(text).tokenize()
+
+
+if __name__ == "__main__":
+    import sys
+    src = open(sys.argv[1]).read() if len(sys.argv) > 1 else sys.stdin.read()
+    try:
+        for tok in tokenize(src):
+            print(tok)
+    except AkanError as e:
+        print(e)
+        sys.exit(1)
