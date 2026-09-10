@@ -24,6 +24,22 @@ magic:
   token: b64"aGVsbG8gd29ybGQ="
   frame: yb"*{port}\r\n"                  # ASCII lexeme into a byte stream
 
+# Ordered multimap: keys may repeat, and the order of entries is the data.
+changes:
+  + registry:
+      set: [["LabConfig", "BypassTPMCheck", 1]]
+  + file:
+      delete: ["Program Files/Edge"]
+  + registry:                             # repeating is the point, not a typo
+      remove: ["Uninstall/Edge"]
+
+# A bare marker puts the body in the block beneath — layout, not meaning.
+retries:
+  -
+    attempts: 3
+    backoff: 1.5
+  - "give up"
+
 note: """He said "hi" — inline, no escaping needed"""
 inline_block: """First line sits after the delimiter; the anchor comes
               from this line, so aligning either way is clean."""

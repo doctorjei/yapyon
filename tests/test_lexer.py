@@ -73,6 +73,28 @@ def test_nested_dash_stacks_frames():
     assert kinds('- - "x"\n').count("DASH") == 2
 
 
+def test_plus_frames_open_multimap_entries():
+    ks = kinds('+ a: 1\n+ b: 2\n')
+    assert ks.count("PLUS") == 2
+    assert ks.count("INDENT") == ks.count("DEDENT") == 2
+
+
+def test_frames_of_both_kinds_interleave():
+    ks = kinds('- + a: 1\n')
+    assert ks[:4] == ["DASH", "INDENT", "PLUS", "INDENT"]
+
+
+def test_a_marker_needs_its_space():
+    # `-5` and `+5` are signed numbers, not frames
+    assert kinds("-5\n")[0] == "INT"
+    assert kinds("+5\n")[0] == "INT"
+    assert value("-5\n", "INT") == -5 and value("+5\n", "INT") == 5
+
+
+def test_marker_away_from_line_start_names_its_rule():
+    akan('a: + 1\n', "only at the start of a line's content")
+
+
 # --------------------------------------------------------------------------- #
 # SPEC §2 — flow suppression
 # --------------------------------------------------------------------------- #
@@ -285,7 +307,18 @@ def test_numeric_zoo():
 
 def test_float_lexeme_is_preserved():
     t = next(t for t in tokenize("ratio: 3.10") if t.kind == "FLOAT")
-    assert t.value == 3.1 and t.prefix == "3.10"   # TODO: rename to .lexeme
+    assert t.value == 3.1 and t.lexeme == "3.10"
+
+
+def test_keyword_lexeme_is_preserved():
+    # `True` and `None` splice as themselves (SPEC §5.4)
+    t = next(t for t in tokenize("a: None") if t.kind == "KEYWORD")
+    assert t.value is None and t.lexeme == "None"
+
+
+def test_string_prefix_and_lexeme_are_separate_fields():
+    t = next(t for t in tokenize('a: b64"aGk="') if t.kind == "BYTES")
+    assert t.prefix == "b64" and t.lexeme == ""
 
 
 def test_malformed_number_is_akan():

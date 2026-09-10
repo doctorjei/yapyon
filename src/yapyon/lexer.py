@@ -8,8 +8,9 @@ parser downstream sees a plain context-free token stream.
 
 Design decisions implemented (from the design session):
   * Indentation: spaces only; a tab in indentation is akan.
-  * DASH frames: "- " at line-content start emits DASH INDENT, anchored at
-    the dash's column + 2.  Nested "- - x" stacks frames.
+  * Frames: "- " (sequence item) and "+ " (multimap entry) at line-content
+    start emit DASH/PLUS INDENT, anchored at the marker's column + 2.  They
+    stack and interleave: "- - x", "- + a: 1".
   * Inside [ ] or { }: newlines and indentation are suppressed entirely
     (Python implicit line joining); commas are the parser's business.
   * Strings: single-quoted, double-quoted, and triple-double-quoted
@@ -66,7 +67,8 @@ class Token:
     value: object = None
     line: int = 0
     col: int = 0
-    prefix: str = ""          # original string prefix, for tooling
+    prefix: str = ""          # string prefix as written: "" r b rb b64 y yb yt ry
+    lexeme: str = ""          # source spelling of numbers and keywords (§5.4)
     parts: list = field(default_factory=list)  # y-family: [("text", x)|("hole", "a.b")]
 
     def __repr__(self):
@@ -211,16 +213,17 @@ class Lexer:
                 self._akan(f"indent {width} matches no open block "
                            f"(open: {self.indents})", col=width)
 
-        # DASH frames: "- " (or "-" at EOL) at content start, stackable.
-        while self._peek() == "-" and self._peek(1) in (" ", "\n", ""):
-            dash_col = self.col
-            self._emit("DASH")
-            self._advance()                    # the "-"
+        # Frame markers at content start: "- " opens a sequence item, "+ " a
+        # multimap entry (or bare at EOL).  Both stack and interleave.
+        while self._peek() in ("-", "+") and self._peek(1) in (" ", "\n", ""):
+            marker, marker_col = self._peek(), self.col
+            self._emit("DASH" if marker == "-" else "PLUS")
+            self._advance()                    # the marker
             if self._peek() == " ":
                 self._advance()
-            anchor = dash_col + 2
+            anchor = marker_col + 2
             if anchor <= self.indents[-1]:
-                raise Yakamashiwa("dash frame anchor not deeper than stack top")
+                raise Yakamashiwa("frame anchor not deeper than stack top")
             self.indents.append(anchor)
             self._emit("INDENT", col=anchor)
         return False
@@ -263,11 +266,14 @@ class Lexer:
                                line, col)
                 self._lex_string(name, line, col)
             elif name in KEYWORDS:
-                self._emit("KEYWORD", KEYWORDS[name], line, col)
+                self._emit("KEYWORD", KEYWORDS[name], line, col, lexeme=name)
             else:
                 self._emit("NAME", name, line, col)
             return
 
+        if ch in "-+" and self._peek(1) in (" ", "\n", ""):
+            self._akan(f"{ch!r} opens a block frame only at the start of a "
+                       f"line's content")
         self._akan(f"unexpected character {ch!r}")
 
     def _scan_identifier(self) -> str:
@@ -321,8 +327,8 @@ class Lexer:
             self._akan(f"malformed number {lexeme!r}", line, col)
         if isinstance(value, float) and not is_float:
             raise Yakamashiwa("number classified inconsistently")
-        self._emit("FLOAT" if is_float else "INT", value, line, col)
-        self.tokens[-1].prefix = lexeme        # keep the lexeme for y-splicing
+        # The lexeme rides along: y-strings splice what the author wrote (§5.4).
+        self._emit("FLOAT" if is_float else "INT", value, line, col, lexeme=lexeme)
 
     # -- strings -------------------------------------------------------------
     def _lex_string(self, prefix: str, line: int, col: int):

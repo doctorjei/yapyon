@@ -4,8 +4,8 @@
 > *It's not YAML. It's yapyon.*
 
 Python-style typed literals with YAML-like block structure. Quoted strings,
-`True`/`False`/`None`, indentation blocks, `-` sequences, `#` comments — and
-parse-time splicing that replaces YAML's anchors.
+`True`/`False`/`None`, indentation blocks, `-` sequences, `+ ` multimaps,
+`#` comments — and parse-time splicing that replaces YAML's anchors.
 
 ```yapyon
 name: "api-gateway"
@@ -17,22 +17,30 @@ paths:
   root: "/srv/gateway"
   logs: y"{root}/logs"          # -> "/srv/gateway/logs"
   banner: y"{name} v{version}"  # -> "api-gateway v3.10"   (lexeme, not 3.1)
+
+changes:                        # multimap: keys may repeat, order is data
+  + registry: {set: ["Bypass"]}
+  + file: {delete: ["Edge"]}
+  + registry: {remove: ["Edge Update"]}
 ```
 
 **The pitch:** the same bytes mean the same data, to every parser, on every
 machine, always. No implicit typing (`no` is not `False`; there are no
 unquoted scalars at all), no anchors, no tags, no evaluation, one null
-spelling, one document per file.
+spelling, one document per file. A repeated key is an error unless the block
+says `+ `, so it can never be mistaken for a typo — or silently collapsed,
+the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-Pre-alpha. Lexer done and tested; parser and resolver next. See `SPEC.md` for
+Pre-alpha. Lexer and parser done and tested; resolver next. See `SPEC.md` for
 the normative draft and `CLAUDE.md` for design rationale and roadmap.
 
 ```console
 $ pip install -e ".[dev]"
 $ pytest -q
-$ python -m yapyon.lexer examples/gateway.ypy   # token dump
+$ python -m yapyon.lexer examples/gateway.ypy    # token dump
+$ python -m yapyon.parser examples/gateway.ypy   # AST dump
 ```
 
 ## Prefixes
