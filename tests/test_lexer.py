@@ -182,6 +182,52 @@ def test_unknown_escape_is_akan():
     akan(r'x: "\q"', "unknown escape")
 
 
+def test_surrogate_escapes_are_akan():
+    # SPEC §4.2: yapyon strings are sequences of Unicode scalar values
+    akan(r'x: "\ud800"', "surrogate")
+    akan(r'x: "\U0000DC00"', "surrogate")
+    assert value(r'x: "\U0001F600"', "STRING") == "\U0001f600"
+
+
+def test_escape_outside_the_byte_range_is_akan():
+    akan(r'x: b"\777"', "outside the byte range")
+
+
+def test_escapes_may_carry_high_bytes_into_a_bytes_literal():
+    # the literal-character rule is about source text, not escape values
+    assert value(r'x: b"\x89\xff"', "BYTES") == b"\x89\xff"
+
+
+# --------------------------------------------------------------------------- #
+# SPEC §10 — an akan points at the character that caused it
+# --------------------------------------------------------------------------- #
+def positions(text):
+    with pytest.raises(AkanError) as e:
+        tokenize(text)
+    return e.value.line, e.value.col
+
+
+def test_hole_akan_points_at_the_offending_brace():
+    assert positions('x: y"aaa{2,3}"') == (1, 8)      # the '{', not the quote
+    assert positions('x: y"abc{host"') == (1, 8)
+    assert positions('x: y"abcd}ef"') == (1, 9)       # the lone '}'
+
+
+def test_hole_positions_survive_escape_processing():
+    # `\t` is two source columns but one character of the value
+    assert positions(r'x: y"a\tb{2,3}"') == (1, 9)
+
+
+def test_hole_positions_survive_block_string_dedent():
+    doc = 'k:\n  y"""first\n  second {2,3} here"""'
+    assert positions(doc) == (3, 9)
+
+
+def test_escape_akan_points_at_the_backslash():
+    assert positions(r'x: "abc\qdef"') == (1, 7)
+    assert positions(r'x: "\ud800"') == (1, 4)
+
+
 def test_escaped_backslash_is_a_backslash():
     src = 'x: "abc' + chr(92)*2 + '"'      # x: "abc\\"
     assert value(src, "STRING") == "abc" + chr(92)

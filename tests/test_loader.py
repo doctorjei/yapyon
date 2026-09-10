@@ -85,6 +85,11 @@ def test_multimap_loads_as_an_ordered_multimap():
                             "file": ("delete",)}
 
 
+def test_a_loaded_multimap_reprs_its_timeline():
+    mm = loads('m:\n  + a: 1\n  + b: 2\n  + a: 3\n')["m"]
+    assert repr(mm) == "OrderedMultimap([('a', 1), ('b', 2), ('a', 3)])"
+
+
 def test_multimap_entry_values_are_built_too():
     mm = loads('m:\n  + a:\n      k: [1, 2]\n')["m"]
     assert mm["a"].values() == ({"k": [1, 2]},)

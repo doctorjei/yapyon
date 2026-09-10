@@ -337,34 +337,37 @@ class Lexer:
         # y"""...""" aligns with its block just as """...""" does.
         triple = self._peek(1) == quote and self._peek(2) == quote
         self._advance(3 if triple else 1)
-        raw_chars = self._scan_string_body(quote, triple, line, col)
+        raw_chars, raw_pos = self._scan_string_body(quote, triple, line, col)
 
         is_raw = prefix in RAW_PREFIXES
         is_bytes = prefix in BYTES_PREFIXES
+        value_pos = raw_pos            # one source position per value character
         if prefix == "b64":
-            value = self._decode_b64(raw_chars, line, col)
+            value, value_pos = self._decode_b64(raw_chars, line, col), []
         elif is_raw:
-            value = raw_chars.encode("ascii") if is_bytes else raw_chars
             if is_bytes:
-                try:
-                    raw_chars.encode("ascii")
-                except UnicodeEncodeError:
-                    self._akan("non-ASCII character in bytes literal", line, col)
+                for index, ch in enumerate(raw_chars):
+                    if ord(ch) > 127:
+                        self._akan("non-ASCII character in bytes literal",
+                                   *raw_pos[index])
                 value = raw_chars.encode("ascii")
+            else:
+                value = raw_chars
         else:
-            value = self._process_escapes(raw_chars, is_bytes, line, col)
+            value, value_pos = self._process_escapes(raw_chars, raw_pos,
+                                                     is_bytes, line, col)
 
         parts = []
         if prefix in Y_PREFIXES:
             scan_text = value.decode("latin-1") if isinstance(value, bytes) else value
-            parts = self._scan_holes(scan_text, line, col)
+            parts = self._scan_holes(scan_text, value_pos, line, col)
             if isinstance(value, bytes):
                 parts = [(k, v.encode("latin-1") if k == "text" else v)
                          for k, v in parts]
         self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
                    prefix=prefix, parts=parts)
 
-    def _scan_string_body(self, quote, triple, line, col) -> str:
+    def _scan_string_body(self, quote, triple, line, col):
         """Scan a string body, dedenting block strings (SPEC 4.1).
 
         The dedent anchor is the indentation of the first non-blank
@@ -372,8 +375,12 @@ class Lexer:
         opening both behave as they look.  A newline immediately after the opening
         delimiter is dropped.  Blank lines are exempt and set no anchor.
         Single pass, no lookahead: consume the leading spaces, then decide.
+
+        Returns the body and a parallel list of source (line, col) positions,
+        one per character, so that a later akan can point at the character
+        that caused it rather than at the quote that opened the literal.
         """
-        out = []
+        out, pos = [], []
         closer = quote * (3 if triple else 1)
         anchor = None          # discovered at the first content continuation line
         pristine = True        # nothing emitted yet -> a newline here is dropped
@@ -385,14 +392,16 @@ class Lexer:
                     self._akan(f"closing delimiter outdents past the string's "
                                f"indentation (col {self.col} < {anchor})")
                 self._advance(len(closer))
-                return "".join(out)
+                return "".join(out), pos
             ch = self._peek()
             if ch == "\n":
                 if not triple:
                     self._akan("newline in single-line string", line, col)
+                here = (self.line, self.col)
                 self._advance()
                 if not pristine:
                     out.append("\n")
+                    pos.append(here)
                 pristine = False
                 width = 0
                 while self._peek() == " ":
@@ -408,65 +417,88 @@ class Lexer:
                     self._akan(f"line outdents past the string's indentation "
                                f"(needs {anchor} leading spaces, found {width})")
                 else:
-                    out.append(" " * (width - anchor))
+                    keep = width - anchor         # indentation past the anchor
+                    out.append(" " * keep)        # is content, and it is here:
+                    pos.extend((self.line, anchor + k) for k in range(keep))
                 continue
+            pos.append((self.line, self.col))
             out.append(self._advance())
             pristine = False
 
-    def _process_escapes(self, s: str, is_bytes: bool, line: int, col: int):
-        out_s, out_b = [], bytearray()
-        put = (out_b.append if is_bytes else
-               (lambda cp: out_s.append(chr(cp))))
+    def _process_escapes(self, s: str, pos: list, is_bytes: bool,
+                         line: int, col: int):
+        """Apply the escape table, carrying source positions through.
+
+        An escape's output character takes the position of its backslash, so
+        a later akan points at the escape rather than at the whole literal.
+        Returns (value, positions)."""
+        out, out_pos = [], []          # out holds code points
+
+        def at(index):                 # source position of s[index]
+            return pos[index] if index < len(pos) else (line, col)
+
+        def emit(codepoint, index, literal=False):
+            if is_bytes:
+                if literal and codepoint > 127:   # `b"é"`: spell it \xHH
+                    self._akan("non-ASCII character in bytes literal",
+                               *at(index))
+                if codepoint > 255:               # but `b"\x89"` is the point
+                    self._akan(f"escape value {codepoint} is outside the byte "
+                               f"range 0-255", *at(index))
+            out.append(codepoint)
+            out_pos.append(at(index))
+
         i = 0
         while i < len(s):
-            ch = s[i]
-            if ch != "\\":
-                if is_bytes:
-                    cp = ord(ch)
-                    if cp > 127:
-                        self._akan("non-ASCII character in bytes literal", line, col)
-                    put(cp)
-                else:
-                    out_s.append(ch)
+            if s[i] != "\\":
+                emit(ord(s[i]), i, literal=True)
                 i += 1
                 continue
+            start = i                  # the backslash owns the position
             i += 1
             if i >= len(s):
-                self._akan("dangling backslash in string", line, col)
+                self._akan("dangling backslash in string", *at(start))
             e = s[i]
             if e in _ESCAPES:
-                text = _ESCAPES[e]
-                for c in text:
-                    put(ord(c)) if is_bytes else out_s.append(c)
+                for c in _ESCAPES[e]:
+                    emit(ord(c), start)
                 i += 1
             elif e == "x":
                 hexpart = s[i + 1:i + 3]
                 if len(hexpart) < 2 or any(c not in "0123456789abcdefABCDEF"
                                            for c in hexpart):
-                    self._akan(r"malformed \x escape", line, col)
-                put(int(hexpart, 16)) if is_bytes else out_s.append(chr(int(hexpart, 16)))
+                    self._akan(r"malformed \x escape", *at(start))
+                emit(int(hexpart, 16), start)
                 i += 3
             elif e in "01234567":
                 j = i
                 while j < len(s) and j - i < 3 and s[j] in "01234567":
                     j += 1
-                cp = int(s[i:j], 8)
-                put(cp) if is_bytes else out_s.append(chr(cp))
+                emit(int(s[i:j], 8), start)
                 i = j
             elif e in "uU" and not is_bytes:
                 width = 4 if e == "u" else 8
                 hexpart = s[i + 1:i + 1 + width]
-                if len(hexpart) < width:
-                    self._akan(rf"malformed \{e} escape", line, col)
-                try:
-                    out_s.append(chr(int(hexpart, 16)))
-                except (ValueError, OverflowError):
-                    self._akan(rf"malformed \{e} escape", line, col)
+                if len(hexpart) < width or any(
+                        c not in "0123456789abcdefABCDEF" for c in hexpart):
+                    self._akan(rf"malformed \{e} escape", *at(start))
+                codepoint = int(hexpart, 16)
+                if 0xD800 <= codepoint <= 0xDFFF:      # SPEC §4.2
+                    self._akan(f"\\{e} escape names the surrogate "
+                               f"U+{codepoint:04X}; yapyon strings are "
+                               f"Unicode scalar values (write the character "
+                               f"itself, e.g. \\U0001F600)", *at(start))
+                if codepoint > 0x10FFFF:
+                    self._akan(rf"malformed \{e} escape", *at(start))
+                emit(codepoint, start)
                 i += 1 + width
             else:
                 self._akan(f"unknown escape \\{e} "
-                           f"(yapyon escapes are Python's minus \\N)", line, col)
-        return bytes(out_b) if is_bytes else "".join(out_s)
+                           f"(yapyon escapes are Python's minus \\N)",
+                           *at(start))
+        if is_bytes:
+            return bytes(out), out_pos
+        return "".join(chr(c) for c in out), out_pos
 
     def _decode_b64(self, s: str, line: int, col: int) -> bytes:
         cleaned = "".join(s.split())           # permit interior whitespace
@@ -476,8 +508,11 @@ class Lexer:
             self._akan("invalid base64 content", line, col)
 
     # -- y-family hole scanning ----------------------------------------------
-    def _scan_holes(self, s: str, line: int, col: int) -> list:
+    def _scan_holes(self, s: str, pos: list, line: int, col: int) -> list:
         parts, buf, i = [], [], 0
+
+        def at(index):                 # source position of s[index]
+            return pos[index] if index < len(pos) else (line, col)
 
         def flush():
             if buf:
@@ -493,10 +528,10 @@ class Lexer:
                     continue
                 end = s.find("}", i + 1)
                 if end < 0:
-                    self._akan("unclosed hole '{' (write '{{' for a literal brace)",
-                               line, col)
+                    self._akan("unclosed hole '{' (write '{{' for a literal "
+                               "brace)", *at(i))
                 name = s[i + 1:end].strip()
-                self._check_hole_name(name, line, col)
+                self._check_hole_name(name, *at(i))
                 flush()
                 parts.append(("hole", name))
                 i = end + 1
@@ -506,7 +541,7 @@ class Lexer:
                     i += 2
                 else:
                     self._akan("lone '}' (write '}}' for a literal brace)",
-                               line, col)
+                               *at(i))
             else:
                 buf.append(ch)
                 i += 1

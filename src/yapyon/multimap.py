@@ -131,6 +131,9 @@ class OrderedMultimap:
     def count(self, key):
         return len(self._by_key.get(key, ()))
 
+    def __repr__(self):
+        return f"OrderedMultimap({[(e._key, e.value) for e in self]!r})"
+
     def __setitem__(self, key, value):
         if isinstance(value, KeyView):
             if value._mm is self and value._key == key:
