@@ -1,0 +1,7 @@
+include LICENSE
+include README.md
+
+# The conformance suite is the artifact another implementation checks itself
+# against, so it travels in the sdist even though it is not installed.
+recursive-include tests *.py
+recursive-include examples *.ypy

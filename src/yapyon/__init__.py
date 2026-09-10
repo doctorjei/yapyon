@@ -16,7 +16,7 @@ from .multimap import Entry, KeyView, OrderedMultimap
 from .template import Template
 from .loader import build, load, loads
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0a1"
 __all__ = [
     # the everyday API
     "load", "loads", "build", "Template", "OrderedMultimap",

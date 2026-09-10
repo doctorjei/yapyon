@@ -33,12 +33,31 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-Pre-alpha. Lexer and parser done and tested; resolver next. See `SPEC.md` for
-the normative draft and `CLAUDE.md` for design rationale and roadmap.
+Pre-alpha, and `0.1.0a1` means it. Lexer, parser, resolver and loader are
+done and tested — 256 tests, including a conformance suite that turns the
+splice matrix and the Python divergence table into executable cases.
+
+The normative specification is still a working draft held by the author, so
+this README summarises the format rather than defining it.
 
 ```console
-$ pip install -e ".[dev]"
-$ pytest -q
+$ pip install --pre yapyon
+```
+
+```python
+>>> import yapyon
+>>> yapyon.loads('name: "gw"\nport: 8080\naddr: y"{name}:{port}"\n')
+{'name': 'gw', 'port': 8080, 'addr': 'gw:8080'}
+```
+
+`loads` and `load` return plain Python. Eight of the ten types are builtins;
+a `+ ` block comes back as an `OrderedMultimap`, and a `yt` literal as an
+unfilled `Template`.
+
+From a checkout, the stages will also dump what they see:
+
+```console
+$ pip install -e ".[dev]" && pytest -q
 $ python -m yapyon.lexer examples/gateway.ypy    # token dump
 $ python -m yapyon.parser examples/gateway.ypy   # AST dump
 ```

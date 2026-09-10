@@ -1,14 +1,34 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]          # >=77 for the PEP 639 license field
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "yapyon"
-version = "0.1.0.dev0"
+version = "0.1.0a1"
 description = "Python-style typed literals with YAML-like block structure"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Jei Blanchard", email = "jjb@bmail.club" }]
+keywords = ["config", "configuration", "data format", "parser", "serialization", "yaml"]
 dependencies = []
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Markup",
+]
+
+[project.urls]
+Homepage = "https://github.com/doctorjei/yapyon"
+Repository = "https://github.com/doctorjei/yapyon"
+Issues = "https://github.com/doctorjei/yapyon/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
