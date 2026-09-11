@@ -1,6 +1,6 @@
 """Resolver tests — one test per spec rule, named after the rule.
 
-When a test and the implementation disagree, check SPEC.md before changing
+When a test and the implementation disagree, check the spec before changing
 either.
 """
 

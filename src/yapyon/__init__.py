@@ -1,7 +1,7 @@
 """yapyon — YAMLちゃうで。やぴょんやぴょん。
 
 Python-style typed literals with YAML-like block structure.
-See SPEC.md; CLAUDE.md holds the design rationale.
+Home: https://github.com/doctorjei/yapyon
 
     >>> import yapyon
     >>> yapyon.loads('name: "gw"\\nbanner: y"{name} v1"\\n')
