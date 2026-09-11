@@ -107,6 +107,23 @@ _ESCAPES = {                                 # Python's table minus \N{...}
 }
 
 
+def _digit(ch: str) -> bool:
+    """Number literals are ASCII (SPEC §3).  `str.isdigit()` is also True
+    for '٣' (U+0663) and '²', which belong to §7's identifier rules or to
+    nothing at all — routing them to the number lexer only produces a
+    'malformed number' where the mistake was a name.  False at EOF, where
+    `_peek` returns ""."""
+    return ch.isdigit() and ch.isascii()
+
+
+def _id_continue(ch: str) -> bool:
+    """True for XID_Continue (SPEC §7).  ``("a" + ch).isidentifier()`` is
+    exactly that test, which keeps the Unicode tables in `str`.  The explicit
+    emptiness check matters: ``"a" + "" == "a"`` *is* an identifier, so at EOF
+    this would otherwise answer True forever."""
+    return bool(ch) and ("a" + ch).isidentifier()
+
+
 # --------------------------------------------------------------------------- #
 # Lexer
 # --------------------------------------------------------------------------- #
@@ -251,8 +268,8 @@ class Lexer:
             self._lex_string("", line, col)
             return
 
-        if ch.isdigit() or (ch in "+-." and self._peek(1).isdigit()) \
-                or (ch in "+-" and self._peek(1) == "." and self._peek(2).isdigit()):
+        if _digit(ch) or (ch in "+-." and _digit(self._peek(1))) \
+                or (ch in "+-" and self._peek(1) == "." and _digit(self._peek(2))):
             self._lex_number(line, col)
             return
 
@@ -278,22 +295,31 @@ class Lexer:
         if ch in "-+" and self._peek(1) in (" ", "\n", ""):
             self._akan(f"{ch!r} opens a block frame only at the start of a "
                        f"line's content")
+        if _id_continue(ch):        # §7: legal inside a name, just not first
+            self._akan(f"{ch!r} cannot start a name, though it may appear "
+                       f"inside one (SPEC §7: names are Unicode identifiers)")
+        if ch.isalnum():            # word-like, but no identifier admits it
+            self._akan(f"{ch!r} cannot appear in a name (SPEC §7: names are "
+                       f"Unicode identifiers, UAX #31)")
         self._akan(f"unexpected character {ch!r}")
 
     def _scan_identifier(self) -> str:
-        """Scan one identifier.  First char must start an identifier; later
-        chars may be alphanumeric or '_' (which admits b64's digits)."""
-        if not (self._peek().isidentifier() or self._peek() == "_"):
+        """Scan one identifier (SPEC §7): an XID_Start character or '_',
+        then XID_Continue characters.
+
+        This is deliberately the same rule `_scan_hole` applies to its
+        segments, so every key is addressable from a hole.  ``("a" + ch)``
+        `.isidentifier()` is exactly the XID_Continue test, which keeps the
+        Unicode tables in `str` rather than here.
+
+        The explicit EOF guard is load-bearing: `_peek` returns "" at EOF and
+        ``"a" + "" == "a"`` *is* an identifier, so without it the loop would
+        not terminate."""
+        if not self._peek().isidentifier():
             raise Yakamashiwa("_scan_identifier called off an identifier")
         out = [self._advance()]
-        while True:
-            ch = self._peek()
-            if not ch:
-                break
-            if ch.isalnum() or ch == "_":
-                out.append(self._advance())
-            else:
-                break
+        while _id_continue(self._peek()):
+            out.append(self._advance())
         return "".join(out)
 
     # -- numbers -------------------------------------------------------------

@@ -1,6 +1,6 @@
 """Lexer tests — one test per spec rule, named after the rule.
 
-When a test and the implementation disagree, check SPEC.md before changing
+When a test and the implementation disagree, check the spec before changing
 either.
 """
 
@@ -415,3 +415,60 @@ def test_malformed_number_is_akan():
 def test_no_inf_nan_spelling():
     # `inf` is just a NAME (akan later, in value position, at the parser)
     assert kinds("a: inf")[2] == "NAME"
+
+
+# --------------------------------------------------------------------------- #
+# SPEC §7 — names are Unicode identifiers (UAX #31: XID_Start | '_', then
+# XID_Continue).  The same rule governs hole segments, so every key a
+# document can write is a key a hole can name.
+# --------------------------------------------------------------------------- #
+def test_ascii_names():
+    assert kinds("name: 1") == ["NAME", "COLON", "INT", "NEWLINE", "EOF"]
+    assert kinds("_x: 1")[0] == "NAME"
+    assert kinds("x1: 1")[0] == "NAME"
+
+
+def test_names_outside_ascii():
+    for name in ("名前", "やぴょん", "имя", "λ"):
+        assert kinds(f"{name}: 1")[0] == "NAME"
+
+
+def test_combining_marks_continue_a_name():
+    # "é" as e + U+0301, the form macOS filesystems hand you.  A combining
+    # mark is XID_Continue but not alphanumeric, so an isalnum() rule
+    # rejected this.
+    assert value("é: 1", "NAME") == "é"
+
+
+def test_zero_width_joiner_continues_a_name():
+    # ZWJ is XID_Continue; Persian and several Indic scripts need it.
+    assert value("zwj‍x: 1", "NAME") == "zwj‍x"
+
+
+def test_digits_outside_ascii_continue_a_name():
+    # Arabic-Indic digits are XID_Continue, so they are legal inside a name…
+    assert value("x٣: 1", "NAME") == "x٣"
+
+
+def test_a_digit_cannot_start_a_name():
+    # …but not at the front, and the akan says which of the two it is.
+    akan("٣: 1", "cannot start a name")
+
+
+def test_characters_no_identifier_admits_are_akan():
+    # U+00B2 is alphanumeric to str.isalnum() but is not XID_Continue;
+    # Python rejects `a² = 5` for the same reason.
+    akan("a²: 1", "cannot appear in a name")
+
+
+def test_names_are_not_nfkc_folded():
+    # U+FB01 folds to "fi" under NFKC, which Python applies to identifiers
+    # and yapyon does not: two keys here, one there (SPEC §11).
+    toks = [t for t in tokenize("ﬁ: 1\nfi: 2\n") if t.kind == "NAME"]
+    assert [t.value for t in toks] == ["ﬁ", "fi"]
+
+
+def test_numbers_are_ascii_only():
+    # str.isdigit() is True for U+0663, but a number literal is ASCII: the
+    # akan must name the number, not send the reader hunting for a name.
+    akan("a: 1٣", "malformed number")
