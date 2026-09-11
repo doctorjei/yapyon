@@ -215,8 +215,9 @@ class Parser:
             self._akan("empty document (a document is exactly one value)")
         node = self._block_value()
         if not self._at("EOF"):
-            self._akan(f"unexpected {_describe(self._peek())} after the "
-                       f"document's value (one document per file)")
+            self._akan(f"expected end of file, found "
+                       f"{_describe(self._peek())} after the document's "
+                       f"value; yapyon is one document per file")
         return node
 
     # -- block level ---------------------------------------------------------
@@ -232,7 +233,8 @@ class Parser:
         if self._at("COLON"):                    # `"a": 1`, `1: 2`, `True: 1`
             self._akan(_bad_key_msg(start), start)
         self._expect("NEWLINE",
-                     f"unexpected {_describe(self._peek())} after a value")
+                     f"expected end of line after the value, found "
+                     f"{_describe(self._peek())}")
         return value
 
     def _block_map(self) -> Mapping:
@@ -273,8 +275,8 @@ class Parser:
         else:                                    # value is on this line
             value = self._flow_value()
             self._expect("NEWLINE",
-                         f"unexpected {_describe(self._peek())} after the "
-                         f"value of {key!r}")
+                         f"expected end of line after the value of {key!r}, "
+                         f"found {_describe(self._peek())}")
         return Pair(key_tok.line, key_tok.col, key, value)
 
     def _frame_body(self, marker: Token, parse_body, what: str) -> Node:
