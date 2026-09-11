@@ -138,8 +138,12 @@ def test_float_fills_as_shortest_round_trip():
     assert t.fill(f=0.1 + 0.2) == "0.30000000000000004"
 
 
-def test_bytes_fill_as_standard_base64():
-    assert loads('t: yt"{b}"\n')["t"].fill(b=b"hello") == "aGVsbG8="
+def test_bytes_are_akan_at_fill():
+    # a document author has no code and must spell b64"..."; a consumer has
+    # code, and choosing an encoding for it would be silently wrong
+    with pytest.raises(AkanError) as e:
+        loads('t: yt"{b}"\n')["t"].fill(b=b"hello")
+    assert "name the encoding you want" in str(e.value)
 
 
 def test_unbound_hole_is_akan_at_fill():
@@ -168,10 +172,14 @@ def test_dotted_hole_into_a_non_mapping_is_akan():
     assert "is not a mapping" in str(e.value)
 
 
-def test_root_is_meaningless_in_a_template():
+def test_root_anchors_at_the_root_of_the_supplied_scope():
+    # one definition: the document for a y-string, the scope here. Against a
+    # flat scope it degenerates to an ordinary lookup.
+    t = loads('t: yt"{__ROOT__.x}"\n')["t"]
+    assert t.fill(x="y") == "y"
     with pytest.raises(AkanError) as e:
-        loads('t: yt"{__ROOT__.x}"\n')["t"].fill(x="y")
-    assert "a template has none" in str(e.value)
+        t.fill(other="z")
+    assert "unbound hole" in str(e.value)
 
 
 def test_templates_compare_by_parts():

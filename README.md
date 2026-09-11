@@ -34,7 +34,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 ## Status
 
 Pre-alpha, and `0.1.0a1` means it. Lexer, parser, resolver and loader are
-done and tested — 256 tests, including a conformance suite that turns the
+done and tested — 265 tests, including a conformance suite that turns the
 splice matrix and the Python divergence table into executable cases.
 
 The normative specification is still a working draft held by the author, so

@@ -112,10 +112,11 @@ def test_row_yb_templates_are_akan():
 
 # -- row 3: yt, at fill time (§6) ------------------------------------------- #
 # NOTE: values reach a template from the consumer, not from the document, so
-# the b/b64 spelling distinction does not exist here — which is what the
-# matrix's "— (no spelling at fill)" cell records. These cases follow §6's
-# prose ("bytes fill as standard base64 … the one canonical bytes→text
-# bridge"); see the workbook note on §5.5's conflicting `akan¹` cell.
+# the b/b64 spelling distinction does not exist here — the matrix carries one
+# `bytes` column for this row, and it is akan. A document author has no code
+# and must spell b64"..."; a consumer is code and can name the encoding it
+# means, so choosing base64 for it would be silently wrong for anyone who
+# wanted hex or url-safe.
 def filled(hole, **values):
     return loads(f't: yt"{hole}"\n')["t"].fill(**values)
 
@@ -124,8 +125,10 @@ def test_row_yt_str_fills_verbatim():
     assert filled("{s}", s="A B\tC") == "A B\tC"
 
 
-def test_row_yt_bytes_fill_as_base64():
-    assert filled("{s}", s=b"AB") == "QUI="
+def test_row_yt_bytes_are_akan():
+    with pytest.raises(AkanError) as e:
+        filled("{s}", s=b"AB")
+    assert "name the encoding you want" in str(e.value)
 
 
 @pytest.mark.parametrize("value,expected", [
@@ -183,6 +186,19 @@ def test_named_character_escapes_exist_in_python_akan_here():
 def test_lone_surrogates_allowed_in_python_akan_here():
     assert ast.literal_eval(r'"\ud800"') == "\ud800"
     assert "surrogate" in akan_of(r'x: "\ud800"')
+
+
+def test_high_octal_escapes_truncate_in_python_and_are_akan_here():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert ast.literal_eval(r'b"\777"') == b"\xff"     # 511 & 0xFF
+    assert "outside the byte range" in akan_of(r'x: b"\777"')
+
+
+def test_brace_producing_escapes_are_content_in_both():
+    # not a divergence — yapyon matches Python's layering on purpose
+    assert eval(r'f"\x7bname\x7d"') == "{name}"
+    assert loads(r'x: y"\x7bname\x7d"') == {"x": "{name}"}
 
 
 @pytest.mark.parametrize("src,hint", [

@@ -10,13 +10,17 @@ data file has none).
 Fill-time conversions are normative for conforming renderers (§6). Note that
 they are *not* §5.4's lexeme rule: by fill time the lexeme is long gone, so a
 float fills as its shortest round-trip decimal rather than as written.
-Bytes cross to text only as standard base64 — the one canonical bridge
-(law 5).
+
+Bytes are **akan** at fill, which is where a template parts company with a
+document. The bridge law exists because a document author has no code to run,
+so `b64"..."` must be spelled as a literal. A consumer is code: it can call
+whichever encoder it means, and picking base64 on its behalf is silently
+wrong for anyone who wanted hex or url-safe. Float stays canonical for the
+opposite reason — shortest round-trip is the only faithful rendering of a
+float, while bytes have many equally valid ones.
 """
 
 from __future__ import annotations
-
-import base64
 
 from .lexer import AkanError
 
@@ -52,8 +56,13 @@ class Template:
     def _lookup(self, ref: str, scope: dict):
         segs = ref.split(".")
         if segs[0] == "__ROOT__":
-            self._akan(f"{{{ref}}}: __ROOT__ names a document root, and a "
-                       f"template has none — supply the value by name")
+            # One definition, no special case: __ROOT__ anchors at the root of
+            # whatever scope resolves the hole — the document for a y-string,
+            # the supplied scope here. Against a flat scope it degenerates to
+            # an ordinary lookup, which is harmless.
+            segs = segs[1:]
+            if not segs:
+                return scope
         if segs[0] not in scope:
             self._akan(f"unbound hole {{{ref}}}: nothing named {segs[0]!r} "
                        f"was supplied")
@@ -80,9 +89,11 @@ class Template:
         if isinstance(value, float):
             return repr(value)             # shortest round-trip (§6)
         if isinstance(value, (bytes, bytearray)):
-            return base64.b64encode(bytes(value)).decode("ascii")
+            self._akan(f"cannot fill {{{ref}}} with bytes; name the encoding "
+                       f"you want (base64, hex, url-safe) and pass the text — "
+                       f"a consumer has code, so yapyon will not choose one")
         self._akan(f"cannot fill {{{ref}}} with a {type(value).__name__}; a "
-                   f"template takes text, numbers, bools, None, or bytes")
+                   f"template takes text, numbers, bools, or None")
 
     # -- niceties ------------------------------------------------------------
     def __eq__(self, other):

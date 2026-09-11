@@ -271,6 +271,10 @@ class Lexer:
                 self._emit("NAME", name, line, col)
             return
 
+        for reserved in ("---", "..."):           # SPEC §8, reserved tokens
+            if self.text.startswith(reserved, self.pos):
+                self._akan(f"{reserved!r} is reserved and has no meaning in "
+                           f"v0.1; yapyon is one document per file")
         if ch in "-+" and self._peek(1) in (" ", "\n", ""):
             self._akan(f"{ch!r} opens a block frame only at the start of a "
                        f"line's content")
@@ -341,9 +345,29 @@ class Lexer:
 
         is_raw = prefix in RAW_PREFIXES
         is_bytes = prefix in BYTES_PREFIXES
-        value_pos = raw_pos            # one source position per value character
+
+        if prefix in Y_PREFIXES:
+            # Structure first, escapes second: each text chunk is decoded on
+            # its own, which is also why a yb-string needs no round trip
+            # through latin-1 to keep its bytes.
+            parts = []
+            for chunk in self._scan_holes(raw_chars, raw_pos, is_raw,
+                                          line, col):
+                if chunk[0] == "hole":
+                    parts.append(("hole", chunk[1]))
+                    continue
+                _, text, text_pos = chunk
+                parts.append(("text", text if is_raw else
+                              self._process_escapes(text, text_pos, is_bytes,
+                                                    line, col)[0]))
+            empty = b"" if is_bytes else ""
+            value = empty.join(part for kind, part in parts if kind == "text")
+            self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
+                       prefix=prefix, parts=parts)
+            return
+
         if prefix == "b64":
-            value, value_pos = self._decode_b64(raw_chars, line, col), []
+            value = self._decode_b64(raw_chars, line, col)
         elif is_raw:
             if is_bytes:
                 for index, ch in enumerate(raw_chars):
@@ -354,18 +378,10 @@ class Lexer:
             else:
                 value = raw_chars
         else:
-            value, value_pos = self._process_escapes(raw_chars, raw_pos,
-                                                     is_bytes, line, col)
-
-        parts = []
-        if prefix in Y_PREFIXES:
-            scan_text = value.decode("latin-1") if isinstance(value, bytes) else value
-            parts = self._scan_holes(scan_text, value_pos, line, col)
-            if isinstance(value, bytes):
-                parts = [(k, v.encode("latin-1") if k == "text" else v)
-                         for k, v in parts]
+            value = self._process_escapes(raw_chars, raw_pos, is_bytes,
+                                          line, col)[0]
         self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
-                   prefix=prefix, parts=parts)
+                   prefix=prefix)
 
     def _scan_string_body(self, quote, triple, line, col):
         """Scan a string body, dedenting block strings (SPEC 4.1).
@@ -508,22 +524,50 @@ class Lexer:
             self._akan("invalid base64 content", line, col)
 
     # -- y-family hole scanning ----------------------------------------------
-    def _scan_holes(self, s: str, pos: list, line: int, col: int) -> list:
-        parts, buf, i = [], [], 0
+    def _scan_holes(self, s: str, pos: list, is_raw: bool,
+                    line: int, col: int) -> list:
+        """Split a raw string body into text chunks and holes.
+
+        Holes are recognised **before** escapes decode (SPEC §5.1), so an
+        escape that produces a brace is content and never structure — the
+        layering Python uses for f-strings, where `f"\\x7bname\\x7d"` is the
+        six characters `{name}`.  Text chunks come back raw, for the caller
+        to escape-process in place.
+
+        Returns [("text", raw_chunk, positions) | ("hole", name)].
+        """
+        chunks, buf, buf_pos, i = [], [], [], 0
 
         def at(index):                 # source position of s[index]
             return pos[index] if index < len(pos) else (line, col)
 
+        def keep(index, char=None):
+            buf.append(s[index] if char is None else char)
+            buf_pos.append(at(index))
+
         def flush():
             if buf:
-                parts.append(("text", "".join(buf)))
+                chunks.append(("text", "".join(buf), list(buf_pos)))
                 buf.clear()
+                buf_pos.clear()
 
         while i < len(s):
             ch = s[i]
+            if not is_raw and ch == "\\":
+                # An escape never produces structure; step over it whole, so
+                # that `\\{x}` opens a hole and `\{` does not.
+                nxt = s[i + 1:i + 2]
+                if nxt in ("{", "}"):
+                    self._akan(f"backslash never escapes a brace; write "
+                               f"'{nxt * 2}' for a literal one", *at(i))
+                keep(i)
+                if nxt:
+                    keep(i + 1)
+                i += 2
+                continue
             if ch == "{":
                 if s[i + 1:i + 2] == "{":
-                    buf.append("{")
+                    keep(i, "{")
                     i += 2
                     continue
                 end = s.find("}", i + 1)
@@ -533,24 +577,26 @@ class Lexer:
                 name = s[i + 1:end].strip()
                 self._check_hole_name(name, *at(i))
                 flush()
-                parts.append(("hole", name))
+                chunks.append(("hole", name))
                 i = end + 1
-            elif ch == "}":
+                continue
+            if ch == "}":
                 if s[i + 1:i + 2] == "}":
-                    buf.append("}")
+                    keep(i, "}")
                     i += 2
-                else:
-                    self._akan("lone '}' (write '}}' for a literal brace)",
-                               *at(i))
-            else:
-                buf.append(ch)
-                i += 1
+                    continue
+                self._akan("lone '}' (write '}}' for a literal brace)", *at(i))
+            keep(i)
+            i += 1
         flush()
-        return parts
+        return chunks
 
     def _check_hole_name(self, name: str, line: int, col: int):
         if not name:
             self._akan("empty hole '{}'", line, col)
+        if ":" in name or "!" in name:            # SPEC §5.1, reserved in §9
+            self._akan("format specs and conversions are reserved; a hole "
+                       "names a value and does nothing else", line, col)
         segs = name.split(".")
         for idx, seg in enumerate(segs):
             if seg == "__ROOT__":

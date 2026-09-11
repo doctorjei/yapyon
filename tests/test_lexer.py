@@ -343,6 +343,47 @@ def test_plain_strings_are_inert():
 
 
 # --------------------------------------------------------------------------- #
+# SPEC §5.1 — holes are recognised before escapes decode
+# --------------------------------------------------------------------------- #
+def test_an_escape_that_produces_a_brace_is_content_not_structure():
+    # the layering Python uses: f"\x7bname\x7d" is the six characters {name}
+    t = tokenize(r'x: y"\x7bname\x7d"')[2]
+    assert t.kind == "YSTR" and t.parts == [("text", "{name}")]
+
+
+def test_a_backslash_before_a_brace_is_akan():
+    akan(r'x: y"\{name}"', "backslash never escapes a brace")
+
+
+def test_an_escaped_backslash_still_leaves_the_brace_structural():
+    t = tokenize(r'x: y"\\{name}"')[2]
+    assert t.parts == [("text", "\\"), ("hole", "name")]
+
+
+def test_raw_y_strings_keep_the_backslash_and_the_hole():
+    t = tokenize(r'x: ry"\d{name}"')[2]
+    assert t.parts == [("text", "\\d"), ("hole", "name")]
+
+
+def test_yb_text_parts_are_bytes_without_a_latin1_round_trip():
+    t = tokenize(r'x: yb"\xff{n}\x00"')[2]
+    assert t.parts == [("text", b"\xff"), ("hole", "n"), ("text", b"\x00")]
+
+
+def test_format_specs_and_conversions_name_their_reservation():
+    akan('x: y"{a:>5}"', "format specs and conversions are reserved")
+    akan('x: y"{a!r}"', "format specs and conversions are reserved")
+
+
+# --------------------------------------------------------------------------- #
+# SPEC §8 — reserved tokens
+# --------------------------------------------------------------------------- #
+def test_document_markers_name_their_reservation():
+    akan("---\na: 1\n", "'---' is reserved")
+    akan("a: 1\n...\n", "'...' is reserved")
+
+
+# --------------------------------------------------------------------------- #
 # SPEC §3 — numbers, with lexeme preserved for splicing
 # --------------------------------------------------------------------------- #
 def test_numeric_zoo():
