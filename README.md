@@ -34,11 +34,12 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 ## Status
 
 Pre-alpha, and `0.1.0a1` means it. Lexer, parser, resolver and loader are
-done and tested — 265 tests, including a conformance suite that turns the
+done and tested — 318 tests, including a conformance suite that turns the
 splice matrix and the Python divergence table into executable cases.
 
-The normative specification is still a working draft held by the author, so
-this README summarises the format rather than defining it.
+The normative specification is a working draft held by the author. It is
+intended for publication, split into a grammar document and a broader spec;
+until then this README summarises the format rather than defining it.
 
 ```console
 $ pip install --pre yapyon
@@ -53,6 +54,34 @@ $ pip install --pre yapyon
 `loads` and `load` return plain Python. Eight of the ten types are builtins;
 a `+ ` block comes back as an `OrderedMultimap`, and a `yt` literal as an
 unfilled `Template`.
+
+## Records
+
+A **yapyon record** is the restricted form in which *every leaf element has a
+literal value* — no splicing, no templates, nothing deferred. It is a strict
+subset: every record is a valid yapyon document meaning the same thing.
+
+```python
+>>> yapyon.loads_record('name: "gw"\nport: 8080\n')
+{'name': 'gw', 'port': 8080}
+>>> yapyon.is_record('addr: "{name}:80"\n')   # braces in a plain string are inert
+True
+>>> yapyon.loads_record('name: "gw"\naddr: y"{name}:80"\n')
+Traceback (most recent call last):
+yapyon.lexer.AkanError: akan: line 2, col 6: a record's leaves must all be
+literals; a y-string defers its value (load with yapyon.loads for the full form)
+```
+
+`loads_record` / `load_record` are the whole pipeline minus the resolver, and
+a separate function rather than a keyword argument — the safe path should not
+be one typo away from the unsafe one. `is_record` answers the question by
+lexing, without loading.
+
+This is why an implementation with no resolver can still be a conforming one:
+the safe subset is declared up front rather than carved out afterwards — and
+why the spec asks every implementation to say which of the two it provides.
+**yapyon implements the full form**, and so also loads records.
+*(New since `0.1.0a1`; `pip install --pre` does not have it yet.)*
 
 From a checkout, the stages will also dump what they see:
 

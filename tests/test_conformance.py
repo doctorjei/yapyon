@@ -14,7 +14,8 @@ import warnings
 
 import pytest
 
-from yapyon import AkanError, OrderedMultimap, Template, loads
+from yapyon import (AkanError, OrderedMultimap, Template, is_record, loads,
+                    loads_record)
 
 
 def akan_of(text):
@@ -256,3 +257,56 @@ def test_set_tuple_and_complex_are_types_in_python_and_akan_here(src):
     assert ast.literal_eval(literal) is not None    # Python has all three
     with pytest.raises(AkanError):
         loads(src)
+
+
+# =========================================================================== #
+# SPEC §12 — the yapyon record
+#
+# The eight scalar kinds of §8 split five/three, and that split *is* the
+# record rule (§12.2). A port claiming the record level must agree on every
+# row of this table and on the subset property below.
+# =========================================================================== #
+LITERAL_SCALARS = ['"x"', "'x'", 'b"\\x89"', 'b64"aGk="', 'r"x\\n"',
+                   'rb"x\\n"', "1", "0xFF", "3.10", "1_000", "True", "False",
+                   "None"]
+DEFERRED_SCALARS = ['y"{a}"', 'ry"{a}"', 'yb"{a}"', 'yt"{a}"']
+
+
+@pytest.mark.parametrize("literal", LITERAL_SCALARS)
+def test_row_every_literal_scalar_is_a_record(literal):
+    text = f'a: "seed"\nu: {literal}\n'
+    assert is_record(text)
+    assert loads_record(text)["u"] == loads(text)["u"]      # §12.3 subset
+
+
+@pytest.mark.parametrize("literal", DEFERRED_SCALARS)
+def test_row_every_y_family_scalar_is_not_a_record(literal):
+    text = f'a: "seed"\nu: {literal}\n'
+    assert not is_record(text)
+    with pytest.raises(AkanError) as e:
+        loads_record(text)
+    assert "must all be literals" in str(e.value)
+    assert (e.value.line, e.value.col) == (2, 3)   # §12.5: at the prefix
+
+
+def test_the_two_forms_agree_on_a_record():
+    # §12.3: a full implementation loading a record returns exactly what a
+    # record implementation returns
+    text = ('name: "gw"\nport: 8080\nratio: 3.10\nraw: "{not_a_hole}"\n'
+            'blob: b64"aGVsbG8="\nxs:\n  - True\n  - None\n'
+            'm:\n  + k: 1\n  + k: 2\n')
+    assert loads_record(text) == loads(text)
+
+
+def test_a_record_never_produces_a_template():
+    # §12.4: Template is the one value type the two forms do not share
+    assert isinstance(loads('t: yt"{a}"\n')["t"], Template)
+    with pytest.raises(AkanError):
+        loads_record('t: yt"{a}"\n')
+
+
+def test_a_multimap_is_plain_data_and_survives_into_a_record():
+    # §12.4: the criterion is "nothing deferred", not "builtin types only"
+    mm = loads_record("m:\n  + a: 1\n  + a: 2\n")["m"]
+    assert isinstance(mm, OrderedMultimap)
+    assert [(k, v) for k, v in mm] == [("a", 1), ("a", 2)]
