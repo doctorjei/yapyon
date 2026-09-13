@@ -6,12 +6,18 @@ before changing either.
 """
 
 import io
+from pathlib import Path
 
 import pytest
 
 import yapyon
 from yapyon import (AkanError, OrderedMultimap, Template, is_record,
                     load_record, loads, loads_record)
+
+
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+EXAMPLE_RECORD = EXAMPLES / "registry.ypy"
+EXAMPLE_FULL = EXAMPLES / "gateway.ypy"
 
 
 def akan(text, needle=""):
@@ -144,6 +150,27 @@ def test_is_record_raises_when_there_is_no_document_to_answer_about():
 # --------------------------------------------------------------------------- #
 def test_load_record_reads_a_file_object():
     assert load_record(io.StringIO('a: "x"\n')) == {"a": "x"}
+
+
+def test_load_record_reads_the_example_record():
+    with EXAMPLE_RECORD.open() as fp:
+        doc = load_record(fp)
+    assert doc["label"] == "{status}"            # braces inert in a plain str
+    assert doc["signature"] == b"hello world"
+    assert doc["limits"]["disk_gb"] == 16
+    assert [k for k, _ in doc["handlers"]] == [
+        "on_start", "on_error", "on_start", "on_stop"]
+
+
+def test_the_example_record_is_one_and_both_forms_agree():
+    text = EXAMPLE_RECORD.read_text()
+    assert is_record(text)
+    assert loads_record(text) == loads(text)
+
+
+def test_the_other_example_is_not_a_record():
+    # gateway.ypy splices, so it is the contrast the example exists against
+    assert not is_record(EXAMPLE_FULL.read_text())
 
 
 def test_load_record_refuses_a_y_string_from_a_file():

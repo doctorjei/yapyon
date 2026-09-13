@@ -1,0 +1,40 @@
+# A yapyon *record* (SPEC §12): every leaf element has a literal value.
+#
+# Nothing here is deferred — no y-strings, no templates — so `loads_record`
+# accepts it, and an implementation with no resolver at all can read it and
+# be genuinely conforming. Compare gateway.ypy, which splices and cannot.
+
+name: "kinemata"
+version: "0.4.2"
+enabled: True
+retries: 3
+timeout: 2.5
+fallback: None
+
+# Braces in a plain string are inert. This is six characters, in every
+# implementation, forever — which is what lets a minimal reader skip the
+# question entirely.
+label: "{status}"
+
+# Raw and base64 spellings are literals too: readable from their own bytes.
+pattern: r"^\d{4}-\d{2}$"
+signature: b64"aGVsbG8gd29ybGQ="
+magic: b"\x89PNG\r\n\x1a\n"
+
+limits:
+  memory_mb: 512
+  cpu_shares: 1_024
+  disk_gb: 0x10
+
+formats:
+  - "json"
+  - "yapyon"
+  - "toml"
+
+# A multimap is plain keyed data, so it belongs in a record. Keys repeat and
+# the order is part of the meaning.
+handlers:
+  + on_start: "warm_cache"
+  + on_error: "retry"
+  + on_start: "open_socket"
+  + on_stop: "flush"
