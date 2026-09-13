@@ -41,6 +41,13 @@ The normative specification is a working draft held by the author. It is
 intended for publication, split into a grammar document and a broader spec;
 until then this README summarises the format rather than defining it.
 
+**Identifiers are UAX #31, and the guaranteed floor is Unicode 14.0.0** —
+the tables Python 3.11 carries, 3.11 being the oldest version yapyon
+supports. The spec asks every implementation to say where its tables come
+from; yapyon inherits the host interpreter's, so a newer Python accepts
+codepoints assigned after Unicode 14 that an older one rejects. Keys drawn
+from Unicode 14 mean the same thing on every supported install.
+
 ```console
 $ pip install --pre yapyon
 ```

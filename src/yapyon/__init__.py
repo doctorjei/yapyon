@@ -10,6 +10,11 @@ Home: https://github.com/doctorjei/yapyon
 **Conformance (SPEC §12.5): this implementation provides the full form**,
 and therefore also loads yapyon records — `loads_record`, `load_record` and
 `is_record` are the record surface.
+
+**Identifier tables (SPEC §7): Unicode 14.0.0 is the guaranteed floor.**
+yapyon uses `str.isidentifier()`, so the tables are the host interpreter's;
+the floor is Python 3.11's, 3.11 being the oldest supported. A newer Python
+additionally accepts codepoints assigned after Unicode 14.
 """
 
 from .lexer import Lexer, Token, tokenize, AkanError, Yakamashiwa
