@@ -182,6 +182,27 @@ def test_unknown_escape_is_akan():
     akan(r'x: "\q"', "unknown escape")
 
 
+def test_backslash_newline_is_a_line_continuation():
+    # both characters go, exactly as in Python
+    assert value('x: """one\\\ntwo"""', "STRING") == "onetwo"
+
+
+def test_a_plain_newline_in_a_triple_quote_survives():
+    # the contrast that makes the continuation worth having
+    assert value('x: """one\ntwo"""', "STRING") == "one\ntwo"
+
+
+def test_the_continuation_is_unreachable_in_a_single_line_string():
+    # not by exception: §4.1's raw-newline akan fires first, so the two
+    # rules never have to know about each other
+    akan('x: "one\\\ntwo"', "newline in single-line string")
+
+
+def test_a_raw_triple_quote_keeps_the_backslash_and_the_newline():
+    # the continuation belongs to the escape table, not to """
+    assert value('x: r"""one\\\ntwo"""', "STRING") == "one\\\ntwo"
+
+
 def test_surrogate_escapes_are_akan():
     # SPEC §4.2: yapyon strings are sequences of Unicode scalar values
     akan(r'x: "\ud800"', "surrogate")
