@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import base64
 
-from .lexer import AkanError, Yakamashiwa
+from .lexer import DOLLAR_HINT, AkanError, Yakamashiwa
 from .parser import Mapping, MultiMap, Node, Scalar, Sequence, YString
 
 MAX_DEPTH = 32                       # §5.3, loader-overridable
@@ -91,6 +91,26 @@ def _index_slot(seq: Sequence, index: int):
     def slot(new):
         seq.items[index] = new
     return slot
+
+
+def _dollar_hint_for(node, name: str) -> str:
+    """`DOLLAR_HINT`, but only when this hole actually follows a `$`.
+
+    An author who wrote `y"${HOME}"` and gets "no value named 'HOME' is in
+    scope here" goes hunting for a missing key. The `$` is the clue, and it
+    is in the literal's own parts.
+
+    Only the *message* changes. The outcome was already right — an
+    unresolved hole is akan either way — and `$` stays an ordinary character.
+    """
+    for i, (kind, value) in enumerate(node.parts):
+        if kind != "hole" or not (value == name
+                                  or value.startswith(name + ".")):
+            continue
+        if i and node.parts[i - 1][0] == "text" \
+                and node.parts[i - 1][1].endswith("$"):
+            return DOLLAR_HINT
+    return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -242,8 +262,8 @@ class Resolver:
             if name in mapping.by_key:
                 hits.append((level, mapping))
         if not hits:
-            self._akan(f"no value named {name!r} is in scope here",
-                       site.node)
+            self._akan(f"no value named {name!r} is in scope here"
+                       f"{_dollar_hint_for(site.node, name)}", site.node)
 
         level, mapping = hits[0]                     # nearest wins
         if len(hits) > 1:                            # shiran-on-shadow

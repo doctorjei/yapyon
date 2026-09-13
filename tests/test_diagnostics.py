@@ -102,6 +102,61 @@ def test_a_nameless_stream_stays_unlabelled():
     assert e.value.source is None
 
 
+# --------------------------------------------------------------------------- #
+# Hints are earned, not automatic
+# --------------------------------------------------------------------------- #
+def test_the_quantifier_hint_fires_only_on_quantifier_shaped_content():
+    assert "doubled braces" in str(akan_of('a: y"{2,3}"\n'))
+    assert "doubled braces" in str(akan_of('a: y"{3}"\n'))
+
+
+def test_the_quantifier_hint_does_not_fire_on_everything_else():
+    # it used to be appended to every non-identifier hole, which told an
+    # author about regex when they had written something else entirely
+    for src in ('a: y"{$HOME}"\n', 'a: y"{a-b}"\n', 'a: y"{a b}"\n'):
+        assert "doubled braces" not in str(akan_of(src)), src
+
+
+def test_a_dollar_segment_gets_the_environment_hint():
+    e = akan_of('a: y"{$HOME}"\n')
+    assert "'$HOME' is not an identifier" in str(e)
+    assert "yapyon does not expand them" in str(e)
+
+
+def test_an_unresolved_hole_after_a_dollar_gets_the_hint():
+    # y"${HOME}" is a literal $ plus the hole {HOME}; the akan is right and
+    # only the wording needed work
+    e = akan_of('a: y"${HOME}"\n')
+    assert "no value named 'HOME' is in scope here" in str(e)
+    assert "yapyon does not expand them" in str(e)
+
+
+def test_the_hint_says_after_loading_not_pre_process():
+    # the pre-parse text pass is the injection-prone path
+    assert "do that after loading" in str(akan_of('a: y"${HOME}"\n'))
+
+
+def test_an_unresolved_hole_with_no_dollar_gets_no_hint():
+    assert "environment variable" not in str(akan_of('a: y"{nope}"\n'))
+
+
+def test_the_hint_is_hedged_and_never_changes_the_outcome():
+    # $ is an ordinary character: a resolving ${VAR} is a real idiom (build
+    # "$NEW_VAR" for something downstream) and must stay silent
+    seen = []
+    assert loads('HOME: "h"\np: y"${HOME}"\n', warn=seen.append) == {
+        "HOME": "h", "p": "$h"}
+    assert seen == []
+
+
+def test_a_dollar_further_away_does_not_trigger_the_hint():
+    assert "environment variable" not in str(akan_of('a: y"$ {nope}"\n'))
+
+
+def test_a_dotted_reference_after_a_dollar_still_gets_the_hint():
+    assert "environment variable" in str(akan_of('a: y"${HOME.sub}"\n'))
+
+
 def test_merged_fragments_can_each_name_themselves():
     # the case the feature exists for: several fragments parsed separately,
     # where a bare line and column points into nothing identifiable

@@ -128,6 +128,32 @@ def _digit(ch: str) -> bool:
     return ch.isdigit() and ch.isascii()
 
 
+DOLLAR_HINT = (" — if the `$` was meant as an environment variable, yapyon "
+               "does not expand them; do that after loading")
+"""Hedged on purpose (SPEC §5.1, and the `$VAR` decision behind it).
+
+`$` is an ordinary character with no meaning in yapyon, so we cannot know
+whether the author meant a variable or wrote a literal dollar. The hint says
+"if", never diagnoses, and never changes the outcome — only the wording.
+"After loading" rather than "pre-process", because the pre-parse text
+substitution three projects reach for is the injection-prone path.
+"""
+
+
+def bad_segment_hint(seg: str) -> str:
+    """The clause to append when a hole segment is not an identifier.
+
+    Earned, not automatic: the regex-quantifier hint used to fire on *every*
+    non-identifier hole, so `{$HOME}` was told about doubled braces, which
+    has nothing to do with what was attempted.
+    """
+    if seg and all(ch.isdigit() or ch == "," for ch in seg):
+        return " (a regex quantifier needs doubled braces: {{n,m}})"
+    if seg.startswith("$"):
+        return DOLLAR_HINT
+    return ""
+
+
 def is_dunder(name: str) -> bool:
     """True for names the __dunder__ namespace reserves for yapyon itself.
 
@@ -663,8 +689,7 @@ class Lexer:
                            f"(only __ROOT__ is defined)", line, col)
             if not seg.isidentifier():
                 self._akan(f"holes name document values; {seg!r} is not an "
-                           f"identifier (quantifiers need doubled braces: "
-                           f"{{{{n,m}}}})", line, col)
+                           f"identifier{bad_segment_hint(seg)}", line, col)
             if seg in KEYWORDS:
                 self._akan(f"{seg!r} cannot be a hole name", line, col)
 
