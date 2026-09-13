@@ -98,6 +98,35 @@ $ python -m yapyon.lexer examples/gateway.ypy    # token dump
 $ python -m yapyon.parser examples/gateway.ypy   # AST dump
 ```
 
+## References
+
+A hole names a value. `a.b` is sugar for `a["b"]` — the bracket is the
+general form, and its content yields a key.
+
+```yapyon
+protocol: "claude"
+mind:
+  endpoint: "https://api"
+  dialects:
+    claude:
+      api_uri: y"{endpoint}/v1"        # reaches its uncle by §5.2 scope
+    codex:
+      api_uri: y"{endpoint}/responses"
+  chosen: y"{dialects[protocol].api_uri}"   # -> "https://api/v1"
+```
+
+| Spelling | Means |
+|---|---|
+| `{a.b}` | the key `b` — canonical for identifiers |
+| `{a["b.c"]}` | a key a dot cannot reach |
+| `{xs[0]}` | a list position; brackets only, since `0` is no identifier |
+| `{d[p]}` | the key *stored in* `p`, resolved in the y-string's own scope |
+| `{mm.k}` | every value filed under `k` in a multimap, in order, as a list |
+
+`{a["bar"]}` where a dot would do is a `shiran` — legal, but say `{a.bar}`.
+Because the enclosing string's delimiter ends it, quote a key with the other
+mark: `y"{a['b']}"`.
+
 ## Prefixes
 
 | Spelling | Name | Spoken | Result |
