@@ -22,7 +22,8 @@ float, while bytes have many equally valid ones.
 
 from __future__ import annotations
 
-from .lexer import AkanError
+from .lexer import AkanError, parse_ref
+from .multimap import OrderedMultimap
 
 
 class Template:
@@ -56,28 +57,67 @@ class Template:
         raise AkanError(msg, self.line, self.col, self.source)
 
     def _lookup(self, ref: str, scope: dict):
-        segs = ref.split(".")
-        if segs[0] == "__ROOT__":
-            # One definition, no special case: __ROOT__ anchors at the root of
-            # whatever scope resolves the hole — the document for a y-string,
-            # the supplied scope here. Against a flat scope it degenerates to
-            # an ordinary lookup, which is harmless.
-            segs = segs[1:]
-            if not segs:
-                return scope
-        if segs[0] not in scope:
-            self._akan(f"unbound hole {{{ref}}}: nothing named {segs[0]!r} "
-                       f"was supplied")
-        current = scope[segs[0]]
-        for seg in segs[1:]:
-            try:
-                current = current[seg]
-            except (TypeError, IndexError):
-                self._akan(f"{{{ref}}}: cannot look up {seg!r}, because the "
-                           f"value named before it is not a mapping")
-            except KeyError:
-                self._akan(f"{{{ref}}}: there is no key {seg!r} here")
+        """Walk a parsed reference (§5.1) through the supplied scope.
+
+        The same `parse_ref` the lexer validated with and the resolver
+        traverses with — one grammar, three users, so `a.b` and `a["b"]`
+        cannot come to mean different things here than in a document.
+        """
+        # One definition of __ROOT__: it anchors at the root of whatever
+        # scope resolves the hole, which here *is* the supplied scope. So
+        # {x} and {__ROOT__.x} take the same path and give the same akan —
+        # no special case, and none of the drift a second one would invite.
+        parsed = parse_ref(ref)
+        steps = list(parsed.steps)
+        current = scope
+        if steps and steps[0][0] == "key":
+            first = steps.pop(0)[1]
+            if first not in current:
+                self._akan(f"unbound hole {{{ref}}}: nothing named {first!r} "
+                           f"was supplied")
+            current = current[first]
+        for step in steps:
+            current = self._walk(current, step, ref, scope)
         return current
+
+    def _walk(self, current, step, ref: str, scope: dict):
+        kind, payload = step
+        if kind == "ref":
+            payload = self._subscript_key(payload, ref, scope)
+            kind = "index" if isinstance(payload, int) else "key"
+        if kind == "index":
+            if isinstance(current, OrderedMultimap):
+                self._akan(f"{{{ref}}}: index a multimap's key view, not the "
+                           f"multimap — positional entry access is reserved")
+            if isinstance(current, str) or not isinstance(current, (list,
+                                                                    tuple)):
+                self._akan(f"{{{ref}}}: cannot index {payload}, because the "
+                           f"value named before it is not a list")
+            if payload >= len(current):
+                self._akan(f"{{{ref}}}: index {payload} is past the end of a "
+                           f"list of {len(current)}")
+            return current[payload]
+        if isinstance(current, OrderedMultimap):
+            # §7.1 by-key traversal is a list view, exactly as in a document.
+            # `mm[k].values()`, not `mm.get(k)` — the latter hands back Entry
+            # objects, which are the container's business and not the
+            # document's.
+            return list(current[payload].values())
+        try:
+            return current[payload]
+        except (TypeError, IndexError):
+            self._akan(f"{{{ref}}}: cannot look up {payload!r}, because the "
+                       f"value named before it is not a mapping")
+        except KeyError:
+            self._akan(f"{{{ref}}}: there is no key {payload!r} here")
+
+    def _subscript_key(self, inner, ref: str, scope: dict):
+        """`[someref]` names a key; resolve it in the *supplied* scope."""
+        key = self._lookup(inner.text, scope)
+        if isinstance(key, bool) or not isinstance(key, (str, int)):
+            self._akan(f"{{{ref}}}: the subscript {{{inner.text}}} must name "
+                       f"a string or a number to use as a key")
+        return key
 
     def _render(self, value, ref: str) -> str:
         if isinstance(value, str):

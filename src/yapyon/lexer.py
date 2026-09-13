@@ -22,8 +22,12 @@ Design decisions implemented (from the design session):
         y, yb, yt, ry   — the y-family (holes live; {{ }} escapes)
     Unknown or non-canonical prefixes (F, BR, yr, ...) are akan by name.
   * Holes: strict braces. Every "{" opens a well-formed hole or is "{{";
-    every lone "}" is akan. Hole = NAME ("." NAME)*, __ROOT__ allowed as
+    every lone "}" is akan. `a.b` is sugar for `a["b"]` — the bracket is
+    the general form and its content yields a key (quoted literal, integer
+    index, or a reference whose value is the key). __ROOT__ is allowed as
     first segment only; other dunder segments are reserved (akan).
+    `parse_ref` is the one implementation of that grammar; the lexer
+    validates with it and the resolver and templates traverse with it.
   * Numbers: Python literals (0x/0o/0b, underscores, floats, exponents),
     optional leading sign. No inf/nan spellings.
   * Keywords: True / False / None. Any other bare word is a NAME token
@@ -81,7 +85,7 @@ class Token:
     col: int = 0
     prefix: str = ""          # string prefix as written: "" r b rb b64 y yb yt ry
     lexeme: str = ""          # source spelling of numbers and keywords (§5.4)
-    parts: list = field(default_factory=list)  # y-family: [("text", x)|("hole", "a.b")]
+    parts: list = field(default_factory=list)  # y-family: [("text", x)|("hole", ref_src)]
 
     def __repr__(self):
         v = "" if self.value is None else f" {self.value!r}"
@@ -126,6 +130,203 @@ def _digit(ch: str) -> bool:
     'malformed number' where the mistake was a name.  False at EOF, where
     `_peek` returns ""."""
     return ch.isdigit() and ch.isascii()
+
+
+class RefError(ValueError):
+    """A malformed hole reference, position-free.
+
+    `parse_ref` knows the grammar but not where in the document the text sat,
+    so it raises this and the caller re-raises an `AkanError` at the hole's
+    line and column (law 7).
+    """
+
+
+class Ref:
+    """A parsed hole reference — SPEC §5.1.
+
+        ref       ::= ("__ROOT__" ".")? SEG (("." SEG) | ("[" sub "]"))*
+        sub       ::= STRING | INT | ref
+        SEG       ::= identifier
+
+    `a.b` is sugar for `a["b"]`: the bracket is the general form and its
+    content yields a key. So `steps` is a flat list of what to do next, and
+    a dotted segment and a quoted key produce the *same* step kind — the
+    equivalence is real rather than asserted.
+
+        ("key",   str)   a mapping key, however it was spelled
+        ("index", int)   a list position; brackets only, since 0 is no
+                         identifier
+        ("ref",   Ref)   a key named by another reference, resolved in the
+                         scope of the y-string, not of the node indexed
+
+    `text` is the source spelling, kept so diagnostics and `Template.holes`
+    can show what the author actually wrote.
+    """
+
+    __slots__ = ("root", "steps", "text", "shirans")
+
+    def __init__(self, root: bool, steps: list, text: str, shirans=()):
+        self.root, self.steps, self.text = root, list(steps), text
+        self.shirans: list[str] = list(shirans)   # legal, but worth a word
+
+    def __eq__(self, other):
+        return (isinstance(other, Ref) and self.root == other.root
+                and self.steps == other.steps)
+
+    def __hash__(self):
+        return hash((self.root, tuple(map(str, self.steps))))
+
+    def __repr__(self):
+        return f"Ref({self.text!r})"
+
+
+def _ref_int(token: str) -> int:
+    """A bracket index. Decimal and non-negative: `xs[-1]` is reserved, not
+    supported, because refusing now and allowing later is the compatible
+    direction."""
+    if token.startswith("-"):
+        raise RefError(f"negative index {token!r} is reserved; index from "
+                       f"the front")
+    if not token.isdigit() or not token.isascii():
+        raise RefError(f"{token!r} is neither an identifier, a quoted key, "
+                       f"nor a number")
+    return int(token)
+
+
+def _split_subscript(text: str, i: int) -> tuple[str, int]:
+    """The content of the bracket opening at `text[i]`, and the index past
+    its `]`. Tracks nesting and quotes, so `a[b[c]]` and `a["]"]` both close
+    where they should."""
+    depth, j, quote = 0, i, ""
+    while j < len(text):
+        ch = text[j]
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return text[i + 1:j], j + 1
+        j += 1
+    raise RefError("unclosed '[' in a hole reference")
+
+
+def _find_hole_end(s: str, start: int) -> int:
+    """Index of the `}` that closes a hole opening before `start`, or -1.
+
+    Not `s.find("}")`: a quoted key may contain a brace, and a nested
+    subscript may contain brackets, so the scan has to track both.
+    """
+    depth, i, quote = 0, start, ""
+    while i < len(s):
+        ch = s[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+        elif ch == "}" and depth <= 0:
+            return i
+        i += 1
+    return -1
+
+
+def parse_ref(text: str) -> Ref:
+    """Parse a hole's interior. **The one implementation of the grammar.**
+
+    The lexer calls this to validate at scan time, so errors land at the
+    point of the mistake; the resolver and templates call it to traverse.
+    Two rules that must agree drift when written twice, and this grammar is
+    used in three places.
+    """
+    source, text = text, text.strip()
+    if not text:
+        raise RefError("empty hole '{}'")
+
+    root = False
+    if text == "__ROOT__" or text.startswith("__ROOT__."):
+        root, text = True, text[len("__ROOT__"):].lstrip(".")
+        if not text:
+            return Ref(True, [], source)
+
+    steps: list = []
+    shirans: list[str] = []
+    i, expect_name = 0, True
+    while i < len(text):
+        if text[i] == "[":
+            inner, i = _split_subscript(text, i)
+            step = _parse_subscript(inner, shirans)
+            steps.append(step)
+            if step[0] == "ref":
+                shirans.extend(step[1].shirans)
+            expect_name = False
+            continue
+        if text[i] == ".":
+            if expect_name:
+                raise RefError("empty segment in a hole reference "
+                               "(two dots, or a leading one)")
+            i, expect_name = i + 1, True
+            continue
+        j = i
+        while j < len(text) and text[j] not in ".[":
+            j += 1
+        seg = text[i:j]
+        _check_segment(seg)
+        steps.append(("key", seg))
+        i, expect_name = j, False
+    if expect_name:
+        raise RefError("a hole reference may not end with '.'")
+    return Ref(root, steps, source, shirans)
+
+
+def _parse_subscript(inner: str, shirans: list):
+    """`["k"]`, `[0]`, or `[ref]` — the three things a bracket may hold."""
+    inner = inner.strip()
+    if not inner:
+        raise RefError("empty subscript '[]'")
+    if inner[0] in "\"'":
+        if len(inner) < 2 or inner[-1] != inner[0]:
+            raise RefError(f"unterminated quoted key {inner!r}")
+        key = inner[1:-1]
+        if "\\" in key:
+            raise RefError("escapes in a quoted key are reserved; write the "
+                           "characters directly")
+        if key.isidentifier() and not is_dunder(key):
+            # Legal, and equivalent — but there is one canonical spelling.
+            # The register's middle rung: did you mean the plainer one?
+            shirans.append(f"[{inner[0]}{key}{inner[0]}] is the long way to "
+                           f"write .{key}; both name the same key")
+        return ("key", key)
+    if inner[0].isdigit() or inner[0] == "-":
+        return ("index", _ref_int(inner))
+    return ("ref", parse_ref(inner))
+
+
+def _check_segment(seg: str) -> None:
+    """SPEC §7's identifier rule, applied to a dotted segment."""
+    if not seg:
+        raise RefError("empty segment in a hole reference")
+    if seg == "__ROOT__":                     # before the dunder test, so
+        raise RefError("__ROOT__ is only valid as the first segment")
+    if is_dunder(seg):                        # the specific message wins
+        raise RefError(f"reserved name {seg!r} in hole "
+                       f"(only __ROOT__ is defined)")
+    if ":" in seg or "!" in seg:              # SPEC §5.1, reserved in §9
+        raise RefError("format specs and conversions are reserved; a hole "
+                       "names a value and does nothing else")
+    if not seg.isidentifier():
+        raise RefError(f"holes name document values; {seg!r} is not an "
+                       f"identifier{bad_segment_hint(seg)}")
+    if seg in KEYWORDS:
+        raise RefError(f"{seg!r} cannot be a hole name")
 
 
 DOLLAR_HINT = (" — if the `$` was meant as an environment variable, yapyon "
@@ -650,7 +851,7 @@ class Lexer:
                     keep(i, "{")
                     i += 2
                     continue
-                end = s.find("}", i + 1)
+                end = _find_hole_end(s, i + 1)
                 if end < 0:
                     self._akan("unclosed hole '{' (write '{{' for a literal "
                                "brace)", *at(i))
@@ -672,26 +873,16 @@ class Lexer:
         return chunks
 
     def _check_hole_name(self, name: str, line: int, col: int):
-        if not name:
-            self._akan("empty hole '{}'", line, col)
-        if ":" in name or "!" in name:            # SPEC §5.1, reserved in §9
-            self._akan("format specs and conversions are reserved; a hole "
-                       "names a value and does nothing else", line, col)
-        segs = name.split(".")
-        for idx, seg in enumerate(segs):
-            if seg == "__ROOT__":
-                if idx != 0:
-                    self._akan("__ROOT__ is only valid as the first segment",
-                               line, col)
-                continue
-            if is_dunder(seg):
-                self._akan(f"reserved name {seg!r} in hole "
-                           f"(only __ROOT__ is defined)", line, col)
-            if not seg.isidentifier():
-                self._akan(f"holes name document values; {seg!r} is not an "
-                           f"identifier{bad_segment_hint(seg)}", line, col)
-            if seg in KEYWORDS:
-                self._akan(f"{seg!r} cannot be a hole name", line, col)
+        """Validate at scan time, so a malformed reference akans where it was
+        written. `parse_ref` owns the grammar; this only supplies position."""
+        try:
+            ref = parse_ref(name)
+        except RefError as e:
+            self._akan(str(e), line, col)
+        for message in ref.shirans:
+            where = (f"line {line}, col {col}" if self.source is None
+                     else f"{self.source}:{line}:{col}")
+            self.warnings.append(f"shiran: {where}: {message}")
 
 
 def tokenize(text: str, *, source: str | None = None) -> list[Token]:

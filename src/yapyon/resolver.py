@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import base64
 
-from .lexer import DOLLAR_HINT, AkanError, Yakamashiwa
+from .lexer import DOLLAR_HINT, AkanError, Ref, Yakamashiwa, parse_ref
 from .parser import Mapping, MultiMap, Node, Scalar, Sequence, YString
 
 MAX_DEPTH = 32                       # §5.3, loader-overridable
@@ -245,14 +245,89 @@ class Resolver:
 
     # -- §5.2, the scope search ---------------------------------------------
     def _lookup(self, ref: str, site: _Site) -> Node:
-        segs = ref.split(".")
-        if segs[0] == "__ROOT__":
-            current, rest = self.root, segs[1:]
+        """Walk a parsed reference (SPEC §5.1) from its anchor to its target.
+
+        `a.b` is sugar for `a["b"]`, so both arrive here as the same step and
+        the equivalence needs no separate code path.
+        """
+        parsed = parse_ref(ref)
+        steps = list(parsed.steps)
+        if parsed.root:
+            current = self.root
         else:
-            current, rest = self._search(segs[0], site), segs[1:]
-        for seg in rest:
-            current = self._child(current, seg, ref, site.node)
+            if not steps or steps[0][0] != "key":
+                raise Yakamashiwa(f"reference {ref!r} does not begin with a "
+                                  f"name")
+            current = self._search(steps.pop(0)[1], site)
+        for step in steps:
+            current = self._step(current, step, ref, site)
         return current
+
+    def _step(self, node: Node, step, ref: str, site: _Site) -> Node:
+        """One traversal step: a key, an integer index, or a key named by
+        another reference."""
+        kind, payload = step
+        if kind == "ref":
+            # The inner reference resolves in the scope of the *y-string*,
+            # not of the node being indexed. `{mind.dialects[protocol]}`
+            # means "the entry named by *my* protocol".
+            key = self._subscript_value(payload, ref, site)
+            # A resolved key is whatever it resolved to: an int indexes a
+            # list, exactly as a literal one would. The two spellings of a
+            # subscript must not disagree about what the value means.
+            if isinstance(key, int):
+                return self._index(node, key, ref, site.node)
+            return self._child(node, key, ref, site.node, spelled_out=False)
+        if kind == "index":
+            return self._index(node, payload, ref, site.node)
+        return self._child(node, payload, ref, site.node, spelled_out=True)
+
+    def _subscript_value(self, inner: Ref, ref: str, site: _Site):
+        """Resolve `[someref]` to the key it names."""
+        target = self._lookup(inner.text, site)
+        if not isinstance(target, Scalar):
+            self._akan(f"{{{ref}}}: the subscript {{{inner.text}}} must name "
+                       f"a string or a number to use as a key, not a "
+                       f"container", site.node)
+        if target.type == "str":
+            return target.value
+        if target.type == "int":
+            return target.value
+        self._akan(f"{{{ref}}}: the subscript {{{inner.text}}} names a "
+                   f"{target.type}, which is not a key", site.node)
+
+    def _index(self, node: Node, i: int, ref: str, at: YString) -> Node:
+        if isinstance(node, MultiMap):
+            self._akan(f"{{{ref}}}: index a multimap's key view, not the "
+                       f"multimap — positional entry access is reserved", at)
+        if not isinstance(node, Sequence):
+            self._akan(f"{{{ref}}}: cannot index {i}, because the value "
+                       f"named before it is not a list", at)
+        if i >= len(node.items):
+            self._akan(f"{{{ref}}}: index {i} is past the end of a list of "
+                       f"{len(node.items)}", at)
+        return node.items[i]
+
+    def _child(self, node: Node, seg, ref: str, at: YString,
+               spelled_out: bool = True) -> Node:
+        if isinstance(seg, int):
+            self._akan(f"{{{ref}}}: {seg} is a number, and only a list takes "
+                       f"one — write a key here", at)
+        if isinstance(node, MultiMap):
+            # §7.1 by-key traversal is a LIST VIEW: every value filed under
+            # that key, in order. Nothing is picked, so nothing is guessed —
+            # 0 entries give an empty list, N give N.
+            items = [entry.value for entry in node.entries if entry.key == seg]
+            return Sequence(node.line, node.col, items)
+        if isinstance(node, Mapping):
+            if seg not in node.by_key:
+                self._akan(f"{{{ref}}}: there is no key {seg!r} here", at)
+            return node.by_key[seg]
+        if isinstance(node, Sequence):
+            self._akan(f"{{{ref}}}: cannot look up {seg!r} in a list; index "
+                       f"it with brackets instead", at)
+        self._akan(f"{{{ref}}}: cannot look up {seg!r}, because the value "
+                   f"named before it is not a mapping", at)
 
     def _search(self, name: str, site: _Site) -> Node:
         hits = []
@@ -275,18 +350,6 @@ class Resolver:
                 f"{mapping.by_key[name].line}) and shadows another (line "
                 f"{outer_map.by_key[name].line}){fix}", site.node)
         return mapping.by_key[name]
-
-    def _child(self, node: Node, seg: str, ref: str, at: YString) -> Node:
-        if isinstance(node, MultiMap):
-            self._akan(f"{{{ref}}} cannot traverse into a multimap; its keys "
-                       f"may repeat, so {seg!r} could name more than one "
-                       f"value", at)
-        if isinstance(node, Mapping):
-            if seg not in node.by_key:
-                self._akan(f"{{{ref}}}: there is no key {seg!r} here", at)
-            return node.by_key[seg]
-        self._akan(f"{{{ref}}}: cannot look up {seg!r}, because the value "
-                   f"named before it is not a mapping", at)
 
 
 def resolve(tree: Node, *, max_depth: int = MAX_DEPTH,

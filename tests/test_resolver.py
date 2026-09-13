@@ -103,8 +103,35 @@ def test_multimap_entry_keys_are_not_searched():
     akan('m:\n  + a: "A"\n  + b: y"{a}"\n', "no value named 'a'")
 
 
-def test_cannot_traverse_into_a_multimap():
-    akan('m:\n  + a: "A"\nu: y"{m.a}"\n', "cannot traverse into a multimap")
+def test_by_key_traversal_of_a_multimap_yields_a_list_view():
+    # supersedes "traversal into a multimap is akan": the reference names
+    # *every* value under that key, so nothing is picked and nothing guessed
+    doc = 'm:\n  + a: "A"\n  + b: "B"\n  + a: "C"\nu: y"{m.a[0]}{m.a[1]}"\n'
+    assert val(doc, "u") == "AC"
+
+
+def test_a_list_view_of_one_entry_is_still_a_list():
+    akan('m:\n  + a: "A"\nu: y"{m.a}"\n',
+         "cannot interpolate a list, dict, or multimap")
+
+
+def test_a_list_view_of_no_entries_is_empty_not_an_error():
+    # 0, 1 and N are the same shape — that is what makes the rule total
+    akan('m:\n  + a: "A"\nu: y"{m.nope[0]}"\n', "past the end of a list of 0")
+
+
+def test_a_multimap_list_view_keeps_document_order():
+    doc = 'm:\n  + a: "1"\n  + a: "2"\n  + a: "3"\nu: y"{m.a[2]}"\n'
+    assert val(doc, "u") == "3"
+
+
+def test_multimap_keys_still_do_not_join_the_scope_search():
+    # only explicit traversal into a *named* multimap reaches an entry
+    akan('m:\n  + a: "A"\nu: y"{a}"\n', "no value named 'a' is in scope here")
+
+
+def test_positional_access_to_a_multimap_is_reserved():
+    akan('m:\n  + a: "A"\nu: y"{m[0]}"\n', "positional entry access is reserved")
 
 
 def test_a_multimap_may_not_be_spliced_whole():
