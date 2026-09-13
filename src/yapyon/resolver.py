@@ -9,7 +9,9 @@ Three rules do all the work:
 
   * **Nearest wins** (§5.2). A reference's first segment is searched outward
     from the y-string's own position — siblings, then each enclosing mapping
-    in turn. Later segments are plain child traversal. `{__ROOT__.x}` skips
+    in turn. Later steps traverse from there: a key, a list index, or a key
+    named by another reference, which resolves in the y-string's scope and
+    not in the scope of the node being indexed. `{__ROOT__.x}` skips
     the search. Resolving locally while an outer candidate exists is legal
     but suspicious, so it emits a shiran.
   * **Lexeme, not value** (§5.4). `version: 3.10` splices the characters
