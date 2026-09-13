@@ -33,7 +33,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-Pre-alpha, and `0.1.0a1` means it. Lexer, parser, resolver and loader are
+Pre-alpha, and `0.1.0a2` means it. Lexer, parser, resolver and loader are
 done and tested — 318 tests, including a conformance suite that turns the
 splice matrix and the Python divergence table into executable cases.
 
@@ -81,7 +81,7 @@ This is why an implementation with no resolver can still be a conforming one:
 the safe subset is declared up front rather than carved out afterwards — and
 why the spec asks every implementation to say which of the two it provides.
 **yapyon implements the full form**, and so also loads records.
-*(New since `0.1.0a1`; `pip install --pre` does not have it yet.)*
+*(New in `0.1.0a2`.)*
 
 From a checkout, the stages will also dump what they see:
 

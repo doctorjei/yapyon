@@ -20,7 +20,7 @@ from .multimap import Entry, KeyView, OrderedMultimap
 from .template import Template
 from .loader import build, is_record, load, load_record, loads, loads_record
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0a2"
 __all__ = [
     # the everyday API
     "load", "loads", "build", "Template", "OrderedMultimap",
