@@ -116,6 +116,21 @@ class OrderedMultimap:
         for i in bucket:
             del self._seq[i]
 
+    def __eq__(self, other):
+        """SPEC §7.1: equal iff the entry sequences are equal.
+
+        Declining anything else with NotImplemented is what makes "never
+        equal to a mapping, even when its keys happen to be unique" true:
+        dict declines the reflected call in turn, so the answer is False
+        rather than a comparison of keys.
+        """
+        if not isinstance(other, OrderedMultimap):
+            return NotImplemented
+        return ([(e._key, e.value) for e in self]
+                == [(e._key, e.value) for e in other])
+
+    __hash__ = None                 # mutable, like dict and list
+
     def __getitem__(self, key):
         return KeyView(self, key)
 

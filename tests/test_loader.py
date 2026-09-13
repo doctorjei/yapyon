@@ -90,6 +90,18 @@ def test_a_loaded_multimap_reprs_its_timeline():
     assert repr(mm) == "OrderedMultimap([('a', 1), ('b', 2), ('a', 3)])"
 
 
+def test_multimaps_are_equal_iff_their_entry_sequences_are():
+    text = 'm:\n  + a: 1\n  + b: 2\n  + a: 3\n'
+    assert loads(text)["m"] == loads(text)["m"]
+    assert loads(text)["m"] != loads('m:\n  + a: 1\n  + a: 3\n  + b: 2\n')["m"]
+
+
+def test_a_multimap_is_never_equal_to_a_mapping():
+    # even when its keys happen to be unique (§7.1)
+    mm = loads('m:\n  + a: 1\n')["m"]
+    assert mm != {"a": 1} and {"a": 1} != mm
+
+
 def test_multimap_entry_values_are_built_too():
     mm = loads('m:\n  + a:\n      k: [1, 2]\n')["m"]
     assert mm["a"].values() == ({"k": [1, 2]},)
