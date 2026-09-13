@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .lexer import AkanError, Lexer, Token, Yakamashiwa
+from .lexer import AkanError, Lexer, Token, Yakamashiwa, is_dunder
 
 
 # --------------------------------------------------------------------------- #
@@ -255,14 +255,28 @@ class Parser:
         self._akan(f"a block holds {_BLOCK_FORM[own]} or "
                    f"{_BLOCK_FORM[tok.kind]}, not both", tok)
 
-    def _pair(self, first_line: dict[str, int]) -> Pair:
-        key_tok = self._advance()                # NAME
-        self._advance()                          # COLON
+    def _check_key(self, key_tok: Token, first_line: dict[str, int]) -> str:
+        """SPEC §7's rules on a name in key position, in one place.
+
+        Block pairs and flow maps both come here so the two cannot drift —
+        they held separate copies of the duplicate check before.
+        """
         key = key_tok.value
-        if key in first_line:                    # SPEC §7
+        if is_dunder(key):
+            self._akan(f"{key!r} cannot be a key: dunder names are reserved "
+                       f"for yapyon's own (only __ROOT__ is defined), so no "
+                       f"hole could ever name it — drop the leading and "
+                       f"trailing '__'", key_tok)
+        if key in first_line:
             self._akan(f"duplicate key {key!r} (first defined on line "
                        f"{first_line[key]})", key_tok)
         first_line[key] = key_tok.line
+        return key
+
+    def _pair(self, first_line: dict[str, int]) -> Pair:
+        key_tok = self._advance()                # NAME
+        self._advance()                          # COLON
+        key = self._check_key(key_tok, first_line)
 
         if self._at("NEWLINE"):                  # value is an indented block
             self._advance()
@@ -401,11 +415,7 @@ class Parser:
             self._advance()
             self._expect("COLON", f"expected ':' after the key "
                                   f"{key_tok.value!r}")
-            key = key_tok.value
-            if key in first_line:                # SPEC §7
-                self._akan(f"duplicate key {key!r} (first defined on line "
-                           f"{first_line[key]})", key_tok)
-            first_line[key] = key_tok.line
+            key = self._check_key(key_tok, first_line)
             pairs.append(Pair(key_tok.line, key_tok.col, key,
                               self._flow_value()))
             if self._at("COMMA"):

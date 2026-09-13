@@ -261,6 +261,53 @@ def test_keywords_are_not_keys():
     akan("True: 1\n", "'True' is a keyword, not a key")
 
 
+def test_dunder_keys_are_akan():
+    # the dunder namespace belongs to yapyon, not to the document (§7)
+    akan("__foo__: 1\n", "'__foo__' cannot be a key")
+    akan("x: {__foo__: 1}\n", "cannot be a key")
+    akan("m:\n  + __foo__: 1\n", "cannot be a key")
+
+
+def test_dunder_keys_are_akan_at_the_key():
+    with pytest.raises(AkanError) as e:
+        parse("a: 1\n__b__: 2\n")
+    assert (e.value.line, e.value.col) == (2, 0)
+
+
+def test_the_dunder_key_akan_names_the_fix():
+    akan("__foo__: 1\n", "drop the leading and trailing '__'")
+
+
+def test_a_single_leading_underscore_is_an_ordinary_key():
+    # `_foo` and `__foo` are not dunders; only both ends counts
+    node = parse("_foo: 1\n__foo: 2\nfoo__: 3\n")
+    assert set(node.by_key) == {"_foo", "__foo", "foo__"}
+
+
+def test_bare_underscores_count_as_dunder():
+    # reserving a little more than __x__ costs nothing, and matches the
+    # predicate the hole scanner has always used
+    akan("__: 1\n", "cannot be a key")
+    akan("___: 1\n", "cannot be a key")
+
+
+def test_root_cannot_be_a_key():
+    # it was legal *and* unaddressable before the rule landed
+    akan("__ROOT__: 1\n", "'__ROOT__' cannot be a key")
+
+
+def test_every_key_is_addressable_from_a_hole():
+    # §7's closing bullet, now true: the key rule and the hole-segment rule
+    # share one predicate, so neither admits what the other refuses
+    from yapyon.lexer import is_dunder
+    from yapyon import loads
+    assert loads('a: "x"\nb: y"{a}"\n')["b"] == "x"
+    for name in ("__foo__", "__", "___", "__ROOT__"):
+        assert is_dunder(name)                    # refused in both positions
+    for name in ("_foo", "__foo", "foo__", "foo"):
+        assert not is_dunder(name)                # admitted in both
+
+
 # --------------------------------------------------------------------------- #
 # SPEC §3 / §5.4 — what the resolver will need off a scalar
 # --------------------------------------------------------------------------- #

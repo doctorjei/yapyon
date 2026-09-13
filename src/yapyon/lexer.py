@@ -116,6 +116,21 @@ def _digit(ch: str) -> bool:
     return ch.isdigit() and ch.isascii()
 
 
+def is_dunder(name: str) -> bool:
+    """True for names the __dunder__ namespace reserves for yapyon itself.
+
+    **One predicate, two rules** (SPEC §5.1 and §7): a hole segment spelled
+    this way names one of yapyon's own built-ins — only `__ROOT__` in v0.1 —
+    and a *key* spelled this way is akan, so no document can define a name it
+    could never address. The parser imports this rather than repeating the
+    test, because two rules that must agree will drift when written twice.
+
+    `__` and `___` count. Reserving a little more than `__x__` costs nothing,
+    and widening later is compatible where narrowing is not.
+    """
+    return name.startswith("__") and name.endswith("__")
+
+
 def _id_continue(ch: str) -> bool:
     """True for XID_Continue (SPEC §7).  ``("a" + ch).isidentifier()`` is
     exactly that test, which keeps the Unicode tables in `str`.  The explicit
@@ -630,7 +645,7 @@ class Lexer:
                     self._akan("__ROOT__ is only valid as the first segment",
                                line, col)
                 continue
-            if seg.startswith("__") and seg.endswith("__"):
+            if is_dunder(seg):
                 self._akan(f"reserved name {seg!r} in hole "
                            f"(only __ROOT__ is defined)", line, col)
             if not seg.isidentifier():
