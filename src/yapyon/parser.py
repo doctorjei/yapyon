@@ -180,10 +180,12 @@ class Parser:
     """Recursive descent over a token stream.  `warnings` carries shiran
     diagnostics forward from the lexer; the loader (SPEC §6) surfaces them."""
 
-    def __init__(self, tokens: list[Token], warnings: list[str] | None = None):
+    def __init__(self, tokens: list[Token], warnings: list[str] | None = None,
+                 *, source: str | None = None):
         self.toks = tokens
         self.i = 0
         self.warnings: list[str] = list(warnings or [])
+        self.source = source              # a name for diagnostics, if known
 
     # -- token helpers -------------------------------------------------------
     def _peek(self, n: int = 0) -> Token:
@@ -200,7 +202,7 @@ class Parser:
 
     def _akan(self, msg: str, tok: Token | None = None):
         at = self._peek() if tok is None else tok
-        raise AkanError(msg, at.line, at.col)
+        raise AkanError(msg, at.line, at.col, self.source)
 
     def _expect(self, kind: str, msg: str) -> Token:
         if not self._at(kind):
@@ -430,16 +432,17 @@ class Parser:
 # --------------------------------------------------------------------------- #
 # Entry points
 # --------------------------------------------------------------------------- #
-def parse_tokens(tokens: list[Token], warnings: list[str] | None = None) -> Node:
-    return Parser(tokens, warnings).parse()
+def parse_tokens(tokens: list[Token], warnings: list[str] | None = None,
+                 *, source: str | None = None) -> Node:
+    return Parser(tokens, warnings, source=source).parse()
 
 
-def parse(text: str) -> Node:
+def parse(text: str, *, source: str | None = None) -> Node:
     """Text to AST.  Holes are left unresolved (SPEC §5 is the resolver's);
     the loader will drive `Parser` directly to reach its warnings."""
-    lexer = Lexer(text)
+    lexer = Lexer(text, source=source)
     tokens = lexer.tokenize()
-    return Parser(tokens, lexer.warnings).parse()
+    return Parser(tokens, lexer.warnings, source=source).parse()
 
 
 def dump(node: Node, level: int = 0) -> str:

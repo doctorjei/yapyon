@@ -34,44 +34,57 @@ from .resolver import MAX_DEPTH, MAX_SIZE, resolve
 from .template import Template
 
 
-def build(node):
-    """A resolved AST to plain Python objects."""
+def build(node, source: str | None = None):
+    """A resolved AST to plain Python objects.
+
+    `source` is carried only so a `Template` can name its origin when it
+    akans at fill, long after the document is gone.
+    """
     if isinstance(node, Scalar):
         return node.value
     if isinstance(node, Mapping):
-        return {pair.key: build(pair.value) for pair in node.pairs}
+        return {pair.key: build(pair.value, source) for pair in node.pairs}
     if isinstance(node, Sequence):
-        return [build(item) for item in node.items]
+        return [build(item, source) for item in node.items]
     if isinstance(node, MultiMap):
         multimap = OrderedMultimap()
         for entry in node.entries:
-            multimap.insert(entry.key, build(entry.value))
+            multimap.insert(entry.key, build(entry.value, source))
         return multimap
     if isinstance(node, YString):
         if node.prefix != "yt":
             raise Yakamashiwa(f"unresolved {node.prefix}-string reached the "
                               f"loader")
-        return Template(node.parts, node.line, node.col)
+        return Template(node.parts, node.line, node.col, source)
     raise Yakamashiwa(f"unknown node type {type(node).__name__}")
 
 
 def loads(text: str, *, warn=None, max_depth: int = MAX_DEPTH,
-          max_size: int = MAX_SIZE):
-    """Load a document from text."""
-    lexer = Lexer(text)
-    parser = Parser(lexer.tokenize(), lexer.warnings)
+          max_size: int = MAX_SIZE, source: str | None = None):
+    """Load a document from text.
+
+    `source` names the text for diagnostics — pass it when the caller knows
+    where the bytes came from, and every akan reports `name:line:col`.
+    """
+    lexer = Lexer(text, source=source)
+    parser = Parser(lexer.tokenize(), lexer.warnings, source=source)
     tree = parser.parse()
     if warn is not None:
         for message in parser.warnings:
             warn(message)
     return build(resolve(tree, warn=warn, max_depth=max_depth,
-                         max_size=max_size))
+                         max_size=max_size, source=source), source)
 
 
 def load(fp, *, warn=None, max_depth: int = MAX_DEPTH,
-         max_size: int = MAX_SIZE):
-    """Load a document from an open file (text mode, UTF-8)."""
-    return loads(fp.read(), warn=warn, max_depth=max_depth, max_size=max_size)
+         max_size: int = MAX_SIZE, source: str | None = None):
+    """Load a document from an open file (text mode, UTF-8).
+
+    `source` defaults to the file's own name when it has one, so reading a
+    file gets located diagnostics without the caller asking.
+    """
+    return loads(fp.read(), warn=warn, max_depth=max_depth,
+                 max_size=max_size, source=_name_of(fp, source))
 
 
 # --------------------------------------------------------------------------- #
@@ -84,7 +97,13 @@ def load(fp, *, warn=None, max_depth: int = MAX_DEPTH,
 _DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR"})
 
 
-def _refuse_deferred(tokens) -> None:
+def _name_of(fp, source: str | None) -> str | None:
+    """An explicit `source` wins; otherwise the file's own name, if it has
+    one. StringIO has none, which is why this is not just `fp.name`."""
+    return source if source is not None else getattr(fp, "name", None)
+
+
+def _refuse_deferred(tokens, source: str | None = None) -> None:
     """Enforce the record rule as a filter over the token stream.
 
     In the loader rather than the lexer on purpose: a mode flag reaching the
@@ -96,21 +115,24 @@ def _refuse_deferred(tokens) -> None:
             raise AkanError(
                 f"a record's leaves must all be literals; a "
                 f"{tok.prefix}-string defers its value (load with "
-                f"yapyon.loads for the full form)", tok.line, tok.col)
+                f"yapyon.loads for the full form)", tok.line, tok.col,
+                source)
 
 
-def is_record(text: str) -> bool:
+def is_record(text: str, *, source: str | None = None) -> bool:
     """True if every leaf element of `text` has a literal value.
 
     Lexes and looks; no parse. So this answers the *record* question only —
     text that lexes but does not parse still gets an answer here, and the
     parse error surfaces when it is loaded. Text that does not lex raises,
-    there being no document to answer about.
+    there being no document to answer about — hence `source`, which names it
+    in that akan.
     """
-    return not any(tok.kind in _DEFERRED_KINDS for tok in Lexer(text).tokenize())
+    return not any(tok.kind in _DEFERRED_KINDS
+                   for tok in Lexer(text, source=source).tokenize())
 
 
-def loads_record(text: str, *, warn=None):
+def loads_record(text: str, *, warn=None, source: str | None = None):
     """Load a yapyon record from text — the fixed, literal-only form.
 
     A separate function rather than `loads(..., record=True)`: it reads
@@ -122,17 +144,17 @@ def loads_record(text: str, *, warn=None):
     asking whether something belongs to the subset is only meaningful once it
     belongs to the set.
     """
-    lexer = Lexer(text)
+    lexer = Lexer(text, source=source)
     tokens = lexer.tokenize()
-    parser = Parser(tokens, lexer.warnings)
+    parser = Parser(tokens, lexer.warnings, source=source)
     tree = parser.parse()
-    _refuse_deferred(tokens)
+    _refuse_deferred(tokens, source)
     if warn is not None:
         for message in parser.warnings:
             warn(message)
-    return build(tree)
+    return build(tree, source)
 
 
-def load_record(fp, *, warn=None):
+def load_record(fp, *, warn=None, source: str | None = None):
     """Load a record from an open file (text mode, UTF-8)."""
-    return loads_record(fp.read(), warn=warn)
+    return loads_record(fp.read(), warn=warn, source=_name_of(fp, source))

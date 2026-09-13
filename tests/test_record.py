@@ -155,7 +155,8 @@ def test_a_record_takes_no_resolver_caps():
     # max_depth/max_size are §5.3 resolver limits; there is no resolver here
     import inspect
     params = inspect.signature(loads_record).parameters
-    assert set(params) == {"text", "warn"}
+    assert "max_depth" not in params and "max_size" not in params
+    assert "text" in params and "warn" in params
 
 
 def test_the_package_exposes_the_record_api():

@@ -45,11 +45,23 @@ from dataclasses import dataclass, field
 # Diagnostics
 # --------------------------------------------------------------------------- #
 class AkanError(Exception):
-    """A yapyon syntax error.  あかん。"""
+    """A yapyon syntax error.  あかん。
 
-    def __init__(self, msg: str, line: int, col: int):
-        self.msg, self.line, self.col = msg, line, col
-        super().__init__(f"akan: line {line}, col {col}: {msg}")
+    `source` names where the text came from, when the caller knows. A loader
+    that parses several fragments and merges them — which is the whole point
+    of exposing `parse`/`resolve`/`build` separately — otherwise reports a
+    line and column into an unidentifiable fragment.
+
+    With a source the message takes the `file:line:col:` form editors and
+    compilers already understand; without one it is unchanged, so nothing
+    that reads the old wording breaks.
+    """
+
+    def __init__(self, msg: str, line: int, col: int, source: str | None = None):
+        self.msg, self.line, self.col, self.source = msg, line, col, source
+        where = (f"line {line}, col {col}" if source is None
+                 else f"{source}:{line}:{col}")
+        super().__init__(f"akan: {where}: {msg}")
 
 
 class Yakamashiwa(Exception):
@@ -143,8 +155,9 @@ def _id_continue(ch: str) -> bool:
 # Lexer
 # --------------------------------------------------------------------------- #
 class Lexer:
-    def __init__(self, text: str):
+    def __init__(self, text: str, *, source: str | None = None):
         self.text = text
+        self.source = source                  # a name for diagnostics, if known
         self.pos = 0
         self.line = 1
         self.col = 0                          # 0-based column
@@ -176,7 +189,7 @@ class Lexer:
 
     def _akan(self, msg: str, line=None, col=None):
         raise AkanError(msg, self.line if line is None else line,
-                        self.col if col is None else col)
+                        self.col if col is None else col, self.source)
 
     # -- top level -----------------------------------------------------------
     def tokenize(self) -> list[Token]:
@@ -656,8 +669,8 @@ class Lexer:
                 self._akan(f"{seg!r} cannot be a hole name", line, col)
 
 
-def tokenize(text: str) -> list[Token]:
-    return Lexer(text).tokenize()
+def tokenize(text: str, *, source: str | None = None) -> list[Token]:
+    return Lexer(text, source=source).tokenize()
 
 
 if __name__ == "__main__":

@@ -29,11 +29,13 @@ class Template:
     """An unfilled yt literal.  `parts` alternates ("text", str) and
     ("hole", "a.b"), exactly as the lexer scanned it."""
 
-    __slots__ = ("parts", "line", "col")
+    __slots__ = ("parts", "line", "col", "source")
 
-    def __init__(self, parts, line: int = 0, col: int = 0):
+    def __init__(self, parts, line: int = 0, col: int = 0,
+                 source: str | None = None):
         self.parts = list(parts)
         self.line, self.col = line, col
+        self.source = source          # where the yt literal was written, if known
 
     @property
     def holes(self) -> tuple:
@@ -51,7 +53,7 @@ class Template:
 
     # -- internals -----------------------------------------------------------
     def _akan(self, msg: str):
-        raise AkanError(msg, self.line, self.col)
+        raise AkanError(msg, self.line, self.col, self.source)
 
     def _lookup(self, ref: str, scope: dict):
         segs = ref.split(".")

@@ -98,8 +98,9 @@ def _index_slot(seq: Sequence, index: int):
 # --------------------------------------------------------------------------- #
 class Resolver:
     def __init__(self, tree: Node, *, max_depth: int = MAX_DEPTH,
-                 max_size: int = MAX_SIZE, warn=None):
+                 max_size: int = MAX_SIZE, warn=None, source: str | None = None):
         self.root = tree
+        self.source = source                 # a name for diagnostics, if known
         self.max_depth = max_depth
         self.max_size = max_size
         self._warn = warn
@@ -109,10 +110,12 @@ class Resolver:
 
     # -- diagnostics ---------------------------------------------------------
     def _akan(self, msg: str, at: Node):
-        raise AkanError(msg, at.line, at.col)
+        raise AkanError(msg, at.line, at.col, self.source)
 
     def _shiran(self, msg: str, at: Node):
-        text = f"shiran: line {at.line}, col {at.col}: {msg}"
+        where = (f"line {at.line}, col {at.col}" if self.source is None
+                 else f"{self.source}:{at.line}:{at.col}")
+        text = f"shiran: {where}: {msg}"
         self.warnings.append(text)
         if self._warn is not None:
             self._warn(text)
@@ -267,8 +270,9 @@ class Resolver:
 
 
 def resolve(tree: Node, *, max_depth: int = MAX_DEPTH,
-            max_size: int = MAX_SIZE, warn=None) -> Node:
+            max_size: int = MAX_SIZE, warn=None,
+            source: str | None = None) -> Node:
     """Resolve every y/ry/yb literal in `tree`, in place. Returns the tree
     (which may itself be replaced, if the whole document was a y-string)."""
     return Resolver(tree, max_depth=max_depth, max_size=max_size,
-                    warn=warn).resolve()
+                    warn=warn, source=source).resolve()
