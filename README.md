@@ -47,6 +47,7 @@ supports. The spec asks every implementation to say where its tables come
 from; yapyon inherits the host interpreter's, so a newer Python accepts
 codepoints assigned after Unicode 14 that an older one rejects. Keys drawn
 from Unicode 14 mean the same thing on every supported install.
+`yapyon.UNICODE_VERSION` reports what the install in front of you carries.
 
 ```console
 $ pip install --pre yapyon

@@ -14,6 +14,7 @@ import warnings
 
 import pytest
 
+import yapyon
 from yapyon import (AkanError, OrderedMultimap, Template, is_record, loads,
                     loads_record)
 
@@ -310,3 +311,14 @@ def test_a_multimap_is_plain_data_and_survives_into_a_record():
     mm = loads_record("m:\n  + a: 1\n  + a: 2\n")["m"]
     assert isinstance(mm, OrderedMultimap)
     assert [(k, v) for k, v in mm] == [("a", 1), ("a", 2)]
+
+
+def test_unicode_version_reports_this_installs_tables():
+    # §7: an implementation must document where its identifier tables come
+    # from. yapyon's are the host interpreter's, so it reports rather than
+    # claims -- and reports the *same* tables isidentifier() actually uses.
+    import unicodedata
+    assert yapyon.UNICODE_VERSION == unicodedata.unidata_version
+    # The guaranteed floor is Python 3.11's, and no supported host is older.
+    major, minor, _ = yapyon.UNICODE_VERSION.split(".")
+    assert (int(major), int(minor)) >= (14, 0)
