@@ -34,6 +34,7 @@ hands the consumer the parts with their resolved values.
 from __future__ import annotations
 
 import base64
+import json
 
 from .lexer import DOLLAR_HINT, AkanError, Ref, Yakamashiwa, parse_ref
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
@@ -264,9 +265,18 @@ class Resolver:
         the equivalence needs no separate code path.
         """
         parsed = parse_ref(ref)
-        steps = list(parsed.steps)
-        if parsed.key:                               # §9: names a position
+        if parsed.key:                               # §5.1.1: names a position
             return self._key_of(parsed, ref, site)
+        if parsed.serializer:                        # §5.1.2: names an encoding
+            return self._serialize(parsed, ref, site)
+        return self._lookup_parsed(parsed, ref, site)
+
+    def _lookup_parsed(self, parsed: Ref, ref: str, site: _Site) -> Node:
+        """The anchor-then-steps walk, given an already-parsed reference.
+
+        Split out so a serializer can reach the value it encodes without
+        re-parsing, and without a second copy of the traversal."""
+        steps = list(parsed.steps)
         if parsed.root:
             current = self.root
         elif parsed.parents:
@@ -304,6 +314,30 @@ class Resolver:
                        site.node)
         name = site.chain[parsed.parents][1]
         return Scalar(site.node.line, site.node.col, "str", name)
+
+    # -- §5.1.2 named serializers -------------------------------------------
+    def _serialize(self, parsed: Ref, ref: str, site: _Site) -> Node:
+        """`{cfg.__AS_JSON__()}` — the author naming a container's encoding.
+
+        This is the bridge law's reserved extension (law 1's list, §5.5's
+        container cell), not a function call: a serializer takes no arguments,
+        cannot be composed, and the set of them belongs to the *format*. That
+        is the line between this and the consumer-registered functions that
+        are still undesigned — naming an encoding is not computing a value,
+        exactly as `b64"..."` is not computation.
+        """
+        inner = Ref(parsed.root, parsed.steps, ref, parents=parsed.parents)
+        target = self._lookup_parsed(inner, ref, site)
+        if not isinstance(target, (Mapping, Sequence, MultiMap)):
+            self._akan(f"{{{ref}}}: {parsed.serializer}() encodes a list or a "
+                       f"mapping; applying one to a single value is reserved",
+                       site.node)
+        try:
+            text = json.dumps(_json_value(target), ensure_ascii=False,
+                              separators=(",", ":"), allow_nan=False)
+        except _NotJSON as exc:
+            self._akan(f"{{{ref}}}: {exc}", site.node)
+        return Scalar(site.node.line, site.node.col, "str", text)
 
     def _too_far(self, hops: int, site: _Site) -> str:
         depth = len(site.chain)
@@ -396,6 +430,36 @@ class Resolver:
         # DESIGN_RATIONALE.md's diagnostics-register section.
         level, mapping = hits[0]
         return mapping.by_key[name]
+
+
+class _NotJSON(Exception):
+    """A value JSON cannot carry faithfully, with the reason."""
+
+
+def _json_value(node: Node):
+    """JSON's view of the tree — SPEC §5.1.2.
+
+    Deliberately *not* `loader.build`: this refuses two things build accepts,
+    and it must refuse them rather than let `json.dumps` improvise. It is a
+    small walker over three node kinds, not a second loader.
+    """
+    if isinstance(node, Mapping):
+        return {pair.key: _json_value(pair.value) for pair in node.pairs}
+    if isinstance(node, Sequence):
+        return [_json_value(item) for item in node.items]
+    if isinstance(node, MultiMap):
+        raise _NotJSON("a multimap's keys repeat and a JSON object's cannot, "
+                       "so there is no faithful encoding; encode the entries "
+                       "you mean")
+    if isinstance(node, Scalar):
+        if node.type == "bytes":
+            raise _NotJSON("JSON has no bytes and names no encoding for them "
+                           "(law 5); spell the text you want")
+        # Numbers encode by JSON's rules, not §5.4's lexeme: inside a JSON
+        # document `3.10` and `3.1` are the same number, and the lexeme rule
+        # is about splicing yapyon source, which this is not.
+        return node.value
+    raise _NotJSON(f"{type(node).__name__} has no JSON encoding")
 
 
 def _lexeme(target: Scalar) -> str:

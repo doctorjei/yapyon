@@ -287,3 +287,65 @@ def test_the_anchors_are_positional_and_the_grammar_says_so(ref, needle):
     with pytest.raises(RefError) as e:
         parse_ref(ref)
     assert needle in str(e.value)
+
+
+# --------------------------------------------------------------------------- #
+# SPEC §5.1.2 — named container serializers
+# --------------------------------------------------------------------------- #
+def test_a_container_crosses_into_text_when_the_author_names_the_encoding():
+    # law 5's reserved extension: §5.5 bars a bare container, and this is the
+    # named bridge, exactly as b64"..." is the named bridge for bytes
+    d = loads('cfg:\n  name: "gw"\n  port: 8080\n  xs: [1, 2]\n'
+              'u: y"payload={cfg.__AS_JSON__()}"\n')
+    assert d["u"] == 'payload={"name":"gw","port":8080,"xs":[1,2]}'
+
+
+def test_the_encoding_is_canonical():
+    # compact, document order (not sorted -- order is data in yapyon), and
+    # UTF-8 left as itself rather than escaped
+    d = loads('cfg:\n  z: 1\n  a: "café"\n  t: True\n  n: None\n'
+              'u: y"{cfg.__AS_JSON__()}"\n')
+    assert d["u"] == '{"z":1,"a":"café","t":true,"n":null}'
+
+
+def test_a_serialized_container_may_be_carried_by_a_template():
+    t = loads('cfg: {x: 1}\nt: yt"{cfg.__AS_JSON__()}"\n')["t"]
+    assert t.values == ('{"x":1}',)
+
+
+def test_a_serializer_follows_the_anchors_like_any_reference():
+    d = loads('a:\n  cfg: {x: 1}\n  u: y"{__PARENT__.cfg.__AS_JSON__()}"\n')
+    assert d["a"]["u"] == '{"x":1}'
+
+
+def test_a_multimap_has_no_faithful_json_encoding():
+    # law 1: repeated keys cannot survive a JSON object, so refuse rather
+    # than pick one of the readings
+    akan('m:\n  + k: 1\n  + k: 2\nu: y"{m.__AS_JSON__()}"\n',
+         "there is no faithful encoding")
+
+
+def test_bytes_inside_a_container_are_akan():
+    # law 5 again: JSON names no encoding for bytes, so the bridge is absent
+    akan('c:\n  b: b64"aGk="\nu: y"{c.__AS_JSON__()}"\n', "JSON has no bytes")
+
+
+def test_serializing_a_single_value_is_reserved():
+    # narrowing later would not be compatible; this leaves the door open
+    akan('n: 5\nu: y"{n.__AS_JSON__()}"\n', "is reserved")
+
+
+@pytest.mark.parametrize("ref,needle", [
+    ("cfg.__AS_TOML__()", "reserved for a future version"),
+    ("cfg.__AS_YAML__()", "reserved for a future version"),
+    ("cfg.__AS_XML__()", "there is no serializer named"),
+    ("cfg.foo()", "not a serializer"),
+    ("__AS_JSON__()", "needs a value to encode"),
+    ("__KEY__.__AS_JSON__()", "a key is already text"),
+])
+def test_the_serializer_set_belongs_to_the_format(ref, needle):
+    # a closed, format-defined set is the line between this and the
+    # consumer-registered functions that remain undesigned
+    with pytest.raises(RefError) as e:
+        parse_ref(ref)
+    assert needle in str(e.value)

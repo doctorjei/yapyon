@@ -163,14 +163,16 @@ class Ref:
     can show what the author actually wrote.
     """
 
-    __slots__ = ("root", "steps", "text", "shirans", "parents", "key")
+    __slots__ = ("root", "steps", "text", "shirans", "parents", "key",
+                 "serializer")
 
     def __init__(self, root: bool, steps: list, text: str, shirans=(),
-                 parents: int = 0, key: bool = False):
+                 parents: int = 0, key: bool = False, serializer: str = ""):
         self.root, self.steps, self.text = root, list(steps), text
         self.shirans: list[str] = list(shirans)   # legal, but worth a word
         self.parents = parents      # §9: how many __PARENT__ hops, 0 if none
         self.key = key              # §9: ends in __KEY__, naming a position
+        self.serializer = serializer   # §5.1.2: "__AS_JSON__", or "" 
 
     def __eq__(self, other):
         return (isinstance(other, Ref) and self.root == other.root
@@ -274,11 +276,28 @@ def parse_ref(text: str) -> Ref:
         if not text:
             return Ref(False, [], source, parents=parents)
 
+    # §9's named serializers end a reference too: they name an *encoding* of
+    # the value reached, so nothing can follow one.
+    serializer = ""
+    if text.endswith(")"):
+        head, _, call = text.rpartition(".")
+        if call.endswith("()") and is_dunder(call[:-2]):
+            serializer = _check_serializer(call[:-2])
+            if not head:
+                raise RefError(f"{call} needs a value to encode; write "
+                               f"{{something.{call}}}")
+            text = head
+        elif call.endswith("()"):
+            raise RefError(f"{call[:-2]!r} is not a serializer; the named "
+                           f"ones are spelled __AS_X__()")
+
     # `__KEY__` names a *position*, so it ends the reference and may follow
     # only an anchor -- never data traversal. After `a.b` the key is the
     # literal "b", which the author already wrote, so nothing is lost by
     # barring it, and narrowing later would not be compatible.
     if text == "__KEY__":
+        if serializer:
+            raise RefError("a key is already text; it needs no serializer")
         if root:
             raise RefError("the document root has no key, so "
                            "{__ROOT__.__KEY__} can never name anything")
@@ -311,7 +330,21 @@ def parse_ref(text: str) -> Ref:
         i, expect_name = j, False
     if expect_name:
         raise RefError("a hole reference may not end with '.'")
-    return Ref(root, steps, source, shirans, parents=parents)
+    return Ref(root, steps, source, shirans, parents=parents,
+               serializer=serializer)
+
+
+SERIALIZERS = {"__AS_JSON__"}           # §5.1.2; the set is the format's
+_RESERVED_SERIALIZERS = {"__AS_TOML__", "__AS_YAML__"}
+
+
+def _check_serializer(name: str) -> str:
+    if name in SERIALIZERS:
+        return name
+    if name in _RESERVED_SERIALIZERS:
+        raise RefError(f"{name}() is reserved for a future version")
+    raise RefError(f"there is no serializer named {name}(); v0.1 defines "
+                   f"{', '.join(sorted(SERIALIZERS))}()")
 
 
 def _leads(text: str, anchor: str) -> bool:
