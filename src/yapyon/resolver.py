@@ -265,8 +265,12 @@ class Resolver:
         """
         parsed = parse_ref(ref)
         steps = list(parsed.steps)
+        if parsed.key:                               # §9: names a position
+            return self._key_of(parsed, ref, site)
         if parsed.root:
             current = self.root
+        elif parsed.parents:
+            current = self._climb(parsed.parents, ref, site)
         else:
             if not steps or steps[0][0] != "key":
                 raise Yakamashiwa(f"reference {ref!r} does not begin with a "
@@ -275,6 +279,37 @@ class Resolver:
         for step in steps:
             current = self._step(current, step, ref, site)
         return current
+
+    # -- §9's relative anchors ----------------------------------------------
+    #
+    # `site.chain` is `[(mapping, key), ...]` innermost first, where entry 0 is
+    # the mapping directly holding this pair and the key is the pair's own.
+    # `__PARENT__` climbs **that** chain — the same one §5.2 searches — so
+    # sequence and multimap levels are transparent to it exactly as they are to
+    # the scope search. One notion of nesting, not two: a second one would be
+    # the drift trap, and a list has no key for `__KEY__` to report anyway.
+    def _climb(self, hops: int, ref: str, site: _Site) -> Node:
+        if hops > len(site.chain):
+            self._akan(f"{{{ref}}}: {self._too_far(hops, site)}", site.node)
+        return site.chain[hops - 1][0]
+
+    def _key_of(self, parsed: Ref, ref: str, site: _Site) -> Node:
+        """`__KEY__`: the key of the pair this hole sits in, or of an
+        enclosing one. A key is always a UAX #31 identifier, so it is
+        closure-safe as text by construction (§5.5); into a `yb` it is
+        text→bytes and the ordinary law-5 akan catches it with no special
+        case here."""
+        if parsed.parents >= len(site.chain):
+            self._akan(f"{{{ref}}}: {self._too_far(parsed.parents + 1, site)}",
+                       site.node)
+        name = site.chain[parsed.parents][1]
+        return Scalar(site.node.line, site.node.col, "str", name)
+
+    def _too_far(self, hops: int, site: _Site) -> str:
+        depth = len(site.chain)
+        return (f"{hops} levels up from here is past the document root, which "
+                f"is {depth} level{'' if depth == 1 else 's'} away and has no "
+                f"key of its own")
 
     def _step(self, node: Node, step, ref: str, site: _Site) -> Node:
         """One traversal step: a key, an integer index, or a key named by

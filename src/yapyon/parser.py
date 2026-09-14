@@ -283,7 +283,8 @@ class Parser:
         key = key_tok.value
         if is_dunder(key):
             self._akan(f"{key!r} cannot be a key: dunder names are reserved "
-                       f"for yapyon's own (only __ROOT__ is defined), so no "
+                       f"for yapyon's own (__ROOT__, __PARENT__, "
+                       f"__KEY__), so no "
                        f"hole could ever name it — drop the leading and "
                        f"trailing '__'", key_tok)
         if key in first_line:

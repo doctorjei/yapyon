@@ -163,18 +163,23 @@ class Ref:
     can show what the author actually wrote.
     """
 
-    __slots__ = ("root", "steps", "text", "shirans")
+    __slots__ = ("root", "steps", "text", "shirans", "parents", "key")
 
-    def __init__(self, root: bool, steps: list, text: str, shirans=()):
+    def __init__(self, root: bool, steps: list, text: str, shirans=(),
+                 parents: int = 0, key: bool = False):
         self.root, self.steps, self.text = root, list(steps), text
         self.shirans: list[str] = list(shirans)   # legal, but worth a word
+        self.parents = parents      # §9: how many __PARENT__ hops, 0 if none
+        self.key = key              # §9: ends in __KEY__, naming a position
 
     def __eq__(self, other):
         return (isinstance(other, Ref) and self.root == other.root
-                and self.steps == other.steps)
+                and self.steps == other.steps
+                and self.parents == other.parents and self.key == other.key)
 
     def __hash__(self):
-        return hash((self.root, tuple(map(str, self.steps))))
+        return hash((self.root, self.parents, self.key,
+                     tuple(map(str, self.steps))))
 
     def __repr__(self):
         return f"Ref({self.text!r})"
@@ -252,10 +257,32 @@ def parse_ref(text: str) -> Ref:
         raise RefError("empty hole '{}'")
 
     root = False
-    if text == "__ROOT__" or text.startswith("__ROOT__."):
-        root, text = True, text[len("__ROOT__"):].lstrip(".")
+    if _leads(text, "__ROOT__"):
+        root, text = True, _strip_anchor(text, "__ROOT__")
         if not text:
             return Ref(True, [], source)
+
+    # §9's relative anchors. `__PARENT__` repeats, where `__ROOT__` may not:
+    # it moves one level, so a chain of them is the only way to move several.
+    parents = 0
+    while _leads(text, "__PARENT__"):
+        if root:
+            raise RefError("__ROOT__ already anchors this reference; "
+                           "__PARENT__ is relative and cannot follow it")
+        parents += 1
+        text = _strip_anchor(text, "__PARENT__")
+        if not text:
+            return Ref(False, [], source, parents=parents)
+
+    # `__KEY__` names a *position*, so it ends the reference and may follow
+    # only an anchor -- never data traversal. After `a.b` the key is the
+    # literal "b", which the author already wrote, so nothing is lost by
+    # barring it, and narrowing later would not be compatible.
+    if text == "__KEY__":
+        if root:
+            raise RefError("the document root has no key, so "
+                           "{__ROOT__.__KEY__} can never name anything")
+        return Ref(False, [], source, parents=parents, key=True)
 
     steps: list = []
     shirans: list[str] = []
@@ -284,7 +311,20 @@ def parse_ref(text: str) -> Ref:
         i, expect_name = j, False
     if expect_name:
         raise RefError("a hole reference may not end with '.'")
-    return Ref(root, steps, source, shirans)
+    return Ref(root, steps, source, shirans, parents=parents)
+
+
+def _leads(text: str, anchor: str) -> bool:
+    """`anchor` alone, or followed by `.` or `[` — an anchor may be
+    subscripted directly, so `{__PARENT__[p]}` addresses the enclosing
+    mapping by a key held in `p`."""
+    rest = text[len(anchor):]
+    return text.startswith(anchor) and (rest == "" or rest[0] in ".[")
+
+
+def _strip_anchor(text: str, anchor: str) -> str:
+    rest = text[len(anchor):]
+    return rest[1:] if rest[:1] == "." else rest
 
 
 def _parse_subscript(inner: str, shirans: list):
@@ -316,9 +356,15 @@ def _check_segment(seg: str) -> None:
         raise RefError("empty segment in a hole reference")
     if seg == "__ROOT__":                     # before the dunder test, so
         raise RefError("__ROOT__ is only valid as the first segment")
+    if seg == "__PARENT__":
+        raise RefError("__PARENT__ may only lead a reference, before any "
+                       "key or subscript")
+    if seg == "__KEY__":
+        raise RefError("__KEY__ ends a reference and may follow only "
+                       "__PARENT__; after a key the name is already known")
     if is_dunder(seg):                        # the specific message wins
-        raise RefError(f"reserved name {seg!r} in hole "
-                       f"(only __ROOT__ is defined)")
+        raise RefError(f"reserved name {seg!r} in hole (defined: __ROOT__, "
+                       f"__PARENT__, __KEY__)")
     if ":" in seg or "!" in seg:              # SPEC §5.1, reserved in §9
         raise RefError("format specs and conversions are reserved; a hole "
                        "names a value and does nothing else")

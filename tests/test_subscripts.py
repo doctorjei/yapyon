@@ -215,3 +215,75 @@ def test_the_string_delimiter_still_ends_the_string():
     # y"{a["b"]}" closes at the inner quote; use the other one, as in
     # Python before PEP 701
     akan('a:\n  b: 1\nu: y"{a["b"]}"\n', "unclosed hole")
+
+
+# --------------------------------------------------------------------------- #
+# SPEC §9 relative references — __PARENT__ and __KEY__
+# --------------------------------------------------------------------------- #
+def test_key_names_the_pair_this_hole_sits_in():
+    assert loads('a:\n  b:\n    here: y"{__KEY__}"\n')["a"]["b"]["here"] \
+        == "here"
+
+
+def test_parent_key_names_the_enclosing_block():
+    # the useful one: persona-grata's {{__PARENT__.__KEY__}}, ×4
+    d = loads('a:\n  b:\n    up1: y"{__PARENT__.__KEY__}"\n'
+              '    up2: y"{__PARENT__.__PARENT__.__KEY__}"\n')
+    assert d["a"]["b"]["up1"] == "b"
+    assert d["a"]["b"]["up2"] == "a"
+
+
+def test_parent_repeats_where_root_may_not():
+    # __PARENT__ moves one level, so a chain is the only way to move several
+    d = loads('top: "T"\na:\n  b:\n    out: y"{__PARENT__.__PARENT__'
+              '.__PARENT__.top}"\n')
+    assert d["a"]["b"]["out"] == "T"
+
+
+def test_parent_reaches_a_sibling_explicitly():
+    d = loads('a:\n  b:\n    inner: "I"\n    got: y"{__PARENT__.inner}"\n')
+    assert d["a"]["b"]["got"] == "I"
+
+
+def test_an_anchor_may_be_subscripted_directly():
+    # position plus indirection: the enclosing mapping, keyed by p's value
+    d = loads('p: "inner"\na:\n  b:\n    inner: "I"\n'
+              '    got: y"{__PARENT__[p]}"\n')
+    assert d["a"]["b"]["got"] == "I"
+
+
+def test_parent_climbs_the_same_chain_the_scope_search_walks():
+    # sequences add no frame to §5.2's search, so they add none here either:
+    # one notion of nesting, not two (and a list has no key to report)
+    d = loads('a:\n  xs:\n    - y"{__PARENT__.__KEY__}"\n')
+    assert d["a"]["xs"] == ["a"]
+
+
+def test_climbing_past_the_root_is_akan():
+    akan('a:\n  b: y"{__PARENT__.__PARENT__.__PARENT__.q}"\n',
+         "past the document root")
+    akan('a:\n  b: y"{__PARENT__.__PARENT__.__KEY__}"\n',
+         "past the document root")
+
+
+def test_key_is_text_and_so_is_akan_in_a_byte_string():
+    # law 5 with no special case: a key is text, and text never reaches bytes
+    akan('a:\n  b: yb"{__KEY__}"\n', "no implicit encode")
+
+
+def test_a_template_carries_a_key_like_any_other_value():
+    t = loads('a:\n  b: yt"{__PARENT__.__KEY__}"\n')["a"]["b"]
+    assert t.values == ("a",) and t.render() == "a"
+
+
+@pytest.mark.parametrize("ref,needle", [
+    ("a.__KEY__", "after a key the name is already known"),
+    ("__KEY__.x", "ends a reference"),
+    ("a.__PARENT__", "may only lead a reference"),
+    ("__ROOT__.__PARENT__.x", "__ROOT__ already anchors"),
+    ("__ROOT__.__KEY__", "the document root has no key"),
+])
+def test_the_anchors_are_positional_and_the_grammar_says_so(ref, needle):
+    with pytest.raises(RefError) as e:
+        parse_ref(ref)
+    assert needle in str(e.value)

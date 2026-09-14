@@ -344,7 +344,10 @@ def test_root_is_valid_first_segment_only():
 
 
 def test_other_dunders_are_reserved():
-    akan('x: y"{__PARENT__}"', "reserved")
+    # __ROOT__, __PARENT__ and __KEY__ are defined; the rest of the namespace
+    # is still yapyon's and still akan
+    akan('x: y"{__AS_JSON__}"', "reserved")
+    akan('x: y"{__FUTURE__.a}"', "reserved")
 
 
 def test_non_identifier_hole_content_is_akan_with_quantifier_hint():
