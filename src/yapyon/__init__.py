@@ -27,6 +27,7 @@ from .resolver import Resolver, resolve
 from .multimap import Entry, KeyView, OrderedMultimap
 from .template import Template
 from .loader import build, is_record, load, load_record, loads, loads_record
+from .emitter import emit
 
 __version__ = "0.1.0a2"
 
@@ -43,6 +44,8 @@ __all__ = [
     "load", "loads", "build", "Template", "OrderedMultimap",
     # records — the fixed, literal-only form
     "load_record", "loads_record", "is_record",
+    # a record AST back to canonical yapyon source (python -m yapyon.record)
+    "emit",
     # diagnostics
     "AkanError", "Yakamashiwa",
     # the stages, for tools that want them

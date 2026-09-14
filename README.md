@@ -91,6 +91,20 @@ why the spec asks every implementation to say which of the two it provides.
 **yapyon implements the full form**, and so also loads records.
 *(New in `0.1.0a2`.)*
 
+A record also prints back out as yapyon, normalized:
+
+```console
+$ python -m yapyon.record examples/registry.ypy
+```
+
+Spelling becomes canonical — double quotes, minimal escapes, block containers
+— while every value survives exactly: `3.10` stays `3.10` rather than becoming
+`3.1`, and `b"..."` is not respelled as base64. It works from the parse tree
+for that reason; the source spelling is gone once a value is a Python `float`.
+**Comments do not survive**, so this is a normalizer rather than a
+round-tripper. `yapyon.emit` is the same thing as a function. A non-record is
+refused at the offending prefix, with the record rule as the reason.
+
 From a checkout, the stages will also dump what they see:
 
 ```console
