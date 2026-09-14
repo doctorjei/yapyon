@@ -691,6 +691,20 @@ class Lexer:
                 self._advance(len(closer))
                 return "".join(out), pos
             ch = self._peek()
+            if ch == "\\" and self._peek(1) not in ("", "\n"):
+                # A backslash protects the character after it, so `\"` is
+                # content and not the closing delimiter -- §4.2's table has
+                # \" and \'. This is a *scanning* rule, so it holds for raw
+                # strings too: r"x\"y" keeps the backslash in the value but
+                # still does not end there, exactly as in Python.
+                # Backslash-newline is excluded so the newline branch below
+                # keeps doing §4.1's dedent; _process_escapes joins the line
+                # afterwards. The empty peek guards EOF (trap 1).
+                for _ in range(2):
+                    pos.append((self.line, self.col))
+                    out.append(self._advance())
+                pristine = False
+                continue
             if ch == "\n":
                 if not triple:
                     self._akan("newline in single-line string", line, col)
@@ -754,7 +768,15 @@ class Lexer:
             start = i                  # the backslash owns the position
             i += 1
             if i >= len(s):
-                self._akan("dangling backslash in string", *at(start))
+                # Unreachable from any document: _scan_string_body consumes a
+                # backslash together with the character it protects, so a body
+                # cannot end on a lone one -- a backslash last before EOF is
+                # caught there as "unterminated string". Kept as an invariant
+                # rather than deleted, because the scanner is what makes it
+                # true and a future change there should say so loudly.
+                raise Yakamashiwa(
+                    "escape processing reached a dangling backslash; "
+                    "_scan_string_body should have made this impossible")
             e = s[i]
             if e in _ESCAPES:
                 for c in _ESCAPES[e]:

@@ -254,8 +254,26 @@ def test_escaped_backslash_is_a_backslash():
     assert value(src, "STRING") == "abc" + chr(92)
 
 
-def test_dangling_backslash_is_akan():
-    akan('x: "abc\\"\n', "dangling backslash")
+def test_an_escaped_quote_does_not_close_the_string():
+    # §4.2's table includes \" and \'. The scan must honour them, or the
+    # literal ends at the escaped quote -- which is what used to happen:
+    # `"x\"y"` akaned as a dangling backslash. Fixed 2026-09-14.
+    assert value('x: "a\\"b"\n', "STRING") == 'a"b'
+    assert value("x: 'a\\'b'\n", "STRING") == "a'b"
+    assert value('x: b"a\\"b"\n', "BYTES") == b'a"b'
+
+
+def test_an_escaped_quote_does_not_close_a_raw_string_either():
+    # Python's rule: the backslash stays in the value but still stops the
+    # quote from closing the literal. Scanning and unescaping are separate.
+    assert value('x: r"a\\"b"\n', "STRING") == 'a\\"b'
+
+
+def test_a_backslash_before_the_closing_quote_is_an_unterminated_string():
+    # `x: "abc\"` is unterminated in Python too -- the escaped quote is
+    # content, so the literal runs to the newline.
+    akan('x: "abc\\"\n', "newline in single-line string")
+    akan('x: "abc\\', "unterminated string")
 
 
 def test_raw_string_keeps_backslashes():
