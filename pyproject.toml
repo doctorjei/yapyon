@@ -31,7 +31,12 @@ Repository = "https://github.com/doctorjei/yapyon"
 Issues = "https://github.com/doctorjei/yapyon/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# PyYAML is a *test* dependency only: it reads back what
+# serializers.to_yaml writes, so the emitter is checked against an
+# independent implementation rather than against itself. The core
+# stays stdlib-only (tomllib reads TOML but cannot write it, which
+# is why that writer is ours too).
+dev = ["pytest>=8", "PyYAML>=6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

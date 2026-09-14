@@ -34,11 +34,11 @@ hands the consumer the parts with their resolved values.
 from __future__ import annotations
 
 import base64
-import json
 
 from .lexer import DOLLAR_HINT, AkanError, Ref, Yakamashiwa, parse_ref
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
+from .serializers import SERIALIZERS, NotEncodable
 
 MAX_DEPTH = 32                       # §5.3, loader-overridable
 MAX_SIZE = 1 << 20                   # §5.3, bytes/codepoints rendered
@@ -333,9 +333,8 @@ class Resolver:
                        f"mapping; applying one to a single value is reserved",
                        site.node)
         try:
-            text = json.dumps(_json_value(target), ensure_ascii=False,
-                              separators=(",", ":"), allow_nan=False)
-        except _NotJSON as exc:
+            text = SERIALIZERS[parsed.serializer](_plain(target))
+        except NotEncodable as exc:
             self._akan(f"{{{ref}}}: {exc}", site.node)
         return Scalar(site.node.line, site.node.col, "str", text)
 
@@ -432,34 +431,29 @@ class Resolver:
         return mapping.by_key[name]
 
 
-class _NotJSON(Exception):
-    """A value JSON cannot carry faithfully, with the reason."""
+def _plain(node: Node):
+    """A resolved subtree as plain Python, for a serializer to encode.
 
+    Deliberately *not* `loader.build`: this refuses a multimap, which build
+    accepts, because none of the target formats can carry repeated keys — and
+    it must refuse rather than let an encoder improvise. A small walker over
+    four node kinds, not a second loader.
 
-def _json_value(node: Node):
-    """JSON's view of the tree — SPEC §5.1.2.
-
-    Deliberately *not* `loader.build`: this refuses two things build accepts,
-    and it must refuse them rather than let `json.dumps` improvise. It is a
-    small walker over three node kinds, not a second loader.
+    Numbers arrive as values, so each format encodes them by **its own** rules
+    rather than §5.4's lexeme: inside JSON `3.10` and `3.1` are one number,
+    and the lexeme rule governs splicing yapyon source, which this is not.
     """
     if isinstance(node, Mapping):
-        return {pair.key: _json_value(pair.value) for pair in node.pairs}
+        return {pair.key: _plain(pair.value) for pair in node.pairs}
     if isinstance(node, Sequence):
-        return [_json_value(item) for item in node.items]
+        return [_plain(item) for item in node.items]
     if isinstance(node, MultiMap):
-        raise _NotJSON("a multimap's keys repeat and a JSON object's cannot, "
-                       "so there is no faithful encoding; encode the entries "
-                       "you mean")
+        raise NotEncodable("a multimap's keys repeat and none of these "
+                           "formats can hold that, so there is no faithful "
+                           "encoding; serialize the entries you mean")
     if isinstance(node, Scalar):
-        if node.type == "bytes":
-            raise _NotJSON("JSON has no bytes and names no encoding for them "
-                           "(law 5); spell the text you want")
-        # Numbers encode by JSON's rules, not §5.4's lexeme: inside a JSON
-        # document `3.10` and `3.1` are the same number, and the lexeme rule
-        # is about splicing yapyon source, which this is not.
         return node.value
-    raise _NotJSON(f"{type(node).__name__} has no JSON encoding")
+    raise NotEncodable(f"a {type(node).__name__} cannot be serialized")
 
 
 def _lexeme(target: Scalar) -> str:

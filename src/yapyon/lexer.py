@@ -334,17 +334,14 @@ def parse_ref(text: str) -> Ref:
                serializer=serializer)
 
 
-SERIALIZERS = {"__AS_JSON__"}           # §5.1.2; the set is the format's
-_RESERVED_SERIALIZERS = {"__AS_TOML__", "__AS_YAML__"}
-
-
 def _check_serializer(name: str) -> str:
-    if name in SERIALIZERS:
+    """§5.1.2. The names come from `serializers` rather than a second list
+    here, so the grammar cannot come to disagree with what exists."""
+    from .serializers import SERIALIZER_NAMES
+    if name in SERIALIZER_NAMES:
         return name
-    if name in _RESERVED_SERIALIZERS:
-        raise RefError(f"{name}() is reserved for a future version")
-    raise RefError(f"there is no serializer named {name}(); v0.1 defines "
-                   f"{', '.join(sorted(SERIALIZERS))}()")
+    raise RefError(f"there is no serializer named {name}(); yapyon defines "
+                   f"{', '.join(n + '()' for n in SERIALIZER_NAMES)}")
 
 
 def _leads(text: str, anchor: str) -> bool:
