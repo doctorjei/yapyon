@@ -30,7 +30,7 @@ from .template import Hole, Template
 from .loader import build, is_record, load, load_record, loads, loads_record
 from .emitter import emit
 
-__version__ = "0.1.0a2"
+__version__ = "0.1.0a3"
 
 #: SPEC §7 asks every implementation to document where its identifier tables
 #: come from. yapyon's are the host interpreter's, so the honest answer varies
