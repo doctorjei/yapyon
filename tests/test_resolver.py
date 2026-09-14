@@ -69,11 +69,26 @@ def test_root_escape_hatch_bypasses_the_search():
     assert node.by_key["b"].by_key["v"].value == "outer"
 
 
-def test_shiran_on_shadow_names_both_and_the_fix():
-    w = warnings('x: "outer"\nb:\n  x: "inner"\n  v: y"{x}"\n')
-    assert len(w) == 1
-    assert "shiran:" in w[0] and "shadows another" in w[0]
-    assert "{__ROOT__.x}" in w[0]
+def test_shadowing_an_outer_definition_is_silent():
+    # §5.2 nearest-wins is total and deterministic, so a shadowed outer
+    # definition is not a diagnostic: there is nothing ambiguous to report.
+    # A warning here also fired on correct layered config -- the shape
+    # `path: y"{path}/claude"` refining an outer `path` -- while naming a
+    # "fix" ({__ROOT__.x}) that resolves to a different value.
+    # Removed 2026-09-14.
+    src = 'x: "outer"\nb:\n  x: "inner"\n  v: y"{x}"\n'
+    assert warnings(src) == []
+    assert load(src).by_key["b"].by_key["v"].value == "inner"   # nearest wins
+
+
+def test_layered_config_resolves_without_warnings():
+    # the shape the removed warning fired on, once per derived filename
+    src = ('store: "/cfg"\npath: y"{store}/kimi"\n'
+           'h:\n  path: y"{path}/claude"\n  conf: y"{path}/settings.json"\n')
+    assert warnings(src) == []
+    h = load(src).by_key["h"]
+    assert h.by_key["path"].value == "/cfg/kimi/claude"
+    assert h.by_key["conf"].value == "/cfg/kimi/claude/settings.json"
 
 
 def test_no_shiran_when_nothing_is_shadowed():

@@ -59,8 +59,9 @@ def test_load_reads_the_example_document():
 
 
 def test_warn_receives_shiran():
+    # the vehicle is the avoidable-bracket shiran; shadowing is silent
     seen = []
-    loads('x: "outer"\nb:\n  x: "inner"\n  v: y"{x}"\n', warn=seen.append)
+    loads('a:\n  bar: "X"\nu: y"{a[\'bar\']}"\n', warn=seen.append)
     assert len(seen) == 1 and seen[0].startswith("shiran:")
 
 

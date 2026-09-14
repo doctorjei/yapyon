@@ -20,7 +20,7 @@ or dict. A record never yields a `Template`; an `OrderedMultimap` is fine in
 one, being plain keyed data rather than deferred structure.
 
 `warn=` receives every shiran as a formatted string — currently the
-shadowed-resolution warning of §5.2. The expansion caps of §5.3 are
+avoidable-bracket warning of §5.1. The expansion caps of §5.3 are
 loader-overridable here, as the spec says they should be; a record takes
 neither, since both are resolver limits.
 """

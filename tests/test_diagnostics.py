@@ -59,10 +59,11 @@ def test_a_template_keeps_its_source_past_the_document():
 
 
 def test_a_shiran_carries_the_source_too():
+    # vehicle: the avoidable-bracket shiran (shadowing no longer warns)
     seen = []
-    loads('x: "o"\nb:\n  x: "i"\n  v: y"{x}"\n', warn=seen.append,
+    loads('a:\n  bar: "X"\nu: y"{a[\'bar\']}"\n', warn=seen.append,
           source="sh.ypn")
-    assert seen[0].startswith("shiran: sh.ypn:4:5: ")
+    assert seen[0].startswith("shiran: sh.ypn:3:5: ")
 
 
 def test_is_record_names_the_source_when_the_text_will_not_lex():

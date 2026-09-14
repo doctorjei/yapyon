@@ -12,8 +12,8 @@ Three rules do all the work:
     in turn. Later steps traverse from there: a key, a list index, or a key
     named by another reference, which resolves in the y-string's scope and
     not in the scope of the node being indexed. `{__ROOT__.x}` skips
-    the search. Resolving locally while an outer candidate exists is legal
-    but suspicious, so it emits a shiran.
+    the search. Shadowing an outer candidate is **not** warned about — the
+    search is total, so nothing is ambiguous (see `_search`).
   * **Lexeme, not value** (§5.4). `version: 3.10` splices the characters
     `3.10`, never `3.1`. Only the parser's preserved lexeme makes that
     possible, which is why resolution happens here and not after loading.
@@ -342,15 +342,13 @@ class Resolver:
             self._akan(f"no value named {name!r} is in scope here"
                        f"{_dollar_hint_for(site.node, name)}", site.node)
 
-        level, mapping = hits[0]                     # nearest wins
-        if len(hits) > 1:                            # shiran-on-shadow
-            outer_level, outer_map = hits[-1]
-            fix = (f"; write {{__ROOT__.{name}}} for the outer one"
-                   if outer_level == len(site.chain) - 1 else "")
-            self._shiran(
-                f"{name!r} resolves to the nearer definition (line "
-                f"{mapping.by_key[name].line}) and shadows another (line "
-                f"{outer_map.by_key[name].line}){fix}", site.node)
+        # Nearest wins (SPEC §5.2). Shadowing an outer definition is NOT
+        # warned about: the rule is total and deterministic, so there is
+        # nothing ambiguous to report, and a warning here would fire on
+        # correct layered config while naming a "fix" ({__ROOT__.x}) that
+        # changes the resolved value. Removed 2026-09-14; see
+        # DESIGN_RATIONALE.md's diagnostics-register section.
+        level, mapping = hits[0]
         return mapping.by_key[name]
 
 
