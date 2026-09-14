@@ -479,12 +479,26 @@ def dump(node: Node, level: int = 0) -> str:
     raise Yakamashiwa(f"unknown node type {type(node).__name__}")
 
 
+def _dump(text, source):
+    # Driving the stages directly rather than calling `parse`, which discards
+    # warnings by design -- see `_cli` for why a CLI shows them.
+    from .lexer import Lexer
+    lexer = Lexer(text, source=source)
+    parser = Parser(lexer.tokenize(), lexer.warnings, source=source)
+    return dump(parser.parse()) + "\n", parser.warnings
+
+
+def main(argv):
+    """The AST dump, as `python -m yapyon parser`."""
+    from ._cli import run
+    return run(argv, _dump)
+
+
 if __name__ == "__main__":
     import sys
 
-    src = open(sys.argv[1]).read() if len(sys.argv) > 1 else sys.stdin.read()
-    try:
-        print(dump(parse(src)))
-    except AkanError as e:
-        print(e)
-        sys.exit(1)
+    # See the note in lexer.py: under `python -m yapyon.parser` this file runs
+    # again as `__main__`, so the exception classes would not match.
+    from yapyon.parser import main as _main
+
+    sys.exit(_main(sys.argv))

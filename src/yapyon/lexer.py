@@ -911,12 +911,27 @@ def tokenize(text: str, *, source: str | None = None) -> list[Token]:
     return Lexer(text, source=source).tokenize()
 
 
+def _dump(text, source):
+    lexer = Lexer(text, source=source)
+    tokens = lexer.tokenize()
+    return "".join(f"{tok}\n" for tok in tokens), lexer.warnings
+
+
+def main(argv):
+    """The token dump, as `python -m yapyon lexer`."""
+    from ._cli import run
+    return run(argv, _dump)
+
+
 if __name__ == "__main__":
     import sys
-    src = open(sys.argv[1]).read() if len(sys.argv) > 1 else sys.stdin.read()
-    try:
-        for tok in tokenize(src):
-            print(tok)
-    except AkanError as e:
-        print(e)
-        sys.exit(1)
+
+    # Delegate through the *package* module rather than calling `main` in this
+    # namespace. Under `python -m yapyon.lexer` this file runs a second time as
+    # `__main__`, so its `AkanError` is a different class object from the one
+    # `_cli` catches -- and the akan would escape as a traceback. Importing by
+    # full path gets the canonical module. `python -m yapyon lexer` avoids the
+    # double import entirely and is the documented spelling.
+    from yapyon.lexer import main as _main
+
+    sys.exit(_main(sys.argv))

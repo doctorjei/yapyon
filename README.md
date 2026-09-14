@@ -33,9 +33,10 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-Pre-alpha, and `0.1.0a2` means it. Lexer, parser, resolver and loader are
-done and tested — 392 tests, including a conformance suite that turns the
-splice matrix and the Python divergence table into executable cases.
+Pre-alpha, and the `a` in the version means it. Lexer, parser, resolver,
+loader and emitter are done and tested — 478 tests, including a conformance
+suite that turns the splice matrix and the Python divergence table into
+executable cases.
 
 The normative specification is a working draft held by the author. It is
 intended for publication, split into a grammar document and a broader spec;
@@ -94,7 +95,7 @@ why the spec asks every implementation to say which of the two it provides.
 A record also prints back out as yapyon, normalized:
 
 ```console
-$ python -m yapyon.record examples/registry.ypy
+$ python -m yapyon record examples/registry.ypy
 ```
 
 Spelling becomes canonical — double quotes, minimal escapes, block containers
@@ -109,9 +110,14 @@ From a checkout, the stages will also dump what they see:
 
 ```console
 $ pip install -e ".[dev]" && pytest -q
-$ python -m yapyon.lexer examples/gateway.ypy    # token dump
-$ python -m yapyon.parser examples/gateway.ypy   # AST dump
+$ python -m yapyon lexer  examples/gateway.ypy   # token dump
+$ python -m yapyon parser examples/gateway.ypy   # AST dump
 ```
+
+Every stage writes its output to stdout and its diagnostics to stderr, and
+**shows shirans by default** — the library hides them behind `warn=`, but a
+person at a terminal asked. A shiran does not change the exit status; an akan
+exits 1.
 
 ## References
 
