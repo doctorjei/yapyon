@@ -22,10 +22,11 @@ import unicodedata as _unicodedata
 
 from .lexer import Lexer, Token, tokenize, AkanError, Yakamashiwa
 from .parser import (Mapping, MultiMap, Node, Pair, Parser, Scalar, Sequence,
-                     YString, dump, parse, parse_tokens)
+                     ResolvedTemplate, YString, dump, parse,
+                     parse_tokens)
 from .resolver import Resolver, resolve
 from .multimap import Entry, KeyView, OrderedMultimap
-from .template import Template
+from .template import Hole, Template
 from .loader import build, is_record, load, load_record, loads, loads_record
 from .emitter import emit
 
@@ -41,7 +42,7 @@ __all__ = [
     # what this install's identifier tables are (SPEC §7)
     "UNICODE_VERSION",
     # the everyday API
-    "load", "loads", "build", "Template", "OrderedMultimap",
+    "load", "loads", "build", "Template", "Hole", "OrderedMultimap",
     # records — the fixed, literal-only form
     "load_record", "loads_record", "is_record",
     # a record AST back to canonical yapyon source (python -m yapyon.record)
@@ -53,7 +54,8 @@ __all__ = [
     "Parser", "parse", "parse_tokens", "dump",
     "Resolver", "resolve",
     # AST
-    "Node", "Scalar", "YString", "Pair", "Mapping", "Sequence", "MultiMap",
+    "Node", "Scalar", "YString", "ResolvedTemplate", "Pair", "Mapping",
+    "Sequence", "MultiMap",
     # multimap internals
     "Entry", "KeyView",
 ]

@@ -7,7 +7,8 @@ either.
 import pytest
 
 from yapyon.lexer import AkanError
-from yapyon.parser import MultiMap, Scalar, YString, parse
+from yapyon.parser import (MultiMap, ResolvedTemplate, Scalar, YString,
+                           parse)
 from yapyon.resolver import Resolver, resolve
 
 
@@ -256,7 +257,9 @@ def test_y_rejects_containers():
 
 
 def test_y_rejects_templates():
-    akan('t: yt"Hi {user}"\nu: y"{t}"\n', "cannot splice a template")
+    # joining a template would discard the parts it exists to preserve
+    akan('user: "u"\nt: yt"Hi {user}"\nu: y"{t}"\n',
+         "cannot splice a template")
 
 
 def test_yb_takes_bytes_from_either_spelling():
@@ -277,11 +280,15 @@ def test_ry_keeps_backslashes_and_live_holes():
     assert val('n: "gw"\np: ry"^{n}-\\d+$"\n', "p") == "^gw-\\d+$"
 
 
-def test_yt_is_left_unresolved():
+def test_yt_resolves_but_is_not_joined():
+    # §6, changed 2026-09-14: a yt resolves against the document like any
+    # other y-family literal, and stops short of the join
     node = load('user: "nobody"\nt: yt"Hi {user}"\n')
     t = node.by_key["t"]
-    assert isinstance(t, YString) and t.prefix == "yt"
-    assert t.parts == [("text", "Hi "), ("hole", "user")]
+    assert isinstance(t, ResolvedTemplate)
+    assert t.parts[0] == ("text", "Hi ")
+    kind, ref, target = t.parts[1]
+    assert (kind, ref) == ("hole", "user") and target.value == "nobody"
 
 
 def test_a_resolved_y_string_is_a_plain_str_scalar():

@@ -192,4 +192,4 @@ def test_the_package_exposes_the_record_api():
 
 
 def test_template_is_still_reachable_for_full_yapyon():
-    assert isinstance(loads('t: yt"{a}"\n')["t"], Template)
+    assert isinstance(loads('a: "v"\nt: yt"{a}"\n')["t"], Template)

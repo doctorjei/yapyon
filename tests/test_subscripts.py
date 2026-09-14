@@ -162,20 +162,29 @@ def test_zero_one_and_many_are_the_same_shape():
 # Templates traverse identically — one grammar, three users
 # --------------------------------------------------------------------------- #
 def test_a_template_takes_the_same_subscripts():
-    t = loads('t: yt"{d[p]}/{xs[1]}"\n')["t"]
-    assert t.fill(d={"claude": "anthropic"}, p="claude", xs=["a", "b"]) == \
-        "anthropic/b"
+    # a yt resolves against the document, so the §5.1 grammar reaches exactly
+    # what it reaches in a y-string -- one grammar, and now only two users
+    t = loads('p: "claude"\nd:\n  claude: "anthropic"\n'
+              'xs: ["a", "b"]\nt: yt"{d[p]}/{xs[1]}"\n')["t"]
+    assert t.values == ("anthropic", "b")
+    assert t.render() == "anthropic/b"
 
 
 def test_a_template_traverses_a_multimap_as_a_list_view():
-    mm = OrderedMultimap()
-    mm.insert("k", "first")
-    mm.insert("k", "second")
-    assert loads('t: yt"{m.k[1]}"\n')["t"].fill(m=mm) == "second"
+    t = loads('m:\n  + k: "first"\n  + k: "second"\nt: yt"{m.k[1]}"\n')["t"]
+    assert t.render() == "second"
+
+
+def test_a_template_carries_a_whole_multimap_list_view():
+    # §5.5 bars joining a list, but a yt may carry one -- the consumer that
+    # wanted a JSON array gets the list
+    t = loads('m:\n  + k: 1\n  + k: 2\nt: yt"{m.k}"\n')["t"]
+    assert t.values == ([1, 2],)
 
 
 def test_template_holes_report_the_source_spelling():
-    assert loads('t: yt"{a[\'b\']}{xs[0]}"\n')["t"].holes == ("a['b']", "xs[0]")
+    t = loads('a:\n  b: "B"\nxs: ["x"]\nt: yt"{a[\'b\']}{xs[0]}"\n')["t"]
+    assert tuple(h.ref for h in t.holes) == ("a['b']", "xs[0]")
 
 
 # --------------------------------------------------------------------------- #

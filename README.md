@@ -61,8 +61,34 @@ $ pip install --pre yapyon
 ```
 
 `loads` and `load` return plain Python. Eight of the ten types are builtins;
-a `+ ` block comes back as an `OrderedMultimap`, and a `yt` literal as an
-unfilled `Template`.
+a `+ ` block comes back as an `OrderedMultimap`, and a `yt` literal as a
+`Template`.
+
+## Templates
+
+`yt` is a y-string that is **not joined**. Its holes resolve against the
+document exactly as `y`'s do; the consumer receives the literal text and the
+resolved values separately, and renders them itself.
+
+```python
+>>> d = yapyon.loads('user: "; rm -rf /"\ncmd: y"echo {user}"\ntmpl: yt"echo {user}"\n')
+>>> d["cmd"]
+'echo ; rm -rf /'
+>>> list(d["tmpl"])
+['echo ', Hole('user', '; rm -rf /'), '']
+```
+
+`y` : `yt` :: f-string : t-string. A joined string has lost which bytes the
+author wrote and which came from the data, and nothing downstream can recover
+it; parts keep them apart until a consumer that knows the destination — shell,
+SQL, HTML, a registry — decides how each value is made safe.
+
+A hole carries `.value` (typed), `.lexeme` (the document's spelling, so `3.10`
+renders back as `3.10` rather than `3.1`) and `.ref` (the reference as
+written). Carrying is unconstrained — a hole may hold a list or raw bytes,
+because yapyon is not the one rendering. `render()` joins canonically and
+reproduces exactly what the equivalent `y` produces; it is an explicit call,
+never an implicit `str()`, because an easy implicit join would undo the point.
 
 ## Records
 
@@ -156,7 +182,7 @@ mark: `y"{a['b']}"`.
 | `r`, `rb` | raw | — | str, bytes |
 | `y` | yapyon string | y-string | str, spliced at parse |
 | `yb` | yapyon byte string | yeeb-string | bytes, spliced at parse |
-| `yt` | yapyon template string | yeet-string | Template, deferred |
+| `yt` | yapyon template string | yeet-string | Template, unjoined |
 | `ry` | raw yapyon string | ree-string | str, backslash literal |
 
 `f"..."`, `t"..."`, `u"..."` are errors with hints — their meaning depends on

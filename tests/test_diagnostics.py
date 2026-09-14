@@ -51,11 +51,12 @@ def test_every_stage_carries_the_source():
 
 
 def test_a_template_keeps_its_source_past_the_document():
-    # the document is long gone by fill time; the label is the only way back
-    t = loads('t: yt"{x}"\n', source="tpl.ypn")["t"]
+    # render() can akan long after the document is gone (a carried container
+    # or b-bytes), so the label has to travel on the Template itself
+    t = loads('xs: [1]\nt: yt"{xs}"\n', source="tpl.ypn")["t"]
     with pytest.raises(AkanError) as e:
-        t.fill(other=1)
-    assert str(e.value).startswith("akan: tpl.ypn:1:3: ")
+        t.render()
+    assert str(e.value).startswith("akan: tpl.ypn:2:3: ")
 
 
 def test_a_shiran_carries_the_source_too():

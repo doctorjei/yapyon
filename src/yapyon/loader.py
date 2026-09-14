@@ -15,9 +15,11 @@ answers the question without loading.
 
 Two of the ten types are not Python builtins and arrive as their own classes:
 a `+ ` block becomes an `OrderedMultimap` (§7.1) and a `yt` literal becomes a
-`Template` (§6). Everything else is str, bytes, int, float, bool, None, list,
-or dict. A record never yields a `Template`; an `OrderedMultimap` is fine in
-one, being plain keyed data rather than deferred structure.
+`Template` (§6) — resolved like a y-string but handed over unjoined, so the
+consumer can escape each value for wherever it is going. Everything else is
+str, bytes, int, float, bool, None, list, or dict. A record never yields a
+`Template`, since it needs the resolver; an `OrderedMultimap` is fine in one,
+being plain keyed data.
 
 `warn=` receives every shiran as a formatted string — currently the
 avoidable-bracket warning of §5.1. The expansion caps of §5.3 are
@@ -29,16 +31,17 @@ from __future__ import annotations
 
 from .lexer import AkanError, Lexer, Yakamashiwa
 from .multimap import OrderedMultimap
-from .parser import Mapping, MultiMap, Parser, Scalar, Sequence, YString
-from .resolver import MAX_DEPTH, MAX_SIZE, resolve
-from .template import Template
+from .parser import (Mapping, MultiMap, Parser, ResolvedTemplate, Scalar,
+                     Sequence, YString)
+from .resolver import MAX_DEPTH, MAX_SIZE, resolve, splice_text
+from .template import Hole, Template
 
 
 def build(node, source: str | None = None):
     """A resolved AST to plain Python objects.
 
-    `source` is carried only so a `Template` can name its origin when it
-    akans at fill, long after the document is gone.
+    `source` is carried only so a `Template` can name its origin when
+    `render()` akans, long after the document is gone.
     """
     if isinstance(node, Scalar):
         return node.value
@@ -51,12 +54,28 @@ def build(node, source: str | None = None):
         for entry in node.entries:
             multimap.insert(entry.key, build(entry.value, source))
         return multimap
+    if isinstance(node, ResolvedTemplate):
+        return Template(
+            [part[1] if part[0] == "text" else _hole(part, source)
+             for part in node.parts],
+            node.line, node.col, source)
     if isinstance(node, YString):
-        if node.prefix != "yt":
-            raise Yakamashiwa(f"unresolved {node.prefix}-string reached the "
-                              f"loader")
-        return Template(node.parts, node.line, node.col, source)
+        raise Yakamashiwa(f"unresolved {node.prefix}-string reached the "
+                          f"loader")
     raise Yakamashiwa(f"unknown node type {type(node).__name__}")
+
+
+def _hole(part, source: str | None) -> Hole:
+    """One ("hole", ref, resolved node) into the consumer's view of it.
+
+    `text` comes from `resolver.splice_text` — the one implementation of §5.5
+    — so `Template.render()` cannot disagree with the `y` string this `yt` is
+    the unjoined version of.
+    """
+    _, ref, node = part
+    text, why = splice_text(node)
+    return Hole(ref, build(node, source), getattr(node, "lexeme", ""),
+                text, why)
 
 
 def loads(text: str, *, warn=None, max_depth: int = MAX_DEPTH,

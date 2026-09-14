@@ -80,7 +80,8 @@ def test_row_y_containers_are_akan(prefix, target):
 
 @pytest.mark.parametrize("prefix", ["y", "ry"])
 def test_row_y_templates_are_akan(prefix):
-    assert "cannot splice a template" in splice_akan(prefix, 's: yt"{x}"')
+    assert "cannot splice a template" in splice_akan(
+        prefix, 'x: "v"\ns: yt"{x}"')
 
 
 # -- row 2: yb -------------------------------------------------------------- #
@@ -109,50 +110,50 @@ def test_row_yb_containers_are_akan(target):
 
 
 def test_row_yb_templates_are_akan():
-    assert "cannot splice a template" in splice_akan("yb", 's: yt"{x}"')
+    assert "cannot splice a template" in splice_akan(
+        "yb", 'x: "v"\ns: yt"{x}"')
 
 
-# -- row 3: yt, at fill time (§6) ------------------------------------------- #
-# NOTE: values reach a template from the consumer, not from the document, so
-# the b/b64 spelling distinction does not exist here — the matrix carries one
-# `bytes` column for this row, and it is akan. A document author has no code
-# and must spell b64"..."; a consumer is code and can name the encoding it
-# means, so choosing base64 for it would be silently wrong for anyone who
-# wanted hex or url-safe.
-def filled(hole, **values):
-    return loads(f't: yt"{hole}"\n')["t"].fill(**values)
+# -- row 3: yt (§6) --------------------------------------------------------- #
+# yt has no matrix of its own. Since 2026-09-14 a template resolves against the
+# document exactly as `y` does and differs only in not being joined, so §5.5
+# governs `render()` and the conformance claim is an *equality*: rendering a yt
+# reproduces the equivalent y, cell for cell. That is what "an unjoined
+# y-string" means, and it is the property that keeps the two from drifting.
+MATRIX_ROWS = [
+    's: "AB"', 's: b64"QUI="', "s: 3.10", "s: 0xFF", "s: 1_000", "s: -5",
+    "s: True", "s: None",
+]
 
 
-def test_row_yt_str_fills_verbatim():
-    assert filled("{s}", s="A B\tC") == "A B\tC"
+@pytest.mark.parametrize("target", MATRIX_ROWS)
+def test_row_yt_render_equals_the_equivalent_y(target):
+    assert splice("yt", target).render() == splice("y", target)
 
 
-def test_row_yt_bytes_are_akan():
+@pytest.mark.parametrize("target", ['s: b"AB"', r's: rb"\d"'])
+def test_row_yt_refuses_to_render_what_y_refuses_to_splice(target):
+    # carried, but not renderable: §5.5 governs the join, not the delivery
     with pytest.raises(AkanError) as e:
-        filled("{s}", s=b"AB")
-    assert "name the encoding you want" in str(e.value)
+        splice("yt", target).render()
+    assert "respell as b64" in str(e.value)
+    assert "respell as b64" in splice_akan("y", target)
 
 
-@pytest.mark.parametrize("value,expected", [
-    (8080, "8080"), (True, "True"), (False, "False"), (None, "None"),
-    (3.10, "3.1"),                  # canonical, not the document's lexeme
-    (0.1 + 0.2, "0.30000000000000004"),
-])
-def test_row_yt_scalars_fill_as_canonical_spellings(value, expected):
-    assert filled("{s}", s=value) == expected
-
-
-@pytest.mark.parametrize("value", [[1, 2], {"a": 1}, (1, 2), OrderedMultimap()])
-def test_row_yt_containers_are_akan(value):
+@pytest.mark.parametrize("target", ["s: [1, 2]", "s: {a: 1}", 's:\n  + a: 1'])
+def test_row_yt_carries_a_container_that_y_cannot_splice(target):
+    # the one place the two rows genuinely differ, and only in *when*: a y is
+    # always joined so it akans at parse; a yt is joined only if asked
+    t = splice("yt", target)
+    assert len(t.values) == 1
     with pytest.raises(AkanError) as e:
-        filled("{s}", s=value)
-    assert "cannot fill" in str(e.value)
+        t.render()
+    assert "cannot interpolate" in str(e.value)
+    assert "cannot interpolate" in splice_akan("y", target)
 
 
 def test_row_yt_templates_are_akan():
-    with pytest.raises(AkanError) as e:
-        filled("{s}", s=Template([("text", "x")]))
-    assert "cannot fill" in str(e.value)
+    assert "cannot splice a template" in splice_akan("yt", 'x: "v"\ns: yt"{x}"')
 
 
 # =========================================================================== #
@@ -301,9 +302,9 @@ def test_the_two_forms_agree_on_a_record():
 
 def test_a_record_never_produces_a_template():
     # §12.4: Template is the one value type the two forms do not share
-    assert isinstance(loads('t: yt"{a}"\n')["t"], Template)
+    assert isinstance(loads('a: "v"\nt: yt"{a}"\n')["t"], Template)
     with pytest.raises(AkanError):
-        loads_record('t: yt"{a}"\n')
+        loads_record('a: "v"\nt: yt"{a}"\n')
 
 
 def test_a_multimap_is_plain_data_and_survives_into_a_record():

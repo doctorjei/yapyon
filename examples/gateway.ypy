@@ -17,7 +17,9 @@ paths:
   logs: y"{root}/logs"                    # nearest wins: sibling `root`
   banner: y"{name} v{version}"            # outer scope, lexeme splice
   pattern: ry"^{name}-\d+$"               # raw: backslash literal, hole live
-  greeting: yt"Hello {user}, {count} new" # deferred to the consumer
+  greeting: yt"{name} v{version}"         # same holes as `banner`, NOT joined:
+                                          # the consumer gets the parts and
+                                          # escapes each value itself (§6)
 
 magic:
   png: b"\x89PNG\r\n\x1a\n"

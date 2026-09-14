@@ -73,6 +73,23 @@ _Y_TYPE = {"y": "str", "ry": "str", "yb": "bytes", "yt": "template"}
 
 
 @dataclass
+class ResolvedTemplate(Node):
+    """A `yt` literal after resolution — SPEC §6.
+
+    `yt` is a y-string that is **not joined**: its holes resolve against the
+    document exactly as `y`'s do, and the consumer receives the parts plus the
+    resolved values instead of one flat string. The parser cannot produce this
+    node; only the resolver can, because only it has done the lookups.
+
+    `parts` alternates ("text", str) and ("hole", ref_text, Node), with the
+    resolved node kept whole so `build` can hand over the real value and the
+    §5.5 text together.
+    """
+
+    parts: list = field(default_factory=list)
+
+
+@dataclass
 class Pair(Node):
     """One `key: value`.  The position is the key's."""
 

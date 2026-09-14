@@ -1,148 +1,161 @@
-"""yapyon templates — v0.1 (SPEC §6)
+"""yapyon templates — SPEC §6.
 
-A `yt"..."` literal produces a Template: literal string parts and named
-holes, handed to the consumer unfilled. The document never fills it — the
-hole names belong to whatever scope the consumer supplies, which is exactly
-why `yt` is spelled in the y namespace rather than borrowed from Python's
-`t` (law 6: an f/t string's meaning depends on an enclosing program, and a
-data file has none).
+**A `yt` literal is a y-string that is not joined.** Its holes resolve against
+the document at parse time by §5.2's ordinary rules, exactly as `y`'s do; the
+consumer receives the literal text parts and the resolved values separately
+and does its own rendering.
 
-Fill-time conversions are normative for conforming renderers (§6). Note that
-they are *not* §5.4's lexeme rule: by fill time the lexeme is long gone, so a
-float fills as its shortest round-trip decimal rather than as written.
+    y  : yt  ::  f-string : t-string
 
-Bytes are **akan** at fill, which is where a template parts company with a
-document. The bridge law exists because a document author has no code to run,
-so `b64"..."` must be spelled as a literal. A consumer is code: it can call
-whichever encoder it means, and picking base64 on its behalf is silently
-wrong for anyone who wanted hex or url-safe. Float stays canonical for the
-opposite reason — shortest round-trip is the only faithful rendering of a
-float, while bytes have many equally valid ones.
+The point is *who escapes, and with what knowledge*. A joined string has lost
+which bytes the author wrote and which came from the data, and no care
+downstream can recover it:
+
+    user_input: "; rm -rf /"
+    cmd: y"echo {user_input}"      -> 'echo ; rm -rf /'    structure gone
+
+Parts keep them separable until a consumer that knows the destination — shell,
+registry, SQL, HTML — decides how each value is made safe. Same concern as the
+`$VAR` ruling, which argues that pre-parse text substitution *is* injection,
+one layer up.
+
+**Carrying is unconstrained; rendering is not.** A hole may carry any value a
+document can hold, containers and b-spelled bytes included, because yapyon
+does not render it — the consumer that wanted hex rather than base64 can have
+hex. §5.5 still governs `render()`, which is the *canonical* joining, and
+refuses exactly what a `y` would have refused.
+
+**`render()` is explicit, and there is no `__str__` that joins.** The moment a
+convenient implicit rendering exists, people reach for it and the whole
+property evaporates — PEP 750 declines to provide one for the same reason. It
+exists here because it is also the definition of correctness: rendering a
+`yt`'s parts must reproduce what the equivalent `y` produces, which is what
+"an unjoined y-string" means, and it is asserted over the corpus.
+
+*(Before 2026-09-14 a `yt` was unresolved and filled later from a mapping the
+consumer supplied — `string.Template.substitute`, under a name that pointed at
+PEP 750. That model was never argued in canon and its only cited consumer had
+been ruled out of scope. `DESIGN_RATIONALE.md` has the history.)*
 """
 
 from __future__ import annotations
 
-from .lexer import AkanError, parse_ref
-from .multimap import OrderedMultimap
+from .lexer import AkanError
+
+
+class Hole:
+    """One resolved hole of a template (§5.1's `{...}`).
+
+    * `ref`    — the reference as written, `"mind.dialects[p]"`. The analogue
+      of PEP 750's `Interpolation.expression`, and likewise kept because the
+      spelling is data: diagnostics and tooling want what the author typed.
+    * `value`  — what it resolved to, typed. Any value a document can hold.
+    * `lexeme` — the document's spelling of that value, for numbers and
+      keywords; `""` for strings and containers, whose value *is* the content.
+      Without it `3.10` would reach a consumer as the float `3.1` and could
+      never be rendered back faithfully (§5.4).
+    * `text`   — the §5.5 canonical rendering, or `None` where §5.5 refuses;
+      `why` then says so. Precomputed by the resolver so that the matrix has
+      one implementation rather than two.
+    """
+
+    __slots__ = ("ref", "value", "lexeme", "text", "why")
+
+    def __init__(self, ref: str, value, lexeme: str = "",
+                 text: str | None = None, why: str = ""):
+        self.ref, self.value, self.lexeme = ref, value, lexeme
+        self.text, self.why = text, why
+
+    def __eq__(self, other):
+        return (isinstance(other, Hole) and self.ref == other.ref
+                and self.value == other.value and self.lexeme == other.lexeme)
+
+    def __hash__(self):
+        return hash((self.ref, self.lexeme))
+
+    def __repr__(self):
+        return f"Hole({self.ref!r}, {self.value!r})"
 
 
 class Template:
-    """An unfilled yt literal.  `parts` alternates ("text", str) and
-    ("hole", "a.b"), exactly as the lexer scanned it."""
+    """A resolved `yt` literal: text parts and holes, unjoined.
+
+    `parts` alternates `str` and `Hole`, **totally** — it begins and ends with
+    a `str`, and an empty one sits between adjacent holes. So a consumer can
+    walk it without special-casing a leading, trailing or doubled hole, and
+    `len(strings) == len(holes) + 1` always. PEP 750 does the same, and it is
+    worth copying: it removes a whole class of consumer bug.
+    """
 
     __slots__ = ("parts", "line", "col", "source")
 
     def __init__(self, parts, line: int = 0, col: int = 0,
                  source: str | None = None):
-        self.parts = list(parts)
+        self.parts = tuple(_normalise(parts))
         self.line, self.col = line, col
-        self.source = source          # where the yt literal was written, if known
+        self.source = source          # where the yt literal was written
+
+    # -- the three views -----------------------------------------------------
+    @property
+    def strings(self) -> tuple:
+        """The literal text parts, in order. One more than there are holes."""
+        return tuple(p for p in self.parts if isinstance(p, str))
 
     @property
     def holes(self) -> tuple:
-        """Every hole reference, in order, with repeats kept."""
-        return tuple(ref for kind, ref in self.parts if kind == "hole")
+        """Every hole, in order, with repeats kept."""
+        return tuple(p for p in self.parts if isinstance(p, Hole))
 
-    def fill(self, values=None, /, **kwargs) -> str:
-        """Render against a supplied scope.  Unbound holes are akan (§6)."""
-        scope = dict(values or {})
-        scope.update(kwargs)
-        return "".join(
-            part if kind == "text" else self._render(self._lookup(part, scope),
-                                                     part)
-            for kind, part in self.parts)
+    @property
+    def values(self) -> tuple:
+        """What each hole resolved to, in order."""
+        return tuple(hole.value for hole in self.holes)
 
-    # -- internals -----------------------------------------------------------
-    def _akan(self, msg: str):
-        raise AkanError(msg, self.line, self.col, self.source)
+    def __iter__(self):
+        """Alternating `str` and `Hole` — what a processing function walks."""
+        return iter(self.parts)
 
-    def _lookup(self, ref: str, scope: dict):
-        """Walk a parsed reference (§5.1) through the supplied scope.
+    # -- canonical rendering (§5.5) -----------------------------------------
+    def render(self) -> str:
+        """Join canonically: exactly what the equivalent `y` would produce.
 
-        The same `parse_ref` the lexer validated with and the resolver
-        traverses with — one grammar, three users, so `a.b` and `a["b"]`
-        cannot come to mean different things here than in a document.
+        Explicit by design. A consumer that knows its destination should be
+        escaping the values itself; this is for the case that genuinely wants
+        the plain string, and for saying what "an unjoined y-string" means.
         """
-        # One definition of __ROOT__: it anchors at the root of whatever
-        # scope resolves the hole, which here *is* the supplied scope. So
-        # {x} and {__ROOT__.x} take the same path and give the same akan —
-        # no special case, and none of the drift a second one would invite.
-        parsed = parse_ref(ref)
-        steps = list(parsed.steps)
-        current = scope
-        if steps and steps[0][0] == "key":
-            first = steps.pop(0)[1]
-            if first not in current:
-                self._akan(f"unbound hole {{{ref}}}: nothing named {first!r} "
-                           f"was supplied")
-            current = current[first]
-        for step in steps:
-            current = self._walk(current, step, ref, scope)
-        return current
-
-    def _walk(self, current, step, ref: str, scope: dict):
-        kind, payload = step
-        if kind == "ref":
-            payload = self._subscript_key(payload, ref, scope)
-            kind = "index" if isinstance(payload, int) else "key"
-        if kind == "index":
-            if isinstance(current, OrderedMultimap):
-                self._akan(f"{{{ref}}}: index a multimap's key view, not the "
-                           f"multimap — positional entry access is reserved")
-            if isinstance(current, str) or not isinstance(current, (list,
-                                                                    tuple)):
-                self._akan(f"{{{ref}}}: cannot index {payload}, because the "
-                           f"value named before it is not a list")
-            if payload >= len(current):
-                self._akan(f"{{{ref}}}: index {payload} is past the end of a "
-                           f"list of {len(current)}")
-            return current[payload]
-        if isinstance(current, OrderedMultimap):
-            # §7.1 by-key traversal is a list view, exactly as in a document.
-            # `mm[k].values()`, not `mm.get(k)` — the latter hands back Entry
-            # objects, which are the container's business and not the
-            # document's.
-            return list(current[payload].values())
-        try:
-            return current[payload]
-        except (TypeError, IndexError):
-            self._akan(f"{{{ref}}}: cannot look up {payload!r}, because the "
-                       f"value named before it is not a mapping")
-        except KeyError:
-            self._akan(f"{{{ref}}}: there is no key {payload!r} here")
-
-    def _subscript_key(self, inner, ref: str, scope: dict):
-        """`[someref]` names a key; resolve it in the *supplied* scope."""
-        key = self._lookup(inner.text, scope)
-        if isinstance(key, bool) or not isinstance(key, (str, int)):
-            self._akan(f"{{{ref}}}: the subscript {{{inner.text}}} must name "
-                       f"a string or a number to use as a key")
-        return key
-
-    def _render(self, value, ref: str) -> str:
-        if isinstance(value, str):
-            return value
-        if isinstance(value, bool):        # before int: bool subclasses int
-            return "True" if value else "False"
-        if value is None:
-            return "None"
-        if isinstance(value, int):
-            return str(value)
-        if isinstance(value, float):
-            return repr(value)             # shortest round-trip (§6)
-        if isinstance(value, (bytes, bytearray)):
-            self._akan(f"cannot fill {{{ref}}} with bytes; name the encoding "
-                       f"you want (base64, hex, url-safe) and pass the text — "
-                       f"a consumer has code, so yapyon will not choose one")
-        self._akan(f"cannot fill {{{ref}}} with a {type(value).__name__}; a "
-                   f"template takes text, numbers, bools, or None")
+        out = []
+        for part in self.parts:
+            if isinstance(part, str):
+                out.append(part)
+            elif part.text is None:
+                raise AkanError(part.why, self.line, self.col, self.source)
+            else:
+                out.append(part.text)
+        return "".join(out)
 
     # -- niceties ------------------------------------------------------------
     def __eq__(self, other):
         return isinstance(other, Template) and self.parts == other.parts
 
     def __hash__(self):
-        return hash(tuple(map(tuple, self.parts)))
+        return hash(self.parts)
 
     def __repr__(self):
-        return f"Template({self.parts!r})"
+        return f"Template({list(self.parts)!r})"
+
+
+def _normalise(parts) -> list:
+    """Force the total alternation: str, Hole, str, Hole, ... str."""
+    out: list = []
+    for part in parts:
+        if isinstance(part, Hole):
+            if not out or isinstance(out[-1], Hole):
+                out.append("")
+            out.append(part)
+        elif out and isinstance(out[-1], str):
+            out[-1] += part
+        else:
+            out.append(part)
+    if not out or isinstance(out[-1], Hole):
+        out.append("")
+    return out

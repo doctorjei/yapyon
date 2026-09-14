@@ -26,8 +26,9 @@ references work. A pass that makes no progress means a cycle. Both caps
 (depth, rendered size) are load-bearing: chained doubling grows a document
 exponentially, and each is loader-overridable.
 
-`yt` literals are not touched. Their holes belong to whatever scope the
-consumer supplies at fill time (§6).
+`yt` literals resolve here too, by exactly these rules — a template is a
+y-string that is not *joined* (§6). The resolver stops one step short and
+hands the consumer the parts with their resolved values.
 """
 
 from __future__ import annotations
@@ -35,7 +36,8 @@ from __future__ import annotations
 import base64
 
 from .lexer import DOLLAR_HINT, AkanError, Ref, Yakamashiwa, parse_ref
-from .parser import Mapping, MultiMap, Node, Scalar, Sequence, YString
+from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
+                     Sequence, YString)
 
 MAX_DEPTH = 32                       # §5.3, loader-overridable
 MAX_SIZE = 1 << 20                   # §5.3, bytes/codepoints rendered
@@ -58,8 +60,10 @@ def _collect(node: Node, chain: list, sites: list, replace) -> None:
     multimaps add no frame: list items have no keys, and a multimap's entry
     keys take no part in the search (§5.2)."""
     if isinstance(node, YString):
-        if node.prefix != "yt":                  # templates are the consumer's
-            sites.append(_Site(node, chain, replace))
+        # Every y-family literal is a site, `yt` included: since 2026-09-14 a
+        # template resolves against the document like any other, and differs
+        # only in not being joined (§6).
+        sites.append(_Site(node, chain, replace))
         return
     if isinstance(node, Mapping):
         for pair in node.pairs:
@@ -184,9 +188,11 @@ class Resolver:
                 continue
             target = self._lookup(ref, site)             # akan: name not found
             if isinstance(target, YString):
-                if target.prefix == "yt":                # never resolvable
-                    self._akan("cannot splice a template into a string", node)
                 pending = True                           # a chain: try later
+            elif isinstance(target, ResolvedTemplate):
+                # A template is not a value a string can absorb, and joining
+                # one would throw away the parts it exists to preserve.
+                self._akan("cannot splice a template into a string", node)
             targets[ref] = target
         if pending:
             return None
@@ -200,6 +206,19 @@ class Resolver:
             self._akan(f"resolution exceeded the depth cap "
                        f"({self.max_depth}): this y-string sits at the end of "
                        f"a chain {depth} deep", node)
+
+        if node.prefix == "yt":
+            # §6: resolve exactly as `y` does, then stop short of the join.
+            # No size accounting -- nothing is rendered here, and whether the
+            # consumer ever renders is its business.
+            result = ResolvedTemplate(
+                node.line, node.col,
+                [("text", part) if kind == "text"
+                 else ("hole", part, targets[part])
+                 for kind, part in node.parts])
+            self._depth[id(result)] = depth
+            site.replace(result)
+            return result
 
         to_bytes = node.prefix == "yb"
         pieces = [part if kind == "text"
@@ -217,35 +236,27 @@ class Resolver:
 
     # -- §5.5, the splice matrix --------------------------------------------
     def _splice(self, target: Node, at: YString, to_bytes: bool):
+        """The matrix, with a position attached. `splice_text` holds the rule
+        itself; this only turns a refusal into an akan at the right place."""
+        if not to_bytes:
+            text, why = splice_text(target)
+            if why:
+                self._akan(why, at)
+            return text
         if isinstance(target, (Mapping, Sequence, MultiMap)):
             self._akan("cannot interpolate a list, dict, or multimap into a "
                        "string", at)
         if not isinstance(target, Scalar):
             raise Yakamashiwa(f"unresolved {type(target).__name__} reached "
                               f"the splice step")
-        if to_bytes:
-            if target.type == "str":
-                self._akan("cannot splice text into a byte string; there is "
-                           "no implicit encode (spell the bytes you want)", at)
-            if target.type == "bytes":
-                return target.value
-            return self._lexeme(target, at).encode("ascii")
         if target.type == "str":
-            return target.value
+            self._akan("cannot splice text into a byte string; there is "
+                       "no implicit encode (spell the bytes you want)", at)
         if target.type == "bytes":
-            if target.prefix == "b64":
-                return base64.b64encode(target.value).decode("ascii")
-            self._akan("b-spelled bytes have no text form; respell as b64 to "
-                       "splice into text", at)
-        return self._lexeme(target, at)
+            return target.value
+        return _lexeme(target).encode("ascii")
 
-    def _lexeme(self, target: Scalar, at: YString) -> str:
-        """§5.4: a non-string scalar splices what the author wrote."""
-        if not target.lexeme:
-            raise Yakamashiwa(f"{target.type} scalar carries no lexeme")
-        return target.lexeme
 
-    # -- §5.2, the scope search ---------------------------------------------
     def _lookup(self, ref: str, site: _Site) -> Node:
         """Walk a parsed reference (SPEC §5.1) from its anchor to its target.
 
@@ -350,6 +361,45 @@ class Resolver:
         # DESIGN_RATIONALE.md's diagnostics-register section.
         level, mapping = hits[0]
         return mapping.by_key[name]
+
+
+def _lexeme(target: Scalar) -> str:
+    """§5.4: a non-string scalar splices what the author wrote."""
+    if not target.lexeme:
+        raise Yakamashiwa(f"{target.type} scalar carries no lexeme")
+    return target.lexeme
+
+
+def splice_text(target: Node) -> tuple[str | None, str]:
+    """§5.5 for the text direction: `(text, "")`, or `(None, why)`.
+
+    **The one implementation of the matrix.** The resolver calls it to splice
+    into a `y` string, where a refusal is an akan at parse; `Template.render`
+    reaches the same answer through the text precomputed here, so a `yt`
+    cannot come to disagree with the `y` it is supposed to be an unjoined
+    version of. Two copies of this would drift — they have before (trap 5).
+
+    A refusal is returned rather than raised because the two callers want it
+    at different moments: a `y` is always rendered, so it akans at parse; a
+    `yt` is rendered only if the consumer asks, so it must be able to *carry*
+    a value it could never join.
+    """
+    if isinstance(target, (Mapping, Sequence, MultiMap)):
+        return None, ("cannot interpolate a list, dict, or multimap into a "
+                      "string")
+    if not isinstance(target, Scalar):
+        raise Yakamashiwa(f"unresolved {type(target).__name__} reached "
+                          f"the splice step")
+    if target.type == "str":
+        return target.value, ""
+    if target.type == "bytes":
+        if target.prefix == "b64":
+            return base64.b64encode(target.value).decode("ascii"), ""
+        return None, ("b-spelled bytes have no text form; respell as b64 to "
+                      "splice into text")
+    return _lexeme(target), ""
+
+    # -- §5.2, the scope search ---------------------------------------------
 
 
 def resolve(tree: Node, *, max_depth: int = MAX_DEPTH,

@@ -109,95 +109,95 @@ def test_multimap_entry_values_are_built_too():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §6 — yt produces a Template, unfilled
+# SPEC §6 — yt is a y-string that is not joined
 # --------------------------------------------------------------------------- #
-def test_yt_loads_as_a_template_with_its_parts():
-    t = loads('greeting: yt"Hello {user}, {count} new"\n')["greeting"]
+def test_yt_resolves_against_the_document_like_y_does():
+    # the difference between y and yt is the join, not the scope
+    d = loads('user: "nobody"\ny: y"Hi {user}"\nt: yt"Hi {user}"\n')
+    assert d["y"] == "Hi nobody"
+    assert d["t"].values == ("nobody",)
+    assert d["t"].render() == "Hi nobody"
+
+
+def test_a_template_keeps_the_parts_apart():
+    t = loads('who: "bob"\nn: 3\ng: yt"Hello {who}, {n} new"\n')["g"]
     assert isinstance(t, Template)
-    assert t.parts == [("text", "Hello "), ("hole", "user"),
-                       ("text", ", "), ("hole", "count"), ("text", " new")]
-    assert t.holes == ("user", "count")
+    assert t.strings == ("Hello ", ", ", " new")
+    assert t.values == ("bob", 3)
+    assert tuple(h.ref for h in t.holes) == ("who", "n")
 
 
-def test_a_template_is_not_filled_by_the_document():
-    # `user` exists in the document and must still be ignored (§6)
-    t = loads('user: "nobody"\nt: yt"Hi {user}"\n')["t"]
-    assert t.fill(user="someone") == "Hi someone"
+def test_the_alternation_is_total():
+    # str first and last, an empty one between adjacent holes -- so a consumer
+    # never special-cases a leading, trailing or doubled hole
+    t = loads('a: "A"\nb: "B"\nt: yt"{a}{b}"\n')["t"]
+    assert t.strings == ("", "", "")
+    assert len(t.strings) == len(t.holes) + 1
+    assert [type(p).__name__ for p in t] == ["str", "Hole", "str", "Hole",
+                                             "str"]
 
 
-def test_fill_takes_a_mapping_or_keywords():
-    t = loads('t: yt"{a}-{b}"\n')["t"]
-    assert t.fill({"a": "x", "b": "y"}) == "x-y"
-    assert t.fill(a="x", b="y") == "x-y"
+def test_iterating_alternates_text_and_holes():
+    # the isinstance check is how a processor tells author bytes from data
+    t = loads('x: "v"\nt: yt"a{x}b"\n')["t"]
+    assert [p if isinstance(p, str) else p.value for p in t] == ["a", "v", "b"]
 
 
-def test_str_fills_verbatim():
-    assert loads('t: yt"[{s}]"\n')["t"].fill(s="a b\tc") == "[a b\tc]"
+def test_a_hole_carries_the_lexeme_so_rendering_stays_faithful():
+    # §5.4: 3.10 is the float 3.1, and only the lexeme can render it back
+    t = loads('v: 3.10\nt: yt"v{v}"\n')["t"]
+    hole = t.holes[0]
+    assert hole.value == 3.1 and hole.lexeme == "3.10"
+    assert t.render() == "v3.10"
 
 
-def test_int_bool_and_none_fill_as_canonical_spellings():
-    t = loads('t: yt"{i}/{b}/{n}"\n')["t"]
-    assert t.fill(i=8080, b=True, n=None) == "8080/True/None"
+def test_a_hole_keeps_the_reference_as_written():
+    t = loads('d:\n  k: "v"\nt: yt"{d[\'k\']}"\n')["t"]
+    assert t.holes[0].ref == "d['k']"
 
 
-def test_bool_fills_as_a_bool_not_as_an_int():
-    # bool subclasses int; the order of the checks is the rule
-    assert loads('t: yt"{b}"\n')["t"].fill(b=False) == "False"
-
-
-def test_float_fills_as_shortest_round_trip():
-    t = loads('t: yt"{f}"\n')["t"]
-    assert t.fill(f=3.10) == "3.1"          # not the lexeme rule (§5.4)
-    assert t.fill(f=0.1 + 0.2) == "0.30000000000000004"
-
-
-def test_bytes_are_akan_at_fill():
-    # a document author has no code and must spell b64"..."; a consumer has
-    # code, and choosing an encoding for it would be silently wrong
+def test_carrying_is_unconstrained_where_rendering_is_not():
+    # yapyon does not render, so a hole may carry anything a document holds;
+    # §5.5 governs render() alone
+    t = loads('raw: b"\\x89PNG"\nxs: [1, 2]\nt: yt"{raw}{xs}"\n')["t"]
+    assert t.values == (b"\x89PNG", [1, 2])
     with pytest.raises(AkanError) as e:
-        loads('t: yt"{b}"\n')["t"].fill(b=b"hello")
-    assert "name the encoding you want" in str(e.value)
+        t.render()
+    assert "b-spelled bytes have no text form" in str(e.value)
 
 
-def test_unbound_hole_is_akan_at_fill():
-    t = loads('t: yt"Hi {user}"\n')["t"]
+def test_b64_bytes_render_as_base64_exactly_as_in_a_y_string():
+    d = loads('q: b64"aGk="\ny: y"x{q}y"\nt: yt"x{q}y"\n')
+    assert d["t"].render() == d["y"] == "xaGk=y"
+
+
+def test_an_unbound_hole_is_akan_at_parse_not_at_render():
+    # law 7: the mistake is in the document, so it lands on the author
     with pytest.raises(AkanError) as e:
-        t.fill(other="x")
-    assert "unbound hole {user}" in str(e.value)
-    assert (e.value.line, e.value.col) == (1, 3)   # where the yt literal sits
+        loads('t: yt"Hi {nobody}"\n')
+    assert "no value named 'nobody' is in scope here" in str(e.value)
 
 
-def test_containers_cannot_fill_a_hole():
-    t = loads('t: yt"{c}"\n')["t"]
+def test_a_template_cannot_be_spliced_into_a_string():
+    # joining one would throw away the parts it exists to preserve
     with pytest.raises(AkanError) as e:
-        t.fill(c=[1, 2])
-    assert "cannot fill {c} with a list" in str(e.value)
+        loads('x: "v"\nt: yt"{x}"\ny: y"{t}"\n')
+    assert "cannot splice a template into a string" in str(e.value)
 
 
-def test_dotted_holes_traverse_the_supplied_scope():
-    t = loads('t: yt"{s.host}"\n')["t"]
-    assert t.fill(s={"host": "h"}) == "h"
-
-
-def test_dotted_hole_into_a_non_mapping_is_akan():
-    with pytest.raises(AkanError) as e:
-        loads('t: yt"{s.host}"\n')["t"].fill(s="plain")
-    assert "is not a mapping" in str(e.value)
-
-
-def test_root_anchors_at_the_root_of_the_supplied_scope():
-    # one definition: the document for a y-string, the scope here. Against a
-    # flat scope it degenerates to an ordinary lookup.
-    t = loads('t: yt"{__ROOT__.x}"\n')["t"]
-    assert t.fill(x="y") == "y"
-    with pytest.raises(AkanError) as e:
-        t.fill(other="z")
-    assert "unbound hole" in str(e.value)
+def test_there_is_no_implicit_rendering():
+    # an implicit join is the footgun the parts exist to remove
+    t = loads('x: "v"\nt: yt"a{x}"\n')["t"]
+    assert "av" not in str(t)
+    assert not hasattr(t, "fill")
 
 
 def test_templates_compare_by_parts():
-    assert loads('t: yt"a{b}"\n')["t"] == Template(
-        [("text", "a"), ("hole", "b")])
+    assert loads('b: "B"\nt: yt"a{b}"\n')["t"] == loads(
+        'b: "B"\nt: yt"a{b}"\n')["t"]
+    assert loads('b: "B"\nt: yt"a{b}"\n')["t"] != loads(
+        'b: "C"\nt: yt"a{b}"\n')["t"]
+
 
 
 # --------------------------------------------------------------------------- #
