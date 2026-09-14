@@ -34,7 +34,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 ## Status
 
 Pre-alpha, and the `a` in the version means it. Lexer, parser, resolver,
-loader and emitter are done and tested — 478 tests, including a conformance
+loader and emitter are done and tested — 537 tests, including a conformance
 suite that turns the splice matrix and the Python divergence table into
 executable cases.
 
@@ -173,6 +173,48 @@ mind:
 `{a["bar"]}` where a dot would do is a `shiran` — legal, but say `{a.bar}`.
 Because the enclosing string's delimiter ends it, quote a key with the other
 mark: `y"{a['b']}"`.
+
+### Relative references
+
+`__ROOT__` names an absolute position; `__PARENT__` and `__KEY__` name
+relative ones, so a block can refer to where it *is*:
+
+```yapyon
+store: "/cfg"
+personas:
+  kimi:
+    id:     y"{__PARENT__.__KEY__}"              # -> "kimi"
+    prompt: y"{__ROOT__.store}/{__PARENT__.__PARENT__.__KEY__}/{__PARENT__.__KEY__}.md"
+```
+
+The same text in every block, each resolving to its own name — without them a
+block cannot be renamed or moved without editing its contents. `__PARENT__`
+repeats (`{__PARENT__.__PARENT__.x}`) and leads a reference; `__KEY__` ends
+one. Bare `{__KEY__}` is the *pair's own* key, which is rarely what you want.
+
+### Serializers
+
+A container cannot be spliced into text — there is no one text form and
+picking one would be guessing. Naming the encoding is how it crosses:
+
+```yapyon
+store:
+  model: "m1"
+  host: "https://api.example.com/v1"
+body: y"{store.__AS_TOML__()}"
+```
+
+```toml
+model = "m1"
+host = "https://api.example.com/v1"
+```
+
+`__AS_JSON__()`, `__AS_TOML__()` and `__AS_YAML__()`, all written without a
+runtime dependency. Keys stay in document order, nothing is pruned, and where
+a format cannot carry a value faithfully the encoding is an error rather than
+an approximation — `None` in TOML, bytes anywhere, a multimap's repeated keys.
+YAML scalars are quoted unless nothing could misread them, so `"no"` and `"3"`
+survive as strings.
 
 ## Prefixes
 
