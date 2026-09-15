@@ -44,7 +44,7 @@ from .lexer import AkanError
 
 
 class Hole:
-    """One resolved hole of a template (§5.1's `{...}`).
+    """One resolved hole of a template (GRAMMAR §G5's `{...}`).
 
     * `ref`    — the reference as written, `"mind.dialects[p]"`. The analogue
       of PEP 750's `Interpolation.expression`, and likewise kept because the

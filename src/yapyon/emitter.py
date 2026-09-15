@@ -14,7 +14,7 @@ reuses it. Same for bytes, where `Scalar.prefix` says `b` or `b64` — a
 value-based emitter would have to guess an encoding and would silently
 respell every `b"..."` as base64.
 
-**Canonical spelling** (agreed 2026-09-14, normative once §4 records it):
+**Canonical spelling** (SPEC §4.4, normative since 2026-09-14):
 
 * double quotes always; the `\"\"\"` block form only when the value contains a
   newline (and only when that is safely expressible — see `_block_ok`)
@@ -40,7 +40,7 @@ from .parser import (AkanError, Mapping, MultiMap, Node, Pair, Scalar,
 
 INDENT = "  "
 
-# Escapes that read better than \xNN, and that §4.2 defines.
+# Escapes that read better than \xNN, and that GRAMMAR §G4.5 defines.
 _SHORT = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
 
@@ -95,13 +95,13 @@ def _escape_bytes(value: bytes) -> str:
 
 
 def _block_ok(value: str) -> bool:
-    """Whether §4.1's block form can hold `value` without ambiguity.
+    """Whether GRAMMAR §G4.4's block form can hold `value` without ambiguity.
 
     Every emitted content line is prefixed with the anchor, so nothing can
     outdent past it. What the form cannot take:
 
     * a whitespace-only-but-not-empty line — the anchor would swallow it or
-      leave trailing spaces, and §4.1 exempts blank lines from the anchor
+      leave trailing spaces, and GRAMMAR §G4.4 exempts blank lines from the anchor
       test, so the two readings differ
     * `\"\"\"` in the content, or a trailing `"`, either of which would run
       into the closing delimiter
@@ -115,7 +115,7 @@ def _block_ok(value: str) -> bool:
 def _block_lines(value: str, level: int) -> list[str]:
     """`key: \"\"\"` opened inline, content anchored one level deeper.
 
-    The newline straight after the delimiter is dropped by §4.1, so the first
+    The newline straight after the delimiter is dropped by GRAMMAR §G4.4, so the first
     content line is the first line of the value; `anchor` spaces come off each
     line after that, and prefixing every line with exactly `anchor` restores
     it. A value ending in a newline puts the closing delimiter on its own
@@ -125,7 +125,7 @@ def _block_lines(value: str, level: int) -> list[str]:
     body = [anchor + line if line else "" for line in value.split("\n")]
     # A value ending in a newline leaves an empty final segment. The closing
     # delimiter must still sit *at* the anchor -- at column 0 it outdents past
-    # the string's own indentation, which §4.1 makes akan.
+    # the string's own indentation, which GRAMMAR §G4.4 makes akan.
     body[-1] = (anchor + '"""') if body[-1] == "" else body[-1] + '"""'
     return ['"""'] + body
 
@@ -194,7 +194,7 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
         head = f"{pad}{marker}{pair.key}:"
         if inline is None:                       # a block of its own
             out.append(head)
-            # A `+ ` marker pushes its key to marker column + 2 (§2 anchors
+            # A `+ ` marker pushes its key to marker column + 2 (GRAMMAR §G3 anchors
             # the frame there), so a block under that key must clear the
             # key's column, not the multimap's own indentation.
             out.extend(_lines(pair.value, level + (2 if marker else 1),
@@ -208,7 +208,7 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
 def _marked(item: Node, pad: str, level: int, source: str | None,
             marker: str) -> list[str]:
     """A `- ` item. A container opens on the marker line and its remaining
-    lines align at marker column + 2, which is where §2 anchors the frame."""
+    lines align at marker column + 2, which is where GRAMMAR §G3 anchors the frame."""
     inline = _inline(item, level, source)
     if inline is not None:
         return [f"{pad}{marker}{inline[0]}"] + inline[1:]

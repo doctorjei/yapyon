@@ -21,7 +21,7 @@ def akan(text, needle=""):
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §8 — document ::= block_value EOF
+# GRAMMAR §G6 — document ::= block_value EOF
 # --------------------------------------------------------------------------- #
 def test_any_value_is_a_document():
     node = parse('"just a string"\n')
@@ -37,7 +37,7 @@ def test_one_document_per_file():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §8 — block_map
+# GRAMMAR §G6 — block_map
 # --------------------------------------------------------------------------- #
 def test_block_map_keeps_pairs_in_source_order():
     node = parse('b: 1\na: 2\nc: 3\n')
@@ -65,7 +65,7 @@ def test_two_values_on_one_line_is_akan():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §8 — block_seq
+# GRAMMAR §G6 — block_seq
 # --------------------------------------------------------------------------- #
 def test_block_seq():
     node = parse('- "a"\n- "b"\n')
@@ -93,7 +93,7 @@ def test_a_block_may_not_mix_pairs_and_items():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §8 — bare markers are layout, not meaning
+# GRAMMAR §G6 — bare markers are layout, not meaning
 # --------------------------------------------------------------------------- #
 def test_bare_dash_body_at_the_frame_anchor():
     node = parse("-\n  a: 1\n")
@@ -174,7 +174,7 @@ def test_multimap_has_no_flow_spelling():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §8 — flow_list / flow_map
+# GRAMMAR §G6 — flow_list / flow_map
 # --------------------------------------------------------------------------- #
 def test_flow_list():
     node = parse("x: [1, 2, 3]\n")
@@ -229,7 +229,7 @@ def test_bare_word_inside_a_flow_list_is_akan():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §7 — keys
+# GRAMMAR §G7 — keys
 # --------------------------------------------------------------------------- #
 def test_duplicate_keys_are_akan_and_name_the_first():
     with pytest.raises(AkanError) as e:
@@ -262,7 +262,7 @@ def test_keywords_are_not_keys():
 
 
 def test_dunder_keys_are_akan():
-    # the dunder namespace belongs to yapyon, not to the document (§7)
+    # the dunder namespace belongs to yapyon, not to the document (GRAMMAR §G4.2)
     akan("__foo__: 1\n", "'__foo__' cannot be a key")
     akan("x: {__foo__: 1}\n", "cannot be a key")
     akan("m:\n  + __foo__: 1\n", "cannot be a key")

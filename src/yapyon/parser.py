@@ -2,7 +2,7 @@
 
 YAMLちゃうで。やぴょんやぴょん。
 
-Recursive descent over the lexer's token stream (SPEC §8).  The grammar is
+Recursive descent over the lexer's token stream (GRAMMAR §G6).  The grammar is
 plain LL(1); the one lookahead-sensitive spot is that a NAME at the start of
 a line is a key iff a COLON follows it.
 
@@ -102,7 +102,7 @@ class Mapping(Node):
     pairs: list = field(default_factory=list)   # list[Pair], in source order
 
     def __post_init__(self):
-        # Keys within one mapping are unique (SPEC §7), so this is lossless.
+        # Keys within one mapping are unique (GRAMMAR §G7), so this is lossless.
         self.by_key = {p.key: p.value for p in self.pairs}
 
 
@@ -176,7 +176,7 @@ _BLOCK_FORM = {
 
 
 def _bad_key_msg(tok: Token) -> str:
-    """SPEC §7: keys are bare identifiers in v0.1."""
+    """GRAMMAR §G7: keys are bare identifiers in v0.1."""
     if tok.kind in ("STRING", "YSTR", "YTSTR"):
         return ("keys are bare identifiers in v0.1; quoted keys are reserved "
                 "(write name: rather than \"name\":)")
@@ -270,12 +270,12 @@ class Parser:
         return Mapping(first.line, first.col, pairs)
 
     def _akan_mixed(self, own: str, tok: Token):
-        """SPEC §7.1: a block is a mapping, a sequence, or a multimap."""
+        """GRAMMAR §G7: a block is a mapping, a sequence, or a multimap."""
         self._akan(f"a block holds {_BLOCK_FORM[own]} or "
                    f"{_BLOCK_FORM[tok.kind]}, not both", tok)
 
     def _check_key(self, key_tok: Token, first_line: dict[str, int]) -> str:
-        """SPEC §7's rules on a name in key position, in one place.
+        """GRAMMAR §G7's rules on a name in key position, in one place.
 
         Block pairs and flow maps both come here so the two cannot drift —
         they held separate copies of the duplicate check before.
@@ -314,7 +314,7 @@ class Parser:
         return Pair(key_tok.line, key_tok.col, key, value)
 
     def _frame_body(self, marker: Token, parse_body, what: str) -> Node:
-        """`MARKER INDENT [ NEWLINE ] body DEDENT` (SPEC §8).
+        """`MARKER INDENT [ NEWLINE ] body DEDENT` (GRAMMAR §G6).
 
         The optional NEWLINE is the bare-marker form (`-` or `+` alone on its
         line); the optional inner INDENT/DEDENT covers a body indented deeper
@@ -368,7 +368,7 @@ class Parser:
         return MultiMap(first.line, first.col, entries)
 
     def _mmap_entry(self) -> Pair:
-        """Exactly one pair (SPEC §7.1).  Keys repeat *across* entries."""
+        """Exactly one pair (GRAMMAR §G7).  Keys repeat *across* entries."""
         tok = self._peek()
         if not (tok.kind == "NAME" and self._peek(1).kind == "COLON"):
             if tok.kind in _SCALAR_KINDS or tok.kind in ("LBRACKET", "LBRACE"):

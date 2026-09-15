@@ -264,7 +264,7 @@ def test_set_tuple_and_complex_are_types_in_python_and_akan_here(src):
 # =========================================================================== #
 # SPEC §12 — the yapyon record
 #
-# The eight scalar kinds of §8 split five/three, and that split *is* the
+# The eight scalar kinds of GRAMMAR §G6 split five/three, and that split *is* the
 # record rule (§12.2). A port claiming the record level must agree on every
 # row of this table and on the subset property below.
 # =========================================================================== #
@@ -315,7 +315,7 @@ def test_a_multimap_is_plain_data_and_survives_into_a_record():
 
 
 def test_unicode_version_reports_this_installs_tables():
-    # §7: an implementation must document where its identifier tables come
+    # GRAMMAR §G4.1: an implementation must document where its identifier tables come
     # from. yapyon's are the host interpreter's, so it reports rather than
     # claims -- and reports the *same* tables isidentifier() actually uses.
     import unicodedata

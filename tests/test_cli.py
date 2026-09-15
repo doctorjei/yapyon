@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-# A hole spelled the long way -- the one shiran yapyon still has (§5.1).
+# A hole spelled the long way -- the one shiran yapyon still has (GRAMMAR §G5.4).
 WARNS = 'a:\n  bar: "X"\nu: y"{a[\'bar\']}"\n'
 CLEAN = 'a:\n  bar: "X"\nu: y"{a.bar}"\n'
 BROKEN = "a: [1,\n"

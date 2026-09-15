@@ -11,7 +11,7 @@ Home: https://github.com/doctorjei/yapyon
 and therefore also loads yapyon records — `loads_record`, `load_record` and
 `is_record` are the record surface.
 
-**Identifier tables (SPEC §7): Unicode 14.0.0 is the guaranteed floor.**
+**Identifier tables (GRAMMAR §G4.1): Unicode 14.0.0 is the guaranteed floor.**
 yapyon uses `str.isidentifier()`, so the tables are the host interpreter's;
 the floor is Python 3.11's, 3.11 being the oldest supported. A newer Python
 additionally accepts codepoints assigned after Unicode 14. `UNICODE_VERSION`
@@ -32,14 +32,14 @@ from .emitter import emit
 
 __version__ = "0.1.0a3"
 
-#: SPEC §7 asks every implementation to document where its identifier tables
+#: GRAMMAR §G4.1 asks every implementation to document where its identifier tables
 #: come from. yapyon's are the host interpreter's, so the honest answer varies
 #: per install and this reports it rather than claiming it. The *guaranteed*
 #: floor is 14.0.0 (Python 3.11's); a newer host accepts more.
 UNICODE_VERSION = _unicodedata.unidata_version
 
 __all__ = [
-    # what this install's identifier tables are (SPEC §7)
+    # what this install's identifier tables are (GRAMMAR §G4.1)
     "UNICODE_VERSION",
     # the everyday API
     "load", "loads", "build", "Template", "Hole", "OrderedMultimap",

@@ -48,7 +48,7 @@ def normalize(text: str, *, source: str | None = None) -> str:
 
 def main(argv: list[str]) -> int:
     # The warning channel is wired but structurally cannot fire here: every
-    # shiran yapyon has comes from a hole (§5.1's avoidable bracket), and a
+    # shiran yapyon has comes from a hole (GRAMMAR §G5.4's avoidable bracket), and a
     # record has no holes at all. It stays connected rather than being
     # special-cased away, so that a future record-side shiran is surfaced by
     # construction instead of being forgotten.

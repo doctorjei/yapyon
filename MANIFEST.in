@@ -3,6 +3,9 @@ include README.md
 include CHANGELOG.md
 
 # The conformance suite is the artifact another implementation checks itself
-# against, so it travels in the sdist even though it is not installed.
+# against, so it travels in the sdist even though it is not installed. The
+# specification travels for the same reason, and more so: the suite says
+# whether an implementation agrees, docs/ say what it is meant to agree with.
 recursive-include tests *.py
 recursive-include examples *.ypy
+recursive-include docs *.md

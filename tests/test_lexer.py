@@ -31,7 +31,7 @@ def akan(text, needle=""):
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §2 — lexical structure
+# GRAMMAR §G2 — lexical structure
 # --------------------------------------------------------------------------- #
 def test_basic_map_token_kinds():
     assert kinds('name: "x"') == ["NAME", "COLON", "STRING", "NEWLINE", "EOF"]
@@ -61,7 +61,7 @@ def test_indent_matching_no_open_block_is_akan():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §2 — dash frames
+# GRAMMAR §G3 — dash frames
 # --------------------------------------------------------------------------- #
 def test_dash_frames_open_and_close():
     ks = kinds('servers:\n  - name: "w1"\n    port: 1\n  - name: "w2"\n')
@@ -96,7 +96,7 @@ def test_marker_away_from_line_start_names_its_rule():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §2 — flow suppression
+# GRAMMAR §G3 — flow suppression
 # --------------------------------------------------------------------------- #
 def test_newlines_and_indent_suppressed_inside_brackets():
     ks = kinds('tags: [\n  "a",\n  "b",\n]\n')
@@ -113,7 +113,7 @@ def test_unmatched_closer_is_akan():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §4.1 — triple-quote dedent, anchored at the opening delimiter
+# GRAMMAR §G4.4 — triple-quote dedent, anchored at the opening delimiter
 # --------------------------------------------------------------------------- #
 def test_dedent_by_anchor_column():
     doc = 'foo:\n    """Hello.\n    I\'m John."""\n'
@@ -172,7 +172,7 @@ def test_newline_in_single_line_string_is_akan():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §4.2 — escapes (Python's table minus \N{...}; unknown is akan)
+# GRAMMAR §G4.5 — escapes (Python's table minus \N{...}; unknown is akan)
 # --------------------------------------------------------------------------- #
 def test_escape_table():
     assert value(r'x: "a\n\t\x41\u00e9\\"', "STRING") == "a\n\tA\u00e9\\"
@@ -193,7 +193,7 @@ def test_a_plain_newline_in_a_triple_quote_survives():
 
 
 def test_the_continuation_is_unreachable_in_a_single_line_string():
-    # not by exception: §4.1's raw-newline akan fires first, so the two
+    # not by exception: GRAMMAR §G4.4's raw-newline akan fires first, so the two
     # rules never have to know about each other
     akan('x: "one\\\ntwo"', "newline in single-line string")
 
@@ -204,7 +204,7 @@ def test_a_raw_triple_quote_keeps_the_backslash_and_the_newline():
 
 
 def test_surrogate_escapes_are_akan():
-    # SPEC §4.2: yapyon strings are sequences of Unicode scalar values
+    # GRAMMAR §G4.5: yapyon strings are sequences of Unicode scalar values
     akan(r'x: "\ud800"', "surrogate")
     akan(r'x: "\U0000DC00"', "surrogate")
     assert value(r'x: "\U0001F600"', "STRING") == "\U0001f600"
@@ -255,7 +255,7 @@ def test_escaped_backslash_is_a_backslash():
 
 
 def test_an_escaped_quote_does_not_close_the_string():
-    # §4.2's table includes \" and \'. The scan must honour them, or the
+    # GRAMMAR §G4.5's table includes \" and \'. The scan must honour them, or the
     # literal ends at the escaped quote -- which is what used to happen:
     # `"x\"y"` akaned as a dangling backslash. Fixed 2026-09-14.
     assert value('x: "a\\"b"\n', "STRING") == 'a"b'
@@ -304,7 +304,7 @@ def test_raw_bytes():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §4.3 — prefixes: canonical spellings only, per-prefix hints
+# GRAMMAR §G4.6 — prefixes: canonical spellings only, per-prefix hints
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("src,needle", [
     ('x: f"h"', "no f-strings"),
@@ -325,7 +325,7 @@ def test_whitespace_before_quote_is_not_a_prefix():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §5.1 — hole grammar
+# GRAMMAR §G5 — hole grammar
 # --------------------------------------------------------------------------- #
 def test_y_string_parts():
     t = tokenize('x: y"{host}/api"')[2]
@@ -385,7 +385,7 @@ def test_plain_strings_are_inert():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §5.1 — holes are recognised before escapes decode
+# GRAMMAR §G4.7 — holes are recognised before escapes decode
 # --------------------------------------------------------------------------- #
 def test_an_escape_that_produces_a_brace_is_content_not_structure():
     # the layering Python uses: f"\x7bname\x7d" is the six characters {name}
@@ -418,7 +418,7 @@ def test_format_specs_and_conversions_name_their_reservation():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §8 — reserved tokens
+# GRAMMAR §G6 — reserved tokens
 # --------------------------------------------------------------------------- #
 def test_document_markers_name_their_reservation():
     akan("---\na: 1\n", "'---' is reserved")
@@ -460,7 +460,7 @@ def test_no_inf_nan_spelling():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §7 — names are Unicode identifiers (UAX #31: XID_Start | '_', then
+# GRAMMAR §G4.1 — names are Unicode identifiers (UAX #31: XID_Start | '_', then
 # XID_Continue).  The same rule governs hole segments, so every key a
 # document can write is a key a hole can name.
 # --------------------------------------------------------------------------- #

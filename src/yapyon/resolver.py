@@ -259,7 +259,7 @@ class Resolver:
 
 
     def _lookup(self, ref: str, site: _Site) -> Node:
-        """Walk a parsed reference (SPEC §5.1) from its anchor to its target.
+        """Walk a parsed reference (GRAMMAR §G5) from its anchor to its target.
 
         `a.b` is sugar for `a["b"]`, so both arrive here as the same step and
         the equivalence needs no separate code path.
@@ -290,7 +290,7 @@ class Resolver:
             current = self._step(current, step, ref, site)
         return current
 
-    # -- §9's relative anchors ----------------------------------------------
+    # -- §5.1.1's relative anchors ----------------------------------------------
     #
     # `site.chain` is `[(mapping, key), ...]` innermost first, where entry 0 is
     # the mapping directly holding this pair and the key is the pair's own.

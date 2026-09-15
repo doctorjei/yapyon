@@ -38,9 +38,17 @@ loader and emitter are done and tested — 537 tests, including a conformance
 suite that turns the splice matrix and the Python divergence table into
 executable cases.
 
-The normative specification is a working draft held by the author. It is
-intended for publication, split into a grammar document and a broader spec;
-until then this README summarises the format rather than defining it.
+**The normative specification is published, in two documents under
+[`docs/`](docs/):**
+
+| | |
+|---|---|
+| [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
+| [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
+
+References run one way: the spec cites the grammar, the grammar cites
+nothing. A parser can be written from the grammar alone, which is the point of
+separating them. This README summarises the format; those documents define it.
 
 **Identifiers are UAX #31, and the guaranteed floor is Unicode 14.0.0** —
 the tables Python 3.11 carries, 3.11 being the oldest version yapyon

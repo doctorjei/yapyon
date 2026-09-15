@@ -24,10 +24,11 @@ Design decisions implemented (from the design session):
   * Holes: strict braces. Every "{" opens a well-formed hole or is "{{";
     every lone "}" is akan. `a.b` is sugar for `a["b"]` — the bracket is
     the general form and its content yields a key (quoted literal, integer
-    index, or a reference whose value is the key). __ROOT__ is allowed as
-    first segment only; other dunder segments are reserved (akan).
-    `parse_ref` is the one implementation of that grammar; the lexer
-    validates with it and the resolver and templates traverse with it.
+    index, or a reference whose value is the key). The dunder namespace is
+    yapyon's: __ROOT__ and __PARENT__ lead a reference, __KEY__ and the three
+    __AS_X__() serializers end one, and every other dunder is akan.
+    `parse_ref` is the one implementation of that grammar (GRAMMAR §G5); the
+    lexer validates with it and the resolver and templates traverse with it.
   * Numbers: Python literals (0x/0o/0b, underscores, floats, exponents),
     optional leading sign. No inf/nan spellings.
   * Keywords: True / False / None. Any other bare word is a NAME token
@@ -125,7 +126,7 @@ _ESCAPES = {                                 # Python's table minus \N{...}
 
 def _digit(ch: str) -> bool:
     """Number literals are ASCII (SPEC §3).  `str.isdigit()` is also True
-    for '٣' (U+0663) and '²', which belong to §7's identifier rules or to
+    for '٣' (U+0663) and '²', which belong to GRAMMAR §G4.1's identifier rules or to
     nothing at all — routing them to the number lexer only produces a
     'malformed number' where the mistake was a name.  False at EOF, where
     `_peek` returns ""."""
@@ -142,11 +143,13 @@ class RefError(ValueError):
 
 
 class Ref:
-    """A parsed hole reference — SPEC §5.1.
+    """A parsed hole reference.
 
-        ref       ::= ("__ROOT__" ".")? SEG (("." SEG) | ("[" sub "]"))*
-        sub       ::= STRING | INT | ref
-        SEG       ::= identifier
+    **The grammar is GRAMMAR §G5 and is not restated here.** A copy lived in
+    this docstring until 2026-09-15 and had gone stale twice over: it
+    generated no serializer call and no relative anchor, so it described a
+    language narrower than the one `parse_ref` accepts. Cite the grammar;
+    `check-ref-grammar.py` keeps the document and this parser in step.
 
     `a.b` is sugar for `a["b"]`: the bracket is the general form and its
     content yields a key. So `steps` is a flat list of what to do next, and
@@ -170,8 +173,8 @@ class Ref:
                  parents: int = 0, key: bool = False, serializer: str = ""):
         self.root, self.steps, self.text = root, list(steps), text
         self.shirans: list[str] = list(shirans)   # legal, but worth a word
-        self.parents = parents      # §9: how many __PARENT__ hops, 0 if none
-        self.key = key              # §9: ends in __KEY__, naming a position
+        self.parents = parents      # §5.1.1: how many __PARENT__ hops, 0 if none
+        self.key = key              # §5.1.1: ends in __KEY__, naming a position
         self.serializer = serializer   # §5.1.2: "__AS_JSON__", or "" 
 
     def __eq__(self, other):
@@ -264,7 +267,7 @@ def parse_ref(text: str) -> Ref:
         if not text:
             return Ref(True, [], source)
 
-    # §9's relative anchors. `__PARENT__` repeats, where `__ROOT__` may not:
+    # §5.1.1's relative anchors. `__PARENT__` repeats, where `__ROOT__` may not:
     # it moves one level, so a chain of them is the only way to move several.
     parents = 0
     while _leads(text, "__PARENT__"):
@@ -392,7 +395,7 @@ def _parse_subscript(inner: str, shirans: list):
 
 
 def _check_segment(seg: str) -> None:
-    """SPEC §7's identifier rule, applied to a dotted segment."""
+    """GRAMMAR §G4.1's identifier rule, applied to a dotted segment."""
     if not seg:
         raise RefError("empty segment in a hole reference")
     if seg == "__ROOT__":                     # before the dunder test, so
@@ -406,7 +409,7 @@ def _check_segment(seg: str) -> None:
     if is_dunder(seg):                        # the specific message wins
         raise RefError(f"reserved name {seg!r} in hole (defined: __ROOT__, "
                        f"__PARENT__, __KEY__)")
-    if ":" in seg or "!" in seg:              # SPEC §5.1, reserved in §9
+    if ":" in seg or "!" in seg:              # GRAMMAR §G5.2, reserved in §9
         raise RefError("format specs and conversions are reserved; a hole "
                        "names a value and does nothing else")
     if not seg.isidentifier():
@@ -418,7 +421,7 @@ def _check_segment(seg: str) -> None:
 
 DOLLAR_HINT = (" — if the `$` was meant as an environment variable, yapyon "
                "does not expand them; do that after loading")
-"""Hedged on purpose (SPEC §5.1, and the `$VAR` decision behind it).
+"""Hedged on purpose (GRAMMAR §G4.7, and the `$VAR` decision behind it).
 
 `$` is an ordinary character with no meaning in yapyon, so we cannot know
 whether the author meant a variable or wrote a literal dollar. The hint says
@@ -445,7 +448,7 @@ def bad_segment_hint(seg: str) -> str:
 def is_dunder(name: str) -> bool:
     """True for names the __dunder__ namespace reserves for yapyon itself.
 
-    **One predicate, two rules** (SPEC §5.1 and §7): a hole segment spelled
+    **One predicate, two rules** (GRAMMAR §G4.1 and §G5): a hole segment spelled
     this way names one of yapyon's own built-ins — only `__ROOT__` in v0.1 —
     and a *key* spelled this way is akan, so no document can define a name it
     could never address. The parser imports this rather than repeating the
@@ -458,7 +461,7 @@ def is_dunder(name: str) -> bool:
 
 
 def _id_continue(ch: str) -> bool:
-    """True for XID_Continue (SPEC §7).  ``("a" + ch).isidentifier()`` is
+    """True for XID_Continue (GRAMMAR §G4.1).  ``("a" + ch).isidentifier()`` is
     exactly that test, which keeps the Unicode tables in `str`.  The explicit
     emptiness check matters: ``"a" + "" == "a"`` *is* an identifier, so at EOF
     this would otherwise answer True forever."""
@@ -630,23 +633,23 @@ class Lexer:
                 self._emit("NAME", name, line, col)
             return
 
-        for reserved in ("---", "..."):           # SPEC §8, reserved tokens
+        for reserved in ("---", "..."):           # GRAMMAR §G6, reserved tokens
             if self.text.startswith(reserved, self.pos):
                 self._akan(f"{reserved!r} is reserved and has no meaning in "
                            f"v0.1; yapyon is one document per file")
         if ch in "-+" and self._peek(1) in (" ", "\n", ""):
             self._akan(f"{ch!r} opens a block frame only at the start of a "
                        f"line's content")
-        if _id_continue(ch):        # §7: legal inside a name, just not first
+        if _id_continue(ch):        # GRAMMAR §G4.1: legal inside a name, just not first
             self._akan(f"{ch!r} cannot start a name, though it may appear "
-                       f"inside one (SPEC §7: names are Unicode identifiers)")
+                       f"inside one (GRAMMAR §G4.1: names are Unicode identifiers)")
         if ch.isalnum():            # word-like, but no identifier admits it
-            self._akan(f"{ch!r} cannot appear in a name (SPEC §7: names are "
+            self._akan(f"{ch!r} cannot appear in a name (GRAMMAR §G4.1: names are "
                        f"Unicode identifiers, UAX #31)")
         self._akan(f"unexpected character {ch!r}")
 
     def _scan_identifier(self) -> str:
-        """Scan one identifier (SPEC §7): an XID_Start character or '_',
+        """Scan one identifier (GRAMMAR §G4.1): an XID_Start character or '_',
         then XID_Continue characters.
 
         This is deliberately the same rule `_scan_hole` applies to its
@@ -780,12 +783,12 @@ class Lexer:
             ch = self._peek()
             if ch == "\\" and self._peek(1) not in ("", "\n"):
                 # A backslash protects the character after it, so `\"` is
-                # content and not the closing delimiter -- §4.2's table has
+                # content and not the closing delimiter -- GRAMMAR §G4.5's table has
                 # \" and \'. This is a *scanning* rule, so it holds for raw
                 # strings too: r"x\"y" keeps the backslash in the value but
                 # still does not end there, exactly as in Python.
                 # Backslash-newline is excluded so the newline branch below
-                # keeps doing §4.1's dedent; _process_escapes joins the line
+                # keeps doing GRAMMAR §G4.4's dedent; _process_escapes joins the line
                 # afterwards. The empty peek guards EOF (trap 1).
                 for _ in range(2):
                     pos.append((self.line, self.col))
@@ -889,7 +892,7 @@ class Lexer:
                         c not in "0123456789abcdefABCDEF" for c in hexpart):
                     self._akan(rf"malformed \{e} escape", *at(start))
                 codepoint = int(hexpart, 16)
-                if 0xD800 <= codepoint <= 0xDFFF:      # SPEC §4.2
+                if 0xD800 <= codepoint <= 0xDFFF:      # GRAMMAR §G4.5
                     self._akan(f"\\{e} escape names the surrogate "
                                f"U+{codepoint:04X}; yapyon strings are "
                                f"Unicode scalar values (write the character "
@@ -918,7 +921,7 @@ class Lexer:
                     line: int, col: int) -> list:
         """Split a raw string body into text chunks and holes.
 
-        Holes are recognised **before** escapes decode (SPEC §5.1), so an
+        Holes are recognised **before** escapes decode (GRAMMAR §G4.7), so an
         escape that produces a brace is content and never structure — the
         layering Python uses for f-strings, where `f"\\x7bname\\x7d"` is the
         six characters `{name}`.  Text chunks come back raw, for the caller

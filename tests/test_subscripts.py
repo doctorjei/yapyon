@@ -41,7 +41,7 @@ def test_a_dot_and_a_quoted_key_resolve_alike():
 def test_a_bracket_reaches_keys_a_dot_cannot():
     # this is what the general form is *for* — it subsumes §9's reserved
     # "quoted hole segments" rather than adding a third spelling.
-    # No v0.1 document can *write* the key `b.c` (§7 keys are bare
+    # No v0.1 document can *write* the key `b.c` (GRAMMAR §G7 keys are bare
     # identifiers, and quoted keys are reserved), so the reference side is
     # ready ahead of the key side. That is the compatible order.
     assert parse_ref('a["b.c"]').steps == [("key", "a"), ("key", "b.c")]
@@ -162,7 +162,7 @@ def test_zero_one_and_many_are_the_same_shape():
 # Templates traverse identically — one grammar, three users
 # --------------------------------------------------------------------------- #
 def test_a_template_takes_the_same_subscripts():
-    # a yt resolves against the document, so the §5.1 grammar reaches exactly
+    # a yt resolves against the document, so the GRAMMAR §G5 grammar reaches exactly
     # what it reaches in a y-string -- one grammar, and now only two users
     t = loads('p: "claude"\nd:\n  claude: "anthropic"\n'
               'xs: ["a", "b"]\nt: yt"{d[p]}/{xs[1]}"\n')["t"]
@@ -218,7 +218,7 @@ def test_the_string_delimiter_still_ends_the_string():
 
 
 # --------------------------------------------------------------------------- #
-# SPEC §9 relative references — __PARENT__ and __KEY__
+# SPEC §5.1.1 relative references — __PARENT__ and __KEY__
 # --------------------------------------------------------------------------- #
 def test_key_names_the_pair_this_hole_sits_in():
     assert loads('a:\n  b:\n    here: y"{__KEY__}"\n')["a"]["b"]["here"] \
