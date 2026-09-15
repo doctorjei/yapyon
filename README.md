@@ -34,7 +34,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 ## Status
 
 Pre-alpha, and the `a` in the version means it. Lexer, parser, resolver,
-loader and emitter are done and tested — 537 tests, including a conformance
+loader and emitter are done and tested — 553 tests, including a conformance
 suite that turns the splice matrix and the Python divergence table into
 executable cases.
 
@@ -223,6 +223,11 @@ a format cannot carry a value faithfully the encoding is an error rather than
 an approximation — `None` in TOML, bytes anywhere, a multimap's repeated keys.
 YAML scalars are quoted unless nothing could misread them, so `"no"` and `"3"`
 survive as strings.
+
+A serializer names the value it encodes, so it cannot name a *bare* anchor:
+`{__PARENT__.__AS_JSON__()}` would have to encode the string it is computing,
+and is akan. Reach past the anchor — `{__ROOT__.blk.__AS_JSON__()}` — which is
+the shape you want anyway.
 
 ## Prefixes
 

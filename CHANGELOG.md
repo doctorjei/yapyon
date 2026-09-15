@@ -9,6 +9,35 @@ Every `0.1.0aN` is a pre-release: `pip install yapyon` will not see it without
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- **A stalled serializer is reported as the cycle it is.** Two serializers
+  whose targets hold each other — `b1.m` encoding `b2` while `b2.m` encodes
+  `b1` — failed with *"a YString cannot be serialized"*, naming the wrong
+  problem at the wrong line and mentioning neither the cycle nor the other
+  reference. The encoder conflated *has no faithful encoding* (a multimap,
+  bytes — permanent) with *is not resolved yet* (still holds a y-string), so a
+  hard error pre-empted the resolver before it could detect the cycle. Affects
+  `0.1.0a3`.
+- **The refusal to serialize a bare anchor says why.**
+  `{__PARENT__.__AS_JSON__()}` reported *"needs a value to encode"*, which is
+  false — an anchor names a value — and suggested the spelling the author had
+  already written. The refusal is correct (an anchor always contains the hole
+  naming it, so the reference is circular in every document); only the message
+  was wrong. Behaviour is unchanged.
+
+### Documentation
+
+- **The specification is published**, as two documents under `docs/`:
+  `GRAMMAR.md` (*are these bytes well-formed yapyon?* — self-contained,
+  normative for syntax) and `SPEC.md` (*what do well-formed bytes mean?*).
+  References run one way, so a parser can be written from the grammar alone.
+  Both ship in the sdist.
+
+---
+
 ## 0.1.0a3 — 2026-09-14
 
 The first release to carry breaking changes. It also fixes a parse bug present
