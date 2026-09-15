@@ -419,6 +419,56 @@ def test_the_serializer_set_belongs_to_the_format(ref, needle):
 
 
 # --------------------------------------------------------------------------- #
+# A serializer may not be applied to a bare anchor (SPEC §5.1.2)
+#
+# Not a restriction on anchors, and not an implementation artifact: an anchor
+# is *always* an ancestor of the hole, so encoding it would need the value it
+# is computing. Unconditionally circular, so it is akan at parse, where the
+# author can see it (law 7), rather than as a cycle reported later.
+#
+# The useful shape -- an anchor plus a step leading away from the hole -- is
+# legal and is covered below, so the bar costs nothing.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("ref", [
+    "__ROOT__.__AS_JSON__()",
+    "__PARENT__.__AS_JSON__()",
+    "__PARENT__.__PARENT__.__AS_YAML__()",
+    "__ROOT__.__AS_TOML__()",
+])
+def test_a_serializer_on_a_bare_anchor_is_circular(ref):
+    with pytest.raises(RefError) as e:
+        parse_ref(ref)
+    msg = str(e.value)
+    assert "contains this hole" in msg
+    # the message must name the real reason, not the bare-serializer one:
+    # "needs a value to encode" is false here, since an anchor names a value
+    assert "needs a value to encode" not in msg
+
+
+@pytest.mark.parametrize("ref", [
+    "__ROOT__.blk.__AS_JSON__()",
+    "__PARENT__.blk.__AS_JSON__()",
+    "__PARENT__.__PARENT__.blk.__AS_YAML__()",
+    "__ROOT__[p].__AS_JSON__()",
+    "cfg.__AS_JSON__()",
+])
+def test_an_anchor_with_a_step_may_be_serialized(ref):
+    # what the bar above does *not* cost: naming a block through an anchor
+    assert parse_ref(ref).serializer.startswith("__AS_")
+
+
+def test_the_circular_akan_lands_in_a_document_at_the_hole():
+    akan('blk:\n  a: 1\n  me: y"{__PARENT__.__AS_JSON__()}"\n',
+         "contains this hole")
+
+
+def test_serializing_a_sibling_block_through_an_anchor_works():
+    # the shape the bar leaves intact, end to end
+    d = loads('blk:\n  a: 1\n  b: "two"\nout: y"j={__ROOT__.blk.__AS_JSON__()}"\n')
+    assert d["out"] == 'j={\n  "a": 1,\n  "b": "two"\n}'
+
+
+# --------------------------------------------------------------------------- #
 # The serializers, checked against independent readers
 #
 # An emitter that nobody reads back is a guess. tomllib is stdlib (read-only,

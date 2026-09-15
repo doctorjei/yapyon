@@ -276,14 +276,25 @@ def parse_ref(text: str) -> Ref:
         if not text:
             return Ref(False, [], source, parents=parents)
 
-    # §9's named serializers end a reference too: they name an *encoding* of
-    # the value reached, so nothing can follow one.
+    # §5.1.2's named serializers end a reference too: they name an *encoding*
+    # of the value reached, so nothing can follow one.
     serializer = ""
     if text.endswith(")"):
         head, _, call = text.rpartition(".")
         if call.endswith("()") and is_dunder(call[:-2]):
             serializer = _check_serializer(call[:-2])
             if not head:
+                # A bare anchor is barred for a different reason than a bare
+                # serializer, and saying so matters: an anchor is *always* an
+                # ancestor of the hole, so encoding it would need the value
+                # being encoded. Structural, so it lands here (law 7) rather
+                # than as a cycle the resolver reports later.
+                anchor = "__ROOT__" if root else "__PARENT__" if parents else ""
+                if anchor:
+                    raise RefError(
+                        f"{anchor} contains this hole, so {{{source.strip()}}} "
+                        f"would encode the value it is computing; name a block "
+                        f"that does not contain it, as {{{anchor}.blk.{call}}}")
                 raise RefError(f"{call} needs a value to encode; write "
                                f"{{something.{call}}}")
             text = head
