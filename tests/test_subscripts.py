@@ -505,3 +505,48 @@ def test_emitted_json_reads_back_as_the_same_data(src):
     import json
     text = loads(src + 'u: y"{s.__AS_JSON__()}"\n')["u"]
     assert json.loads(text) == loads(src)["s"]
+
+
+# --------------------------------------------------------------------------- #
+# A serializer whose target is not resolved *yet* must defer, not refuse
+#
+# `NotEncodable` conflated two different things: "this has no faithful
+# encoding" (permanent) and "this still holds a y-string" (ask again next
+# pass). Conflating them made a mutual cycle between two serializer calls
+# report "a YString cannot be serialized" -- the wrong problem, at the wrong
+# line, with no mention of the cycle or the other reference. 0.1.0a3 ships it.
+#
+# The fixpoint already knows how to defer on a YString and how to call a stall
+# a cycle (§5.3), so the fix is to rejoin it rather than pre-empt it.
+# --------------------------------------------------------------------------- #
+def test_serializer_defers_to_a_resolvable_inner_ystring():
+    # the ordinary case: the inner y-string resolves first, then the encode
+    d = loads('base: "x"\ncfg:\n  p: y"{base}/1"\n  q: 8080\n'
+              'out: y"j={cfg.__AS_JSON__()}"\n')
+    assert d["out"] == 'j={\n  "p": "x/1",\n  "q": 8080\n}'
+
+
+@pytest.mark.parametrize("src", [
+    # two calls, each encoding the block the other sits in
+    'b1:\n  m: y"{__ROOT__.b2.__AS_JSON__()}"\nb2:\n  m: y"{__ROOT__.b1.__AS_JSON__()}"\n',
+    # and a three-way ring, so the fix is not special-cased to pairs
+    'a:\n  m: y"{__ROOT__.b.__AS_JSON__()}"\n'
+    'b:\n  m: y"{__ROOT__.c.__AS_JSON__()}"\n'
+    'c:\n  m: y"{__ROOT__.a.__AS_JSON__()}"\n',
+])
+def test_mutually_referencing_serializers_report_a_cycle(src):
+    with pytest.raises(AkanError) as e:
+        loads(src)
+    msg = str(e.value)
+    assert "form a cycle" in msg
+    # the old wrong message must not come back
+    assert "cannot be serialized" not in msg
+
+
+@pytest.mark.parametrize("src,needle", [
+    ('mm:\n  + k: 1\n  + k: 2\nout: y"{mm.__AS_JSON__()}"\n', "keys repeat"),
+    ('s:\n  v: b"\\x00"\nout: y"{s.__AS_JSON__()}"\n', "no bytes"),
+])
+def test_permanent_refusals_are_still_immediate(src, needle):
+    # deferring must not swallow the refusals that can never become encodable
+    akan(src, needle)

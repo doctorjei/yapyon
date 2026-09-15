@@ -334,6 +334,10 @@ class Resolver:
                        site.node)
         try:
             text = SERIALIZERS[parsed.serializer](_plain(target))
+        except _NotYet as pending:
+            # Hand the unresolved node back: `_try` defers on a YString, so
+            # this rejoins the ordinary fixpoint instead of pre-empting it.
+            return pending.node
         except NotEncodable as exc:
             self._akan(f"{{{ref}}}: {exc}", site.node)
         return Scalar(site.node.line, site.node.col, "str", text)
@@ -431,6 +435,19 @@ class Resolver:
         return mapping.by_key[name]
 
 
+class _NotYet(Exception):
+    """A serializer's target still holds an unresolved y-string.
+
+    Distinct from `NotEncodable`, which is permanent. This one means "ask me
+    again next pass", and carries the offending node so the caller can hand it
+    back to the fixpoint — which already knows how to defer on a `YString` and
+    how to call a stall a cycle.
+    """
+
+    def __init__(self, node: Node):
+        self.node = node
+
+
 def _plain(node: Node):
     """A resolved subtree as plain Python, for a serializer to encode.
 
@@ -453,6 +470,13 @@ def _plain(node: Node):
                            "encoding; serialize the entries you mean")
     if isinstance(node, Scalar):
         return node.value
+    if isinstance(node, YString):
+        # *Not* unencodable — merely not resolved yet. Saying "cannot be
+        # serialized" here reports the wrong problem: the container may be
+        # perfectly encodable one pass later, and if it never is, the honest
+        # diagnosis is §5.3's cycle, naming every stuck reference. Two calls
+        # whose arguments hold each other are the case that needs this.
+        raise _NotYet(node)
     raise NotEncodable(f"a {type(node).__name__} cannot be serialized")
 
 
