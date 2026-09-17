@@ -34,7 +34,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 ## Status
 
 Pre-alpha, and the `a` in the version means it. Lexer, parser, resolver,
-loader and emitter are done and tested — 553 tests, including a conformance
+loader and emitter are done and tested — 557 tests, including a conformance
 suite that turns the splice matrix and the Python divergence table into
 executable cases.
 
