@@ -30,10 +30,10 @@ from __future__ import annotations
 import json
 import re
 
-#: The names the grammar accepts (SPEC §5.1.2). `lexer.parse_ref` imports this
-#: rather than keeping a second list, so the grammar and the implementations
-#: cannot come to disagree about which serializers exist.
-SERIALIZER_NAMES = ("__AS_JSON__", "__AS_TOML__", "__AS_YAML__")
+#: Serializers are declared once, at the foot of this module: `SERIALIZERS` maps
+#: each name to its writer, and `SERIALIZER_NAMES` is derived from it. Declared
+#: there rather than here because the values are the writers, which must exist
+#: first.
 
 
 class NotEncodable(Exception):
@@ -227,3 +227,11 @@ SERIALIZERS = {
     "__AS_TOML__": to_toml,
     "__AS_YAML__": to_yaml,
 }
+
+#: The names the grammar accepts (SPEC §5.1.2). **Derived** from `SERIALIZERS`
+#: rather than restated: the two used to be written out separately, so a fourth
+#: serializer could be added to one and missed in the other, and the comment
+#: promising there was no second list sat directly above one. `lexer.parse_ref`
+#: imports this rather than keeping a further list, and
+#: `tools/check_ref_grammar.py` checks it against GRAMMAR §G5's production.
+SERIALIZER_NAMES = tuple(SERIALIZERS)

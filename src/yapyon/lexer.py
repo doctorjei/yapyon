@@ -175,7 +175,7 @@ class Ref:
         self.shirans: list[str] = list(shirans)   # legal, but worth a word
         self.parents = parents      # §5.1.1: how many __PARENT__ hops, 0 if none
         self.key = key              # §5.1.1: ends in __KEY__, naming a position
-        self.serializer = serializer   # §5.1.2: "__AS_JSON__", or "" 
+        self.serializer = serializer   # §5.1.2: a SERIALIZER_NAMES member, or ""
 
     def __eq__(self, other):
         return (isinstance(other, Ref) and self.root == other.root
