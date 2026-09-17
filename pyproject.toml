@@ -36,7 +36,10 @@ Issues = "https://github.com/doctorjei/yapyon/issues"
 # independent implementation rather than against itself. The core
 # stays stdlib-only (tomllib reads TOML but cannot write it, which
 # is why that writer is ours too).
-dev = ["pytest>=8", "PyYAML>=6"]
+# kinemata is a dev tool only, pinned because its 0.x interfaces are explicitly
+# not settled: it reads this tree and never participates in producing it. See
+# kinemata.toml for what it gates.
+dev = ["pytest>=8", "PyYAML>=6", "kinemata==0.1.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,0 +1,116 @@
+# kinemata — one declared place per fact.
+#
+# Adopted 2026-09-17. yapyon states four single-source rules in prose
+# (CONVENTIONS.md, DESIGN_RATIONALE.md "State of the code"), and four of the
+# nine traps this codebase has recorded are the same failure: a rule that was
+# written, believed, and unexecuted. This file turns the ones that can be
+# spelled as a pattern into gates.
+#
+# Adopted with no baseline because every gate was green on the first run. If
+# one goes red later, record it deliberately:
+#   kinemata baseline --record --until <date> --by "Jei" --note "<why>"
+
+[project]
+root = "."
+# Gitignored paths (dist/, .venv/, build/, *.egg-info/) are excluded
+# automatically. A leading slash anchors at the root; a bare fragment would
+# match anywhere in a path.
+exclude = [
+    "/tests/",
+    # The operator's, copied in for later work. Not yapyon artifact source and
+    # not gitignored, so they must be named here.
+    "keystore.py",
+    "keystore_strings.py",
+]
+
+# ---------------------------------------------------------------------------
+# The single-source rules canon states in prose.
+#
+# `tools/check_ref_grammar.py` appears as a `home` on both entries below, and
+# that is deliberate rather than an exemption. It transcribes GRAMMAR §G5
+# independently -- its own `is_dunder`, its own productions in comments -- so
+# that the document can be compared against the implementation. Importing the
+# implementation's versions would compare the code against itself and the check
+# would pass vacuously. Its duplication is the method, not a bypass.
+# ---------------------------------------------------------------------------
+[[registry]]
+name = "single-source"
+kind = "code-patterns"
+
+  [[registry.entry]]
+  id = "is_dunder"
+  # One predicate shared by keys and hole segments. They were separately
+  # implemented once (`isalnum()` vs `str.isidentifier()`) and silently
+  # diverged, producing keys no hole could name -- trap 5.
+  antipatterns = ['startswith\("__"\)']
+  home = ["src/yapyon/lexer.py", "tools/check_ref_grammar.py"]
+
+  [[registry.entry]]
+  id = "parse_ref"
+  # The one implementation of the reference grammar (GRAMMAR §G5). A restated
+  # production is trap 8's exact shape: a docstring copy went stale twice, and
+  # the fix was a citation rather than a corrected copy -- which is only the
+  # next stale copy.
+  antipatterns = ['ref\s*::=']
+  home = ["src/yapyon/lexer.py", "tools/check_ref_grammar.py", "docs/GRAMMAR.md"]
+
+# ---------------------------------------------------------------------------
+# Which serializers exist (SPEC §5.1.2).
+#
+# Entry ids are the names themselves, so [[parity]] below can compare this
+# declaration against what the code actually holds.
+#
+# Antipatterns are the QUOTED literal only. A bare mention is prose naming the
+# feature -- the spec must name what it specifies, and a comment may give an
+# example -- and flagging that is a false positive by construction. The same
+# reasoning canon applies to shiran: a warning must fire where something is
+# probably a mistake, not merely unusual.
+# ---------------------------------------------------------------------------
+[[registry]]
+name = "serializers"
+kind = "code-patterns"
+
+  [[registry.entry]]
+  id = "__AS_JSON__"
+  antipatterns = ['''["']__AS_JSON__["']''']
+  home = ["src/yapyon/serializers.py"]
+
+  [[registry.entry]]
+  id = "__AS_TOML__"
+  antipatterns = ['''["']__AS_TOML__["']''']
+  home = ["src/yapyon/serializers.py"]
+
+  [[registry.entry]]
+  id = "__AS_YAML__"
+  antipatterns = ['''["']__AS_YAML__["']''']
+  home = ["src/yapyon/serializers.py"]
+
+# The declaration above against what the code actually holds. `tools/
+# check_ref_grammar.py` already checks GRAMMAR.md against SERIALIZER_NAMES;
+# this is the other side of the same fact -- it fails if a serializer is added
+# to the code and this config is not updated.
+[[parity]]
+registry = "serializers"
+command = ["{python}", "-c", 'import yapyon.serializers as s; print("\n".join(s.SERIALIZER_NAMES))']
+extract = '(?m)^(__AS_\w+__)$'
+
+# ---------------------------------------------------------------------------
+# Documentation claims.
+# ---------------------------------------------------------------------------
+[claims]
+suffixes = [".md"]
+# OFF deliberately, and this is measured rather than cautious. Of the four URLs
+# in the documents, three are example or reserved domains inside yapyon's own
+# samples -- `api.example.com` twice, plus the fragments `https://api` and
+# `https://api/v1` from a splice example. Only peps.python.org is a real
+# citation. Arming network checks would go red on documentation examples.
+external = false
+
+# README's test count. Verified to fire by breaking it on purpose at adoption:
+# an oracle reporting 999 produced
+#   README.md:37: test count does not resolve: 553 tests (actually 999)
+[[count]]
+label = "test count"
+pattern = '(\d+) tests'
+command = ["{python}", "-m", "pytest", "--collect-only", "-q"]
+extract = '(\d+) tests collected'
