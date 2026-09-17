@@ -149,7 +149,8 @@ class Ref:
     this docstring until 2026-09-15 and had gone stale twice over: it
     generated no serializer call and no relative anchor, so it described a
     language narrower than the one `parse_ref` accepts. Cite the grammar;
-    `check-ref-grammar.py` keeps the document and this parser in step.
+    `tools/check_ref_grammar.py` keeps the document and this parser in step,
+    and `tests/test_ref_grammar.py` runs it.
 
     `a.b` is sugar for `a["b"]`: the bracket is the general form and its
     content yields a key. So `steps` is a flat list of what to do next, and
