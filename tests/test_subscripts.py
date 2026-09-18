@@ -336,6 +336,21 @@ def test_a_toml_document_is_a_table():
     akan('xs: [1, 2]\nu: y"{xs.__AS_TOML__()}"\n', "needs a mapping")
 
 
+def test_toml_refuses_a_mapping_nested_in_a_sequence():
+    # A mapping inside a sequence is a TOML table-array ([[name]]) or an
+    # inline table inside an array -- neither of which this writer builds.
+    # str()-ifying it would render a table as a text value, so it is refused
+    # (faithful, or akan - never approximate). kinemata.toml exercises this
+    # shape in several keys; the regression is asserted here so it cannot
+    # silently return.
+    akan(r"""s:
+  items:
+    - name: "x"
+    - name: "y"
+u: y"{s.__AS_TOML__()}"
+""", "table-array")
+
+
 def test_yaml_is_block_style_in_declaration_order():
     d = loads('store:\n  GOOSE_PROVIDER: "openai"\n  GOOSE_MODEL: "nav-m1"\n'
               'u: y"{store.__AS_YAML__()}"\n')

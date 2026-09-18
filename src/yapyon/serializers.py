@@ -99,6 +99,17 @@ def _toml_str(text: str) -> str:
 
 
 def _toml_value(value) -> str:
+    if isinstance(value, dict):
+        # A mapping nested inside a sequence is a TOML table-array (e.g.
+        # ``[[name]]``) or an inline table inside an array — neither of which
+        # this writer builds. str()-ifying it would render a table as a text
+        # value, so it is refused: faithful, or akan - never approximate (the
+        # same principle that makes None, bytes and b-string overloads akan).
+        raise NotEncodable(
+            "TOML represents a repeated-key mapping as a [[table-array]] "
+            "header, which this emitter does not build; emitting str() would "
+            "render a mapping as a text value, so it is refused (faithful, or "
+            "akan - never approximate)")
     if value is None:
         raise NotEncodable("TOML has no null, so None cannot be written "
                            "faithfully; give the key a value or leave it out "

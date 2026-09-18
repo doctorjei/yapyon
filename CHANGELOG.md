@@ -13,6 +13,15 @@ Every `0.1.0aN` is a pre-release: `pip install yapyon` will not see it without
 
 ### Fixed
 
+- **`__AS_TOML__()` refuses a mapping nested in a sequence instead of
+  corrupting it.** A list of mappings — TOML's `[[table-array]]`, or an inline
+  table inside an array — reached `str()` and was written as a quoted string,
+  so `{"count": [{"name": "x"}]}` emitted `count = ["{'name': 'x'}"]` and read
+  back as text rather than a table. That is a silent reinterpretation, which
+  §5.1.2 forbids: where a format cannot carry a value faithfully the encoding
+  is akan, never approximate. The value now raises at the point of the
+  mistake. Emitting real `[[name]]` headers is a separate feature and is not
+  part of this change. Affects `0.1.0a3`.
 - **A stalled serializer is reported as the cycle it is.** Two serializers
   whose targets hold each other — `b1.m` encoding `b2` while `b2.m` encodes
   `b1` — failed with *"a YString cannot be serialized"*, naming the wrong
