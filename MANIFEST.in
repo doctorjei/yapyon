@@ -9,3 +9,10 @@ include CHANGELOG.md
 recursive-include tests *.py
 recursive-include examples *.ypy
 recursive-include docs *.md
+
+# tools/ ships because tests/ depends on it: test_ref_grammar.py imports
+# check_ref_grammar to machine-check GRAMMAR §G5 against parse_ref. Without
+# it the sdist's suite does not merely lose that test -- it fails to collect,
+# so *no* test runs. Caught 2026-09-19 by the release procedure's "run the
+# sdist's own tests in a clean venv" step, before it ever shipped.
+recursive-include tools *.py

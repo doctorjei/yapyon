@@ -9,7 +9,12 @@ Every `0.1.0aN` is a pre-release: `pip install yapyon` will not see it without
 
 ---
 
-## Unreleased
+## 0.1.0a4 — 2026-09-19
+
+A fix release. Two of the three entries below are bugs in `0.1.0a3` that could
+corrupt or misreport data, and both were found by checking the library against
+something it had not been written for rather than by a new test case. Nothing
+here is breaking; code written against `0.1.0a3` keeps working.
 
 ### Fixed
 
