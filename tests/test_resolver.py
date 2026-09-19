@@ -9,7 +9,7 @@ import pytest
 from yapyon.lexer import AkanError
 from yapyon.parser import (MultiMap, ResolvedTemplate, Scalar, YString,
                            parse)
-from yapyon.resolver import Resolver, resolve
+from yapyon.resolver import MAX_DEPTH, MAX_SIZE, Resolver, resolve
 
 
 def load(text, **kw):
@@ -193,14 +193,60 @@ def test_missing_reference_is_akan_at_the_hole():
     assert (e.value.line, e.value.col) == (2, 3)
 
 
-def test_depth_cap_is_enforced_and_overridable():
-    doc = 'a0: "x"\n' + "".join(f'a{i}: y"{{a{i - 1}}}"\n' for i in range(1, 8))
+def _chain(n):
+    """A document whose key `a{n}` sits at the end of a chain `n` deep."""
+    return 'a0: "x"\n' + "".join(f'a{i}: y"{{a{i - 1}}}"\n' for i in range(1, n + 1))
+
+
+def test_depth_ceiling_is_enforced_and_overridable():
+    doc = _chain(7)
     assert load(doc).by_key["a7"].value == "x"          # fits the default
-    akan(doc, "depth cap", max_depth=3)
+    akan(doc, "depth ceiling", max_depth=3)
 
 
-def test_size_cap_is_enforced_and_overridable():
-    akan('a: "0123456789"\nb: y"{a}{a}{a}"\n', "rendered-size cap", max_size=8)
+def test_size_ceiling_is_enforced_and_overridable():
+    akan('a: "0123456789"\nb: y"{a}{a}{a}"\n',
+         "rendered-size ceiling", max_size=8)
+
+
+# §5.3's two tiers: past MAX_* is a shiran, past the ceiling is an akan.
+# The caps stopped being akan-only on 2026-09-19 (operator ruling).
+def test_depth_past_the_warn_tier_is_a_shiran_not_an_akan():
+    doc = _chain(MAX_DEPTH + 8)
+    assert load(doc).by_key[f"a{MAX_DEPTH + 8}"].value == "x"   # it still loads
+    warned = warnings(doc)
+    assert len(warned) == 1, f"expected exactly one shiran, got {warned}"
+    assert "warn threshold" in warned[0]
+    assert str(MAX_DEPTH + 8) in warned[0]
+
+
+def test_depth_within_the_warn_tier_is_silent():
+    assert warnings(_chain(MAX_DEPTH - 1)) == []
+    assert warnings(_chain(MAX_DEPTH)) == []             # the tier is exclusive
+
+
+def test_size_past_the_warn_tier_is_a_shiran_not_an_akan():
+    # One long literal spliced twice renders past MAX_SIZE without going near
+    # the 4x ceiling.
+    doc = f'a: "{"x" * (MAX_SIZE // 2 + 16)}"\nb: y"{{a}}{{a}}"\n'
+    warned = warnings(doc)
+    assert len(warned) == 1, f"expected exactly one shiran, got {warned}"
+    assert "warn threshold" in warned[0]
+
+
+def test_the_depth_shiran_does_not_depend_on_document_order():
+    """Trap 4: a limit reached by more than one path must give one answer.
+
+    The same chain written forwards and backwards resolves in a different
+    order, so a warning reported at the first site to cross would move. It is
+    reported at the deepest site instead, which is a property of the document.
+    """
+    forward = _chain(MAX_DEPTH + 4).splitlines()
+    backward = "\n".join(reversed(forward)) + "\n"
+    a, b = warnings("\n".join(forward) + "\n"), warnings(backward)
+    assert len(a) == len(b) == 1
+    # Same depth reported, same reference point in the document.
+    assert a[0].split(": ", 2)[2] == b[0].split(": ", 2)[2]
 
 
 # --------------------------------------------------------------------------- #

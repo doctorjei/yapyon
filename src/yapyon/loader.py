@@ -21,9 +21,15 @@ str, bytes, int, float, bool, None, list, or dict. A record never yields a
 `Template`, since it needs the resolver; an `OrderedMultimap` is fine in one,
 being plain keyed data.
 
-`warn=` receives every shiran as a formatted string — currently the
-avoidable-bracket warning of §5.1. The expansion caps of §5.3 are
-loader-overridable here, as the spec says they should be; a record takes
+`warn=` receives every shiran as a formatted string — the avoidable-bracket
+warning of §5.1, and §5.3's two warn-tier warnings.
+
+§5.3 has **two tiers and they are different numbers**. `max_depth` /
+`max_size` set this implementation's **refusal ceiling** (an akan above it),
+and default to `4x` the spec's warn thresholds so that the warn tier is
+reachable. The warn thresholds themselves — `resolver.MAX_DEPTH` /
+`MAX_SIZE` — are fixed by the spec and are not arguments: a consumer chooses
+what it will *refuse*, not what the format calls suspicious. A record takes
 neither, since both are resolver limits.
 """
 
@@ -33,7 +39,7 @@ from .lexer import AkanError, Lexer, Yakamashiwa
 from .multimap import OrderedMultimap
 from .parser import (Mapping, MultiMap, Parser, ResolvedTemplate, Scalar,
                      Sequence, YString)
-from .resolver import MAX_DEPTH, MAX_SIZE, resolve, splice_text
+from .resolver import REFUSE_DEPTH, REFUSE_SIZE, resolve, splice_text
 from .template import Hole, Template
 
 
@@ -78,8 +84,8 @@ def _hole(part, source: str | None) -> Hole:
                 text, why)
 
 
-def loads(text: str, *, warn=None, max_depth: int = MAX_DEPTH,
-          max_size: int = MAX_SIZE, source: str | None = None):
+def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
+          max_size: int = REFUSE_SIZE, source: str | None = None):
     """Load a document from text.
 
     `source` names the text for diagnostics — pass it when the caller knows
@@ -95,8 +101,8 @@ def loads(text: str, *, warn=None, max_depth: int = MAX_DEPTH,
                          max_size=max_size, source=source), source)
 
 
-def load(fp, *, warn=None, max_depth: int = MAX_DEPTH,
-         max_size: int = MAX_SIZE, source: str | None = None):
+def load(fp, *, warn=None, max_depth: int = REFUSE_DEPTH,
+         max_size: int = REFUSE_SIZE, source: str | None = None):
     """Load a document from an open file (text mode, UTF-8).
 
     `source` defaults to the file's own name when it has one, so reading a
