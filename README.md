@@ -34,7 +34,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 ## Status
 
 Pre-alpha, and the `a` in the version means it. Lexer, parser, resolver,
-loader and emitter are done and tested — 558 tests, including a conformance
+loader and emitter are done and tested — 562 tests, including a conformance
 suite that turns the splice matrix and the Python divergence table into
 executable cases.
 
@@ -139,6 +139,37 @@ for that reason; the source spelling is gone once a value is a Python `float`.
 **Comments do not survive**, so this is a normalizer rather than a
 round-tripper. `yapyon.emit` is the same thing as a function. A non-record is
 refused at the offending prefix, with the record rule as the reason.
+
+## Limits
+
+Resolution has two tiers (SPEC §5.3), and they are different numbers.
+
+| | Threshold | Exceeding it |
+|---|---|---|
+| Warn tier — fixed by the spec | depth 32, rendered size 1 MiB | `shiran`, and resolution continues |
+| Refusal ceiling — this implementation's | depth 128, rendered size 4 MiB | `akan` |
+
+```python
+>>> deep = 'a0: "x"\n' + "".join(f'a{i}: y"{{a{i-1}}}"\n' for i in range(1, 41))
+>>> yapyon.loads(deep, warn=print)["a40"]
+shiran: line 41, col 5: a dependency chain 40 deep passes §5.3's warn threshold
+(32); this document is costly to resolve and an implementation may refuse it
+-- shorten the chain, or raise max_depth where it is loaded
+'x'
+```
+
+Move the ceiling with `loads(..., max_depth=…, max_size=…)`. The warn tier is
+not an argument: a consumer chooses what it will *refuse*, not what the format
+calls suspicious.
+
+The ceiling is not optional and is deliberately finite — chained doubling is
+exponential, so a document of a few dozen lines can demand unbounded memory,
+and a resolver with no ceiling is a denial-of-service in anything that parses
+configuration it did not write. The spec declines to fix one ceiling for every
+implementation; it does not suggest having none.
+
+Both tiers are about cost alone. A **cycle or a missing target is always an
+akan** at any depth, because it can never resolve.
 
 From a checkout, the stages will also dump what they see:
 

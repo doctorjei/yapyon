@@ -9,6 +9,43 @@ Every `0.1.0aN` is a pre-release: `pip install yapyon` will not see it without
 
 ---
 
+## Unreleased
+
+**Breaking.** The entry below changes what a document between the two tiers
+does, so it rides the next release rather than a patch on `0.1.0a4`.
+
+### Changed
+
+- **§5.3's expansion limits now have two tiers, and passing the spec's
+  threshold is a `shiran` rather than an `akan`.** Resolution depth 32 and
+  rendered size 1 MiB were hard errors, which forced one implementation's
+  resource bound onto every consumer of the format. They are now the
+  specification's **warn tier**: passing one emits a warning and resolution
+  continues. Refusal moved to an implementation-chosen **ceiling**, which this
+  implementation sets at `4x` the warn tier — **depth 128, rendered size
+  4 MiB** — and which `loads`/`load` still move via `max_depth` / `max_size`.
+  Those two arguments keep their names and their meaning of *the point at
+  which loading fails*; what changed is that they now default above the
+  warning rather than sitting on it.
+
+  **This is a behaviour change.** A document between the two tiers — deeper
+  than 32, or rendering more than 1 MiB — previously raised `AkanError` and
+  now loads successfully while emitting a shiran to `warn=`. Code relying on
+  the old failure should pass `max_depth=32, max_size=1048576` to restore it
+  exactly.
+
+  The ceiling is deliberately finite: chained doubling is exponential, so a
+  resolver with no ceiling is a denial-of-service in anything parsing
+  untrusted configuration. The spec now declines to fix one ceiling for every
+  implementation while requiring that one exist and be documented.
+
+  **Unrelated and unchanged: a cycle or a missing target is still an `akan`**
+  at any depth. Those share §5.3 with the limits but are a different thing —
+  the document can never resolve, so the error belongs at the point of the
+  mistake.
+
+---
+
 ## 0.1.0a4 — 2026-09-19
 
 A fix release. Two of the three entries below are bugs in `0.1.0a3` that could

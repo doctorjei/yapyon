@@ -399,9 +399,29 @@ supported; forward references work). A pass that makes no progress while
 references remain means a missing target or a cycle: akan, listing the stuck
 references with positions.
 
-**Expansion caps** (loader-overridable defaults): resolution depth 32; total
-rendered size 1 MiB per document. Exceeding either is akan. (Chained doubling
-makes growth exponential; the cap is load-bearing.)
+**Expansion limits have two tiers, and they are different numbers.**
+
+| | Threshold | Exceeding it |
+|---|---|---|
+| **Warn tier** — fixed by this specification | resolution depth 32; total rendered size 1 MiB per document | **shiran** |
+| **Refusal ceiling** — chosen by the implementation | implementation-defined, at or above the warn tier | **akan** |
+
+Passing the warn tier is a `shiran` (§10) and resolution continues: the
+document is *expensive*, which is a fact about the machine, not a mistake in
+the bytes. An implementation **may** refuse a document above a ceiling of its
+own; one that does **must document where that ceiling is**, and **should**
+allow a consumer to move it.
+
+An implementation is **strongly advised to have a ceiling**. Chained doubling
+makes growth exponential, so a document of a few dozen lines can demand
+unbounded memory; a resolver with no ceiling is a denial-of-service in any
+program that parses configuration it did not write. This specification
+declines to fix one ceiling for every implementation — it does not suggest
+having none.
+
+*Both tiers are about resource cost only. They are unrelated to the cycle rule
+above, which stays an akan: a cycle or a missing target can never resolve, so
+the document is wrong and law 7 puts the error at the point of the mistake.*
 
 **Depth is measured as the dependency chain**, not as a count of fixpoint
 passes. A pass counter makes the answer depend on the order keys happen to
@@ -633,8 +653,14 @@ it in the message ("write `{{` for a literal brace"; "respell as b64").
 
 **A shiran must fire where something is probably a mistake**, not merely
 unusual, and a shiran whose suggested fix would change what a document means
-is not a warning but a trap. v0.1 specifies exactly one, and it is about
-spelling alone: taking its advice changes nothing.
+is not a warning but a trap.
+
+v0.1 specifies **three**, and none of their fixes changes what a document
+means. The avoidable bracket is about spelling alone. §5.3's two warn-tier
+warnings assert nothing about what the author intended — they report that a
+document is costly and may be refused elsewhere, which is true whatever was
+meant — and their fixes (shorten the chain, or raise the consumer's ceiling)
+leave the resolved value identical.
 
 *The grammar states the akan and shiran registers too (`GRAMMAR §G1`), because
 it must be readable alone. That overlap is the concept only; this table is
@@ -726,7 +752,7 @@ record" must not be read as "this value reaches the application unchanged".
 | §6 templates | n/a | yes |
 | Resolver required | **no** | yes |
 | The avoidable-bracket shiran | never fires (no holes) | may fire |
-| §5.3 expansion caps | n/a | apply |
+| §5.3 expansion limits (both tiers) | n/a | apply |
 | Values produced | str, bytes, int, float, bool, None, list, dict, multimap | the above, plus Template |
 
 A multimap (§7.1) is permitted in a record. It is a yapyon-specific type, but

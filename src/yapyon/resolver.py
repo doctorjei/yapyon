@@ -22,9 +22,14 @@ Three rules do all the work:
     b-spelled bytes never do, and text never reaches bytes at all.
 
 Resolution runs to a fixpoint over the completed tree, so chains and forward
-references work. A pass that makes no progress means a cycle. Both caps
-(depth, rendered size) are load-bearing: chained doubling grows a document
-exponentially, and each is loader-overridable.
+references work. A pass that makes no progress means a cycle, and that is an
+akan at any depth — the document can never resolve.
+
+The two expansion limits are a different thing and have **two tiers**: past
+`MAX_*` (the spec's warn tier) is a shiran and resolution continues; past
+`max_depth` / `max_size` (this implementation's ceiling, and what the loader
+overrides) is an akan. Chained doubling grows a document exponentially, so the
+ceiling is load-bearing; the warn tier is advice.
 
 `yt` literals resolve here too, by exactly these rules — a template is a
 y-string that is not *joined* (§6). The resolver stops one step short and
@@ -34,14 +39,41 @@ hands the consumer the parts with their resolved values.
 from __future__ import annotations
 
 import base64
+from typing import NamedTuple
 
 from .lexer import DOLLAR_HINT, AkanError, Ref, Yakamashiwa, parse_ref
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
 from .serializers import SERIALIZERS, NotEncodable
 
-MAX_DEPTH = 32                       # §5.3, loader-overridable
-MAX_SIZE = 1 << 20                   # §5.3, bytes/codepoints rendered
+# §5.3 defines two tiers, and they are not the same number.
+#
+#   MAX_* is the SPEC's warn tier. Exceeding it is a `shiran`: the document is
+#   expensive, and some implementations will refuse it. It is fixed by the
+#   spec, not a parameter -- a consumer does not get to decide what the format
+#   calls suspicious.
+#
+#   REFUSE_* is THIS implementation's ceiling, and is what `loads`/`load`'s
+#   `max_depth` / `max_size` arguments set. Exceeding it is an `akan`.
+#   The spec declines to fix one ceiling for everyone; it does not invite an
+#   implementation to have none. Chained doubling is exponential, so a library
+#   parsing untrusted config needs a ceiling or it is a denial-of-service.
+#
+# Note the ambiguity this costs, accepted knowingly (operator, 2026-09-19):
+# module-level MAX_DEPTH is the *warn* tier while the `max_depth` argument is
+# the *refusal* ceiling.
+MAX_DEPTH = 32                       # §5.3 warn tier (shiran above this)
+MAX_SIZE = 1 << 20                   # §5.3 warn tier, codepoints/bytes rendered
+
+REFUSE_FACTOR = 4                    # ceiling sits above the warn tier, so the
+REFUSE_DEPTH = REFUSE_FACTOR * MAX_DEPTH   # shiran is reachable by default
+REFUSE_SIZE = REFUSE_FACTOR * MAX_SIZE
+
+
+class _At(NamedTuple):
+    """A bare position, where a diagnostic outlives the node that earned it."""
+    line: int
+    col: int
 
 
 # --------------------------------------------------------------------------- #
@@ -124,16 +156,21 @@ def _dollar_hint_for(node, name: str) -> str:
 # Resolver
 # --------------------------------------------------------------------------- #
 class Resolver:
-    def __init__(self, tree: Node, *, max_depth: int = MAX_DEPTH,
-                 max_size: int = MAX_SIZE, warn=None, source: str | None = None):
+    def __init__(self, tree: Node, *, max_depth: int = REFUSE_DEPTH,
+                 max_size: int = REFUSE_SIZE, warn=None,
+                 source: str | None = None):
         self.root = tree
         self.source = source                 # a name for diagnostics, if known
-        self.max_depth = max_depth
-        self.max_size = max_size
+        self.max_depth = max_depth           # §5.3 refusal ceiling, not the
+        self.max_size = max_size             # warn tier -- see the constants
         self._warn = warn
         self.warnings: list[str] = []
         self.rendered = 0
         self._depth: dict[int, int] = {}     # id(resolved Scalar) -> its depth
+        # Deepest chain seen, as (depth, line, col). Kept so the warn-tier
+        # shiran can be reported once, at a position that does not depend on
+        # the order sites happen to resolve in -- see `_note_depth`.
+        self._deepest: tuple[int, int, int] | None = None
 
     # -- diagnostics ---------------------------------------------------------
     def _akan(self, msg: str, at: Node):
@@ -146,6 +183,24 @@ class Resolver:
         self.warnings.append(text)
         if self._warn is not None:
             self._warn(text)
+
+    def _note_depth(self, depth: int, at: Node) -> None:
+        """Remember the deepest chain, for one end-of-run shiran.
+
+        Deepest wins; ties go to the earliest position in the document. Both
+        tie-breaks are on the *document*, never on resolution order -- a site
+        resolves whenever its targets happen to be ready, so "the first one to
+        cross" would name a different line depending on how the document was
+        arranged. That is trap 4, and it is a format bug here, not a style one.
+        """
+        here = (depth, at.line, at.col)
+        if self._deepest is None:
+            self._deepest = here
+            return
+        best_depth, best_line, best_col = self._deepest
+        if depth > best_depth or (depth == best_depth
+                                  and (at.line, at.col) < (best_line, best_col)):
+            self._deepest = here
 
     # -- driver --------------------------------------------------------------
     def resolve(self) -> Node:
@@ -166,7 +221,36 @@ class Resolver:
                 self._akan_stuck(deferred)
             sites = deferred
         self.root = holder[0]
+        self._warn_tier()
         return self.root
+
+    def _warn_tier(self) -> None:
+        """§5.3's warn tier: one shiran each, after the run, or none.
+
+        Deliberately not raised inline. Both quantities are properties of the
+        whole document -- the deepest chain, the total rendered -- so reporting
+        the first site to cross would name whichever one the fixpoint reached
+        first, and that is resolution order. Reported here, the position and
+        the number are the same for the same bytes.
+
+        Neither fix changes what the document means: shorten the chain, or
+        raise the consumer's ceiling. That is what keeps these on the right
+        side of the shiran bar.
+        """
+        if self._deepest is not None and self._deepest[0] > MAX_DEPTH:
+            depth, line, col = self._deepest
+            self._shiran(
+                f"a dependency chain {depth} deep passes §5.3's warn "
+                f"threshold ({MAX_DEPTH}); this document is costly to resolve "
+                f"and an implementation may refuse it -- shorten the chain, or "
+                f"raise max_depth where it is loaded",
+                _At(line, col))
+        if self.rendered > MAX_SIZE:
+            self._shiran(
+                f"the document renders {self.rendered} units, passing §5.3's "
+                f"warn threshold ({MAX_SIZE}); an implementation may refuse it "
+                f"-- raise max_size where it is loaded",
+                self.root)
 
     def _akan_stuck(self, deferred: list):
         """§5.3: no progress with references remaining is a cycle."""
@@ -204,9 +288,11 @@ class Resolver:
         depth = 1 + max((self._depth.get(id(t), 0) for t in targets.values()),
                         default=0)
         if depth > self.max_depth:
-            self._akan(f"resolution exceeded the depth cap "
+            self._akan(f"resolution exceeded the depth ceiling "
                        f"({self.max_depth}): this y-string sits at the end of "
-                       f"a chain {depth} deep", node)
+                       f"a chain {depth} deep -- raise max_depth to accept it",
+                       node)
+        self._note_depth(depth, node)
 
         if node.prefix == "yt":
             # §6: resolve exactly as `y` does, then stop short of the join.
@@ -228,8 +314,9 @@ class Resolver:
         value = (b"" if to_bytes else "").join(pieces)
         self.rendered += len(value)
         if self.rendered > self.max_size:
-            self._akan(f"document exceeds the rendered-size cap "
-                       f"({self.max_size})", node)
+            self._akan(f"document exceeds the rendered-size ceiling "
+                       f"({self.max_size}) -- raise max_size to accept it",
+                       node)
         result = Scalar(node.line, node.col, "bytes" if to_bytes else "str",
                         value, prefix="b" if to_bytes else "")
         self._depth[id(result)] = depth
@@ -519,10 +606,14 @@ def splice_text(target: Node) -> tuple[str | None, str]:
     # -- §5.2, the scope search ---------------------------------------------
 
 
-def resolve(tree: Node, *, max_depth: int = MAX_DEPTH,
-            max_size: int = MAX_SIZE, warn=None,
+def resolve(tree: Node, *, max_depth: int = REFUSE_DEPTH,
+            max_size: int = REFUSE_SIZE, warn=None,
             source: str | None = None) -> Node:
     """Resolve every y/ry/yb literal in `tree`, in place. Returns the tree
-    (which may itself be replaced, if the whole document was a y-string)."""
+    (which may itself be replaced, if the whole document was a y-string).
+
+    `max_depth` / `max_size` are the **refusal ceiling**, not §5.3's warn
+    tier: past them is an akan, past `MAX_DEPTH` / `MAX_SIZE` is a shiran.
+    """
     return Resolver(tree, max_depth=max_depth, max_size=max_size,
                     warn=warn, source=source).resolve()
