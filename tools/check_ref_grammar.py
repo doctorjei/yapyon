@@ -152,7 +152,7 @@ class P:
         if self.at("str"): self.take(); return True
         if self.at("int"):
             v = self.peek()[1]
-            if v.lstrip("+-") != v: return False      # INDEX is unsigned
+            if v.startswith("+"): return False        # INDEX takes "-", never "+"
             self.take(); return True
         depth, j = 0, self.i
         while j < len(self.t):
@@ -222,7 +222,7 @@ def generates(s):
 
 heads = ["a", "__ROOT__", "__PARENT__", "__PARENT__.__PARENT__", "__foo__",
          "True", "0", "__", "___", "_a", "a1"]
-steps = ["", ".b", "[0]", "[-1]", '["b.c"]', "[p]", ".b[0]", "[p].c",
+steps = ["", ".b", "[0]", "[-1]", "[-0]", "[+1]", '["b.c"]', "[p]", ".b[0]", "[p].c",
          ".__KEY__", ".__PARENT__", "[a[b]]", "..b", ".0", ".True", "[__KEY__]"]
 # Derived from the code, not listed by hand: a serializer the implementation
 # gains must be exercised here without anyone remembering to add it. The two

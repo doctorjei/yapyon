@@ -70,8 +70,39 @@ def test_a_key_on_a_list_says_to_index_it():
     akan('xs: ["p"]\nu: y"{xs.nope}"\n', "index it with brackets instead")
 
 
-def test_a_negative_index_is_reserved():
-    akan('xs: ["p"]\nu: y"{xs[-1]}"\n', "negative index '-1' is reserved")
+def test_a_negative_index_counts_from_the_end():
+    doc = 'xs: ["p", "q", "r"]\nu: y"{xs[-1]}"\nv: y"{xs[-3]}"\n'
+    assert loads(doc)["u"] == "r"
+    assert loads(doc)["v"] == "p"
+
+
+def test_minus_zero_is_index_zero():
+    assert loads('xs: ["p", "q"]\nu: y"{xs[-0]}"\n')["u"] == "p"
+
+
+def test_indexing_before_the_start_is_akan():
+    akan('xs: ["p"]\nu: y"{xs[-2]}"\n',
+         "index -2 is before the start of a list of 1")
+
+
+def test_a_plus_sign_is_not_an_index():
+    akan('xs: ["p"]\nu: y"{xs[+0]}"\n', "")
+
+
+def test_a_negative_index_through_a_reference_counts_from_the_end():
+    doc = 'xs: ["p", "q"]\ni: -1\nu: y"{xs[i]}"\n'
+    assert loads(doc)["u"] == "q"
+
+
+def test_a_negative_index_through_a_reference_is_range_checked():
+    # Once raised a bare IndexError: only the far end was checked.
+    akan('xs: ["p"]\ni: -5\nu: y"{xs[i]}"\n',
+         "index -5 is before the start of a list of 1")
+
+
+def test_a_negative_index_takes_the_last_of_a_multimap_view():
+    doc = ('mm:\n  + k: "first"\n  + k: "last"\nu: y"{mm.k[-1]}"\n')
+    assert loads(doc)["u"] == "last"
 
 
 # --------------------------------------------------------------------------- #

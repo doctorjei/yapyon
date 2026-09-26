@@ -192,13 +192,11 @@ class Ref:
 
 
 def _ref_int(token: str) -> int:
-    """A bracket index. Decimal and non-negative: `xs[-1]` is reserved, not
-    supported, because refusing now and allowing later is the compatible
-    direction."""
-    if token.startswith("-"):
-        raise RefError(f"negative index {token!r} is reserved; index from "
-                       f"the front")
-    if not token.isdigit() or not token.isascii():
+    """A bracket index: decimal digits, optionally after `-`. A negative
+    index counts from the end, as in Python — `xs[-1]` is the last element,
+    and `xs[-0]` is `xs[0]` because `-0` is the integer 0."""
+    digits = token[1:] if token.startswith("-") else token
+    if not digits.isdigit() or not digits.isascii():
         raise RefError(f"{token!r} is neither an identifier, a quoted key, "
                        f"nor a number")
     return int(token)

@@ -188,7 +188,9 @@ section and §5.2.
 
 - **A subscript's contents yield a key**, and the three bracket forms differ
   in where the key comes from. A quoted literal *is* the key. An integer is a
-  list position. A **reference** names the key: `{d[p]}` is "the value of `d`
+  list position, and a **negative** one counts from the end as in Python —
+  `{xs[-1]}` is the last element, `{xs[-0]}` is `{xs[0]}`. A position outside
+  the list, at either end, is akan. A **reference** names the key: `{d[p]}` is "the value of `d`
   at the key stored in `p`".
 - **An inner reference resolves in the scope of the y-string's own position**
   (§5.2), *not* in the scope of the node being indexed. So
@@ -618,8 +620,8 @@ partition is exact and has no other members.
 Syntax that is akan in v0.1 with the door explicitly open: `yb64` and `ytb`
 prefixes; **quoted keys** (the key side of the grammar's `a["b.c"]`, whose
 reference side is built); a flow spelling for multimaps (`{+ a: 1}`); format
-specs and conversions in holes; list interpolation; **negative indices**
-(`{xs[-1]}`); **escapes inside a quoted hole key**; **applying a serializer to
+specs and conversions in holes; list interpolation; **escapes inside a quoted
+hole key**; **applying a serializer to
 a single value**; positional access to a multimap's entries (`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
@@ -635,7 +637,7 @@ all three named serializers, `__AS_JSON__()`, `__AS_TOML__()` and
 `__AS_YAML__()` (§5.1.2); quoted hole segments (`{a."b.c"}` → `{a["b.c"]}`)
 and interior addressing of lists and multimaps (`{xs.0}` → `{xs[0]}`,
 `{mm.key}` → a list view), both subsumed by the subscript rather than added
-beside it. `self` was withdrawn rather than built — it named a consumer's own
+beside it; negative indices, which take Python's meaning (§5.1). `self` was withdrawn rather than built — it named a consumer's own
 key convention, not anything the format needed.*
 
 ---
@@ -774,7 +776,7 @@ fixpoint, no template machinery and no evaluator, which is the point: the safe
 subset is declared first rather than carved out afterwards.
 
 Of §9's reserved syntax, the items that concern holes — `yb64` and `ytb`,
-format specs and conversions, list interpolation, negative indices, escapes
+format specs and conversions, list interpolation, escapes
 inside a quoted hole key, serializers on a single value, positional multimap
 access — are **full form only**, since a record has no holes at all. §5.1.1's
 relative references are full form only for the same reason. The rest — quoted

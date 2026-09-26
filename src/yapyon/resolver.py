@@ -475,9 +475,14 @@ class Resolver:
         if not isinstance(node, Sequence):
             self._akan(f"{{{ref}}}: cannot index {i}, because the value "
                        f"named before it is not a list", at)
+        # A negative index counts from the end, as in Python. The range check
+        # covers both ends, since a subscript reference can deliver any int.
         if i >= len(node.items):
             self._akan(f"{{{ref}}}: index {i} is past the end of a list of "
                        f"{len(node.items)}", at)
+        if i < -len(node.items):
+            self._akan(f"{{{ref}}}: index {i} is before the start of a list "
+                       f"of {len(node.items)}", at)
         return node.items[i]
 
     def _child(self, node: Node, seg, ref: str, at: YString,

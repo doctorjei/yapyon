@@ -46,6 +46,24 @@ does, so it rides the next release rather than a patch on `0.1.0a4`.
 
 ---
 
+### Added
+
+- **Negative list indices, with Python's meaning.** `{xs[-1]}` is the last
+  element and `{xs[-3]}` the third from the end; `{xs[-0]}` is `{xs[0]}`,
+  because `-0` is the integer 0. They were reserved in SPEC §9 on the
+  reasoning "refuse now, allow later", which was never a ruling. Allowing them
+  is a widening: no document that loaded before changes meaning. Useful on a
+  multimap's list view, where `{mm.k[-1]}` is the last value filed under `k`
+  without knowing how many there are. `+` is still not an index sign.
+
+### Fixed
+
+- **A negative index reached through a reference was neither refused nor
+  range-checked.** With `i: -1`, `{xs[i]}` quietly took Python's meaning while
+  the written `{xs[-1]}` was refused as reserved; with `i: -5` on a short list
+  it raised a bare `IndexError` instead of an akan. A position outside the
+  list is now akan at either end, whichever way the index is spelled.
+
 ## 0.1.0a4 — 2026-09-19
 
 A fix release. Two of the three entries below are bugs in `0.1.0a3` that could
