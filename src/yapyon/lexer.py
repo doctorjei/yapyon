@@ -43,7 +43,13 @@ strings, internal invariant failures raise Yakamashiwa.
 from __future__ import annotations
 
 import base64
+from bisect import bisect_right
 from dataclasses import dataclass, field
+from unicodedata import decomposition as _decomposition
+from unicodedata import normalize as _normalize
+
+from ._xid import UNICODE_VERSION, XID_CONTINUE, XID_IGNORED, XID_START
+from unicodedata import category as _category, name as _uname
 
 
 # --------------------------------------------------------------------------- #
@@ -339,7 +345,7 @@ def parse_ref(text: str) -> Ref:
             j += 1
         seg = text[i:j]
         _check_segment(seg)
-        steps.append(("key", seg))
+        steps.append(("key", fold_name(seg)))
         i, expect_name = j, False
     if expect_name:
         raise RefError("a hole reference may not end with '.'")
@@ -382,12 +388,13 @@ def _parse_subscript(inner: str, shirans: list):
         if "\\" in key:
             raise RefError("escapes in a quoted key are reserved; write the "
                            "characters directly")
-        if key.isidentifier() and not is_dunder(key):
+        if is_identifier(key) and not is_dunder(key) \
+                and reserved_fold(key) is None:
             # Legal, and equivalent — but there is one canonical spelling.
             # The register's middle rung: did you mean the plainer one?
             shirans.append(f"[{inner[0]}{key}{inner[0]}] is the long way to "
                            f"write .{key}; both name the same key")
-        return ("key", key)
+        return ("key", fold_name(key))
     if inner[0].isdigit() or inner[0] == "-":
         return ("index", _ref_int(inner))
     return ("ref", parse_ref(inner))
@@ -411,11 +418,15 @@ def _check_segment(seg: str) -> None:
     if ":" in seg or "!" in seg:              # GRAMMAR §G5.2, reserved in §9
         raise RefError("format specs and conversions are reserved; a hole "
                        "names a value and does nothing else")
-    if not seg.isidentifier():
+    if not is_identifier(seg):
         raise RefError(f"holes name document values; {seg!r} is not an "
                        f"identifier{bad_segment_hint(seg)}")
     if seg in KEYWORDS:
         raise RefError(f"{seg!r} cannot be a hole name")
+    reserved = reserved_fold(seg)
+    if reserved is not None:
+        raise RefError(f"{seg!r} is another spelling of {reserved!r}; "
+                       f"reserved names are written exactly one way")
 
 
 DOLLAR_HINT = (" — if the `$` was meant as an environment variable, yapyon "
@@ -441,6 +452,10 @@ def bad_segment_hint(seg: str) -> str:
         return " (a regex quantifier needs doubled braces: {{n,m}})"
     if seg.startswith("$"):
         return DOLLAR_HINT
+    for ch in seg:
+        why = why_not_in_name(ch)
+        if why:
+            return f" — {why}"
     return ""
 
 
@@ -459,12 +474,97 @@ def is_dunder(name: str) -> bool:
     return name.startswith("__") and name.endswith("__")
 
 
+def _in_table(lows: tuple, table: tuple, ch: str) -> bool:
+    cp = ord(ch)
+    i = bisect_right(lows, cp) - 1
+    return i >= 0 and cp <= table[i][1]
+
+
+_START_LOWS = tuple(lo for lo, _ in XID_START)
+_CONTINUE_LOWS = tuple(lo for lo, _ in XID_CONTINUE)
+
+
+def id_start(ch: str) -> bool:
+    """May `ch` begin a name? GRAMMAR §G4.1: pinned XID_Start, minus the
+    default-ignorables, plus `_`. **The table is ours, not the host's** —
+    `str.isidentifier()` answers for whatever Unicode the interpreter
+    carries, so the same key loaded on 3.13 and akaned on 3.11.
+
+    The emptiness guard is trap 1: `_peek` returns "" at EOF."""
+    return bool(ch) and (ch == "_" or _in_table(_START_LOWS, XID_START, ch))
+
+
 def _id_continue(ch: str) -> bool:
-    """True for XID_Continue (GRAMMAR §G4.1).  ``("a" + ch).isidentifier()`` is
-    exactly that test, which keeps the Unicode tables in `str`.  The explicit
-    emptiness check matters: ``"a" + "" == "a"`` *is* an identifier, so at EOF
-    this would otherwise answer True forever."""
-    return bool(ch) and ("a" + ch).isidentifier()
+    """May `ch` appear after the first character of a name? (GRAMMAR §G4.1.)"""
+    return bool(ch) and _in_table(_CONTINUE_LOWS, XID_CONTINUE, ch)
+
+
+_IGNORED_LOWS = tuple(lo for lo, _ in XID_IGNORED)
+
+
+def why_not_in_name(ch: str) -> str:
+    """Why `ch` is refused in a name, when the reason is not obvious: it is
+    invisible, or it is newer than the pinned table. Empty otherwise.
+
+    Invisible is judged by our table *or* general category Cf, so ZWJ reads
+    as invisible on every host — Unicode 14 did not make it an identifier
+    character at all, and later versions did."""
+    if not ch or id_start(ch) or _id_continue(ch):
+        return ""
+    label = f"U+{ord(ch):04X} {_uname(ch, 'unnamed')}"
+    if _in_table(_IGNORED_LOWS, XID_IGNORED, ch) or _category(ch) == "Cf":
+        return (f"{label} is invisible, and names may not contain invisible "
+                f"characters (GRAMMAR §G4.1)")
+    if ("a" + ch).isidentifier():
+        return (f"{label} is not an identifier character in Unicode "
+                f"{UNICODE_VERSION}, which yapyon's names are pinned to "
+                f"(GRAMMAR §G4.1)")
+    return ""
+
+
+def is_identifier(name: str) -> bool:
+    """GRAMMAR §G4.1's one predicate, for keys and hole segments alike.
+    It judges the characters **as written**; identity is `fold_name`'s."""
+    return (bool(name) and id_start(name[0])
+            and all(_id_continue(ch) for ch in name[1:]))
+
+
+def fold_name(name: str) -> str:
+    """A name's identity (GRAMMAR §G4.1, SPEC §7): width variants to their
+    standard form, **then** NFC. `ｎａｍｅ` and `name` are the same name by
+    definition, as are `café` spelled precomposed and decomposed.
+
+    The order is load-bearing. Halfwidth `ｶﾞ` unfolds to `カ` plus a
+    *combining* voiced mark, and only NFC afterwards composes that into
+    `ガ`; the other order leaves it decomposed, a different string.
+
+    Only the `<wide>` and `<narrow>` compatibility mappings are applied —
+    the rest of NFKC is not, so `ﬁ` and `fi` stay distinct names. Both steps
+    read the host's `unicodedata`, which is sound because Unicode's
+    stability policies freeze decompositions and NFC for every character
+    already assigned, and a name holds only Unicode 14 characters."""
+    if name.isascii():
+        return name
+    out = []
+    for ch in name:
+        d = _decomposition(ch)
+        if d.startswith(("<wide>", "<narrow>")):
+            out.extend(chr(int(h, 16)) for h in d.split()[1:])
+        else:
+            out.append(ch)
+    return _normalize("NFC", "".join(out))
+
+
+def reserved_fold(name: str) -> str | None:
+    """The keyword, prefix or dunder `name` folds onto without being spelled
+    as, if any. Such a name is akan, as in Python, where `Ｔｒｕｅ` is an
+    error rather than `True`: reserved words have exactly one spelling
+    (GRAMMAR §G4.1), and folding is what defines *names*, not syntax."""
+    folded = fold_name(name)
+    if folded != name and (folded in KEYWORDS or folded in STRING_PREFIXES
+                           or is_dunder(folded)):
+        return folded
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -617,8 +717,13 @@ class Lexer:
             self._lex_number(line, col)
             return
 
-        if ch.isidentifier():                  # identifier, keyword, or prefix
+        if id_start(ch):                       # identifier, keyword, or prefix
             name = self._scan_identifier()
+            reserved = reserved_fold(name)
+            if reserved is not None:
+                self._akan(f"{name!r} is another spelling of {reserved!r}; "
+                           f"keywords, prefixes and dunder names are written "
+                           f"exactly one way", line, col)
             if self._peek() in ("'", '"'):
                 if name not in STRING_PREFIXES:
                     hint = _PREFIX_HINTS.get(
@@ -629,7 +734,9 @@ class Lexer:
             elif name in KEYWORDS:
                 self._emit("KEYWORD", KEYWORDS[name], line, col, lexeme=name)
             else:
-                self._emit("NAME", name, line, col)
+                # The token carries the name's identity; the lexeme keeps
+                # what was written, for diagnostics.
+                self._emit("NAME", fold_name(name), line, col, lexeme=name)
             return
 
         for reserved in ("---", "..."):           # GRAMMAR §G6, reserved tokens
@@ -639,6 +746,9 @@ class Lexer:
         if ch in "-+" and self._peek(1) in (" ", "\n", ""):
             self._akan(f"{ch!r} opens a block frame only at the start of a "
                        f"line's content")
+        why = why_not_in_name(ch)
+        if why:
+            self._akan(why)
         if _id_continue(ch):        # GRAMMAR §G4.1: legal inside a name, just not first
             self._akan(f"{ch!r} cannot start a name, though it may appear "
                        f"inside one (GRAMMAR §G4.1: names are Unicode identifiers)")
@@ -648,18 +758,13 @@ class Lexer:
         self._akan(f"unexpected character {ch!r}")
 
     def _scan_identifier(self) -> str:
-        """Scan one identifier (GRAMMAR §G4.1): an XID_Start character or '_',
-        then XID_Continue characters.
+        """Scan one identifier (GRAMMAR §G4.1) as written: a start
+        character, then continue characters, both from the pinned table.
 
-        This is deliberately the same rule `_scan_hole` applies to its
-        segments, so every key is addressable from a hole.  ``("a" + ch)``
-        `.isidentifier()` is exactly the XID_Continue test, which keeps the
-        Unicode tables in `str` rather than here.
-
-        The explicit EOF guard is load-bearing: `_peek` returns "" at EOF and
-        ``"a" + "" == "a"`` *is* an identifier, so without it the loop would
-        not terminate."""
-        if not self._peek().isidentifier():
+        This is deliberately the same rule `_check_segment` applies to hole
+        segments, so every key is addressable from a hole. The EOF guard lives
+        in the predicates (trap 1)."""
+        if not id_start(self._peek()):
             raise Yakamashiwa("_scan_identifier called off an identifier")
         out = [self._advance()]
         while _id_continue(self._peek()):

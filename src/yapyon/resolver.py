@@ -41,7 +41,8 @@ from __future__ import annotations
 import base64
 from typing import NamedTuple
 
-from .lexer import DOLLAR_HINT, AkanError, Ref, Yakamashiwa, parse_ref
+from .lexer import (DOLLAR_HINT, AkanError, Ref, Yakamashiwa, fold_name,
+                    parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
 from .serializers import SERIALIZERS, NotEncodable
@@ -462,7 +463,9 @@ class Resolver:
                        f"a string or a number to use as a key, not a "
                        f"container", site.node)
         if target.type == "str":
-            return target.value
+            # A resolved key means what a written one means, so it is folded
+            # the same way (SPEC §7): `p: "ｎａｍｅ"` then `{d[p]}` finds `name`.
+            return fold_name(target.value)
         if target.type == "int":
             return target.value
         self._akan(f"{{{ref}}}: the subscript {{{inner.text}}} names a "

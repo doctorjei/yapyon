@@ -314,12 +314,8 @@ def test_a_multimap_is_plain_data_and_survives_into_a_record():
     assert [(k, v) for k, v in mm] == [("a", 1), ("a", 2)]
 
 
-def test_unicode_version_reports_this_installs_tables():
-    # GRAMMAR §G4.1: an implementation must document where its identifier tables come
-    # from. yapyon's are the host interpreter's, so it reports rather than
-    # claims -- and reports the *same* tables isidentifier() actually uses.
-    import unicodedata
-    assert yapyon.UNICODE_VERSION == unicodedata.unidata_version
-    # The guaranteed floor is Python 3.11's, and no supported host is older.
-    major, minor, _ = yapyon.UNICODE_VERSION.split(".")
-    assert (int(major), int(minor)) >= (14, 0)
+def test_unicode_version_is_the_pinned_table():
+    # GRAMMAR §G4.1: an implementation must document where its identifier
+    # tables come from. yapyon's are generated from a pinned Unicode version
+    # and do not vary with the interpreter.
+    assert yapyon.UNICODE_VERSION == "14.0.0"

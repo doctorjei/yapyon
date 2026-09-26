@@ -567,6 +567,22 @@ hole segments. Widen either alone and the claim becomes false — which is how
 it broke twice: `a²` was admitted as a key by `str.isalnum()` and could be
 named by nothing, and `__foo__` was a legal key whose hole akaned.
 
+**A key's identity is its folded name** (GRAMMAR §G4.1: width variants to
+their standard form, then NFC). Two spellings that fold alike are **the same
+key** — by definition, not by reinterpretation — so:
+
+- `ｎａｍｅ: 1` and `name: 2` in one mapping are a **duplicate key**, akan like
+  any other; the diagnostic names both spellings;
+- a hole may name a key in any spelling that folds to it: `{name}` and
+  `{ｎａｍｅ}` both reach `ｎａｍｅ: 1`, and so does a bracketed key or a key
+  held in a value (`{d[p]}`), since a resolved key means what a written one
+  means;
+- **the consumer receives the folded name.** `ｎａｍｅ: 1` loads as
+  `{"name": 1}`, and the emitter (§4.4) writes `name`.
+
+Nothing warns about a folded spelling. A warning would say the author may have
+meant something else, and here there is nothing else to mean.
+
 **Addressability and searchability are different claims, and only the first is
 universal.** Sequence items and multimap entries have no keys of their own and
 so take no part in §5.2's scope search — but both are **reachable by explicit
@@ -691,7 +707,8 @@ normative; the individual rows are cross-references to the rule's own home.
 | `inf` / `nan` | via `float()` | no spelling |
 | dict keys | any hashable | bare identifiers only |
 | duplicate dict keys | last wins, silently | akan; `+ ` multimap if repeats are meant (§7.1) |
-| NFKC identifier folding | applied | not applied (exact codepoints) |
+| identifier folding | NFKC | width variants, then NFC — `ｎａｍｅ` ≡ `name`, but `ﬁ` ≢ `fi` (GRAMMAR §G4.1) |
+| identifier character set | the interpreter's Unicode version | pinned to Unicode 14.0.0; no invisible characters |
 | set / tuple / complex literals | types | akan (not in the data model) |
 
 ---

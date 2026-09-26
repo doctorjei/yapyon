@@ -11,8 +11,9 @@ Every `0.1.0aN` is a pre-release: `pip install yapyon` will not see it without
 
 ## Unreleased
 
-**Breaking.** The entry below changes what a document between the two tiers
-does, so it rides the next release rather than a patch on `0.1.0a4`.
+**Breaking.** The two-tier limits change what a document between the tiers
+does, and the identifier rule changes which keys are legal and which are the
+same key, so these ride the next release rather than a patch on `0.1.0a4`.
 
 ### Changed
 
@@ -45,6 +46,25 @@ does, so it rides the next release rather than a patch on `0.1.0a4`.
   mistake.
 
 ---
+
+- **Identifiers are pinned to Unicode 14.0.0 and may not contain invisible
+  characters.** The identifier tables were the interpreter's, so a key with a
+  character from Unicode 15 or later loaded on Python 3.13 and was akan on
+  3.11. yapyon now ships a generated Unicode 14 table (`tools/gen_xid_table.py`)
+  and `UNICODE_VERSION` is `"14.0.0"` on every install. **Breaking:** keys and
+  hole names may no longer contain `Default_Ignorable_Code_Point` characters.
+  Those include the Hangul fillers, which made a key with no visible glyph
+  legal, variation selectors, the combining grapheme joiner, and, on Python
+  3.13+, ZWJ and ZWNJ.
+- **Width variants and canonically equivalent spellings are one name.** A name
+  is folded, width variants to their standard form and then NFC, and two
+  names that fold alike are the same: `ｎａｍｅ: 1` loads as `{"name": 1}`,
+  `{name}` finds it, and `name` beside it is a duplicate key. Previously
+  `café` precomposed and decomposed were two keys that rendered identically.
+  No other NFKC merge applies (`ﬁ` stays distinct from `fi`). **Breaking**
+  wherever a document relied on two such spellings being different keys.
+- A keyword, string prefix or dunder name in another spelling (`Ｔｒｕｅ`,
+  `ｂ"s"`, `_＿ROOT＿_`) is akan: reserved words have exactly one spelling.
 
 ### Added
 

@@ -79,39 +79,68 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
 ### §G4.1 Names and keywords
 
 - **`KEYWORD`** is one of `True`, `False`, `None`. Capitalized exactly so.
-- **`NAME`** is a **UAX #31 identifier**: the first character is `XID_Start`
-  or `_`; every later character is `XID_Continue`. Names are matched by
-  **exact codepoints** — no NFKC normalization, so visually distinct names
-  never silently collide, and NFD text (`e` + U+0301) is an ordinary name
-  rather than an error. A bare word that is not a `KEYWORD` is a `NAME`.
+- **`NAME`** is a **UAX #31 identifier, pinned to Unicode 14.0.0, with
+  invisible characters removed**:
+  - the first character is `XID_Start` or `_`; every later character is
+    `XID_Continue` — both **as defined by Unicode 14.0.0**, whatever version
+    the implementation's runtime carries;
+  - **no character may be a `Default_Ignorable_Code_Point`** (UAX #31's
+    Default Ignorable Exclusion Profile). Unicode 14 counts 267 invisible
+    characters as identifier characters — Hangul fillers, which can *start*
+    one, variation selectors, the combining grapheme joiner — and later
+    versions add ZWJ and ZWNJ. A name must never be, or contain, something
+    that cannot be seen. Characters of general category `Cf` (ZWJ, ZWNJ,
+    bidirectional controls) are not identifier characters in Unicode 14 at
+    all, so the same rule covers them.
 
-  *In Python, `str.isidentifier()` is exactly this test and is the conforming
-  implementation; `("a" + ch).isidentifier()` tests a single character for
-  `XID_Continue`. `str.isalnum()` is **not** this test — it admits `²` and
-  rejects combining marks, wrongly in both directions.*
+  These tests apply to the name **as written**. A bare word that is not a
+  `KEYWORD` is a `NAME`.
 
-- **One predicate, two uses.** The same test defines a `NAME` and a hole's
-  reference segment (§G5). An implementation **must apply one predicate to
-  both**, not two. They are the same rule, and written twice they drift.
+  *`str.isidentifier()` is **not** a conforming test: it answers for the
+  Unicode version the interpreter carries, so the same key loaded on one
+  install and was akan on another. Nor is `str.isalnum()`, which admits `²`
+  and rejects combining marks, wrongly in both directions.*
 
-- **Implementations must document the Unicode version** their identifier
-  tables come from. A codepoint assigned later may be rejected by an older
-  implementation. This is the one place where a document's meaning leans on
-  something outside its own bytes, and it is why this rule names a standard
-  rather than a language: "whatever the host language accepts" would make the
-  answer depend on the interpreter.
+- **Name folding.** Two names are **the same name** exactly when they are
+  equal after this fold, which is part of the definition of a name and not a
+  reinterpretation of one:
+  1. replace every character whose Unicode decomposition is tagged `<wide>`
+     or `<narrow>` by that decomposition — `ｎ` becomes `n`, halfwidth `ｶ`
+     becomes `カ`;
+  2. then normalize to **NFC** — `e` + U+0301 becomes `é`.
 
-  An implementation that **inherits** its tables from a host runtime cannot
-  name one version, because the host varies per install. It must instead
-  document its **floor** — the version guaranteed by the oldest runtime it
-  supports — and state that newer hosts accept more. A document whose
-  identifiers stay within the floor means the same thing on every install of
-  that implementation; beyond the floor, it does not.
+  **The order is part of the rule.** Halfwidth `ﾞ` unfolds to a *combining*
+  voiced mark, and only NFC afterwards composes `ｶﾞ` into `ガ`; folding in
+  the other order leaves the two characters apart.
 
-  *The reference implementation inherits its tables from the host interpreter
-  and documents a floor of **Unicode 14.0.0**, the version carried by the
-  oldest Python it supports (3.11). It also exports the running install's
-  actual version, so a consumer can ask rather than assume.*
+  **No other compatibility mapping applies.** `ﬁ` and `fi`, `x²` and `x2`
+  remain distinct names: they look different, and merging them would be a
+  silent collision. Width variants are folded because they are the same
+  letter, and which one is typed depends on input-method state rather than
+  intent.
+
+- **A reserved word has exactly one spelling.** A word that folds to a
+  `KEYWORD`, a string prefix (§G4.6) or a dunder name (§G4.2) without being
+  spelled that way is **akan**: `Ｔｒｕｅ`, `ｂ"s"` and `_＿ROOT＿_` are not
+  alternative spellings of `True`, `b"s"` and `__ROOT__`. Folding defines
+  *names*; it does not multiply the spellings of syntax.
+
+- **One predicate, two uses.** The same test and the same fold define a
+  `NAME` and a hole's reference segment (§G5). An implementation **must apply
+  one predicate to both**, not two. They are the same rule, and written twice
+  they drift.
+
+- **The Unicode version is part of this grammar.** Identifiers are the one
+  place where well-formedness leans on data outside the document, so the data
+  is named rather than inherited: an implementation must use the Unicode
+  14.0.0 tables named above **regardless of its runtime's version**, and a
+  runtime's own identifier test is conforming only if it agrees with them.
+  Moving the pin to a later version is a change to this grammar. Raising it
+  only admits names that were akan, so it is compatible; lowering it never is.
+
+  *Folding needs no pinned data of its own: Unicode's stability policies fix
+  the decomposition and NFC of every assigned character, and a name holds
+  only Unicode 14 characters.*
 
 ### §G4.2 The reserved dunder vocabulary
 

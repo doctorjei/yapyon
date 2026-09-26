@@ -34,7 +34,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 ## Status
 
 Pre-alpha, and the `a` in the version means it. Lexer, parser, resolver,
-loader and emitter are done and tested — 568 tests, including a conformance
+loader and emitter are done and tested — 592 tests, including a conformance
 suite that turns the splice matrix and the Python divergence table into
 executable cases.
 
@@ -50,13 +50,12 @@ References run one way: the spec cites the grammar, the grammar cites
 nothing. A parser can be written from the grammar alone, which is the point of
 separating them. This README summarises the format; those documents define it.
 
-**Identifiers are UAX #31, and the guaranteed floor is Unicode 14.0.0** —
-the tables Python 3.11 carries, 3.11 being the oldest version yapyon
-supports. The spec asks every implementation to say where its tables come
-from; yapyon inherits the host interpreter's, so a newer Python accepts
-codepoints assigned after Unicode 14 that an older one rejects. Keys drawn
-from Unicode 14 mean the same thing on every supported install.
-`yapyon.UNICODE_VERSION` reports what the install in front of you carries.
+**Identifiers are UAX #31, pinned to Unicode 14.0.0, with invisible
+characters excluded.** yapyon ships its own table rather than asking the
+interpreter, so a key means the same thing on every install and every Python.
+Width variants and canonically equivalent spellings are the same name —
+`ｎａｍｅ` is `name`, and `é` is `é` however it was composed — while `ﬁ` and
+`fi` stay distinct. `yapyon.UNICODE_VERSION` names the pinned version.
 
 ```console
 $ pip install --pre yapyon

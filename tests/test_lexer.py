@@ -478,13 +478,17 @@ def test_names_outside_ascii():
 def test_combining_marks_continue_a_name():
     # "é" as e + U+0301, the form macOS filesystems hand you.  A combining
     # mark is XID_Continue but not alphanumeric, so an isalnum() rule
-    # rejected this.
-    assert value("é: 1", "NAME") == "é"
+    # rejected this.  It is legal as written, and its identity is the NFC
+    # form (GRAMMAR §G4.1), so the token carries the precomposed é.
+    assert value("e\u0301: 1", "NAME") == "\u00e9"
 
 
-def test_zero_width_joiner_continues_a_name():
-    # ZWJ is XID_Continue; Persian and several Indic scripts need it.
-    assert value("zwj‍x: 1", "NAME") == "zwj‍x"
+def test_zero_width_joiner_is_refused_as_invisible():
+    # Was "ZWJ continues a name" -- true only on Python 3.13+, whose Unicode
+    # 15.1 made ZWJ an identifier character; on 3.11 the same test failed.
+    # The pinned table (Unicode 14) and the invisible-character rule settle
+    # it the same way on every host (GRAMMAR §G4.1, 2026-09-26).
+    akan("zwj\u200dx: 1", "is invisible")
 
 
 def test_digits_outside_ascii_continue_a_name():

@@ -259,7 +259,7 @@ class Parser:
     def _block_map(self) -> Mapping:
         first = self._peek()
         pairs: list[Pair] = []
-        first_line: dict[str, int] = {}
+        first_line: dict[str, tuple[int, str]] = {}
         while self._at("NAME") and self._peek(1).kind == "COLON":
             pairs.append(self._pair(first_line))
         if not self._at("DEDENT", "EOF"):
@@ -274,7 +274,7 @@ class Parser:
         self._akan(f"a block holds {_BLOCK_FORM[own]} or "
                    f"{_BLOCK_FORM[tok.kind]}, not both", tok)
 
-    def _check_key(self, key_tok: Token, first_line: dict[str, int]) -> str:
+    def _check_key(self, key_tok: Token, first_line: dict[str, tuple[int, str]]) -> str:
         """GRAMMAR §G7's rules on a name in key position, in one place.
 
         Block pairs and flow maps both come here so the two cannot drift —
@@ -288,12 +288,19 @@ class Parser:
                        f"hole could ever name it — drop the leading and "
                        f"trailing '__'", key_tok)
         if key in first_line:
+            # Names are compared after folding (SPEC §7), so when either
+            # spelling differs from the name, show both: `name` and `ｎａｍｅ`
+            # are one key, and the message should not look like a false alarm.
+            line, first = first_line[key]
+            here = key_tok.lexeme or key
+            spelled = (f"; written {first!r} there and {here!r} here"
+                       if first != here else "")
             self._akan(f"duplicate key {key!r} (first defined on line "
-                       f"{first_line[key]})", key_tok)
-        first_line[key] = key_tok.line
+                       f"{line}{spelled})", key_tok)
+        first_line[key] = (key_tok.line, key_tok.lexeme or key)
         return key
 
-    def _pair(self, first_line: dict[str, int]) -> Pair:
+    def _pair(self, first_line: dict[str, tuple[int, str]]) -> Pair:
         key_tok = self._advance()                # NAME
         self._advance()                          # COLON
         key = self._check_key(key_tok, first_line)
@@ -427,7 +434,7 @@ class Parser:
     def _flow_map(self) -> Mapping:
         opener = self._advance()                 # LBRACE
         pairs: list[Pair] = []
-        first_line: dict[str, int] = {}
+        first_line: dict[str, tuple[int, str]] = {}
         while not self._at("RBRACE"):
             key_tok = self._peek()
             if key_tok.kind != "NAME":

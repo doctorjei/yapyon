@@ -11,15 +11,13 @@ Home: https://github.com/doctorjei/yapyon
 and therefore also loads yapyon records — `loads_record`, `load_record` and
 `is_record` are the record surface.
 
-**Identifier tables (GRAMMAR §G4.1): Unicode 14.0.0 is the guaranteed floor.**
-yapyon uses `str.isidentifier()`, so the tables are the host interpreter's;
-the floor is Python 3.11's, 3.11 being the oldest supported. A newer Python
-additionally accepts codepoints assigned after Unicode 14. `UNICODE_VERSION`
-reports what *this* install actually carries.
+**Identifier tables (GRAMMAR §G4.1): pinned to Unicode 14.0.0.** yapyon
+ships its own table rather than asking `str.isidentifier()`, whose answer
+depends on the interpreter, so a key means the same thing on every install.
+`UNICODE_VERSION` is that pinned version.
 """
 
-import unicodedata as _unicodedata
-
+from ._xid import UNICODE_VERSION as _XID_UNICODE_VERSION
 from .lexer import Lexer, Token, tokenize, AkanError, Yakamashiwa
 from .parser import (Mapping, MultiMap, Node, Pair, Parser, Scalar, Sequence,
                      ResolvedTemplate, YString, dump, parse,
@@ -32,11 +30,10 @@ from .emitter import emit
 
 __version__ = "0.1.0a4"
 
-#: GRAMMAR §G4.1 asks every implementation to document where its identifier tables
-#: come from. yapyon's are the host interpreter's, so the honest answer varies
-#: per install and this reports it rather than claiming it. The *guaranteed*
-#: floor is 14.0.0 (Python 3.11's); a newer host accepts more.
-UNICODE_VERSION = _unicodedata.unidata_version
+#: GRAMMAR §G4.1 asks every implementation to document where its identifier
+#: tables come from. yapyon's are generated from this Unicode version by
+#: tools/gen_xid_table.py, and do not vary with the interpreter.
+UNICODE_VERSION = _XID_UNICODE_VERSION
 
 __all__ = [
     # what this install's identifier tables are (GRAMMAR §G4.1)
