@@ -3,7 +3,8 @@
 YAMLちゃうで。やぴょんやぴょん。
 
 Replacement without computation (law 2): every hole names a value that is
-already in the document, and the only thing that happens is substitution.
+already in the document, and the only things that happen are substitution and
+the format's named encodings (§5.1.2) — no operators, no control flow.
 
 Three rules do all the work:
 

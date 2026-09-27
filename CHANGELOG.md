@@ -66,6 +66,14 @@ same key, so these ride the next release rather than a patch on `0.1.0a4`.
 - A keyword, string prefix or dunder name in another spelling (`Ｔｒｕｅ`,
   `ｂ"s"`, `_＿ROOT＿_`) is akan: reserved words have exactly one spelling.
 
+- **SPEC §1's laws restated after review; no behaviour changes.** Law 2 now
+  says what the format does: a record computes nothing, and the full form's
+  only computation is named application of its declared encodings — the
+  serializers, which the old "never … transform" wording contradicted. "No
+  environment" moved from law 2 to law 3, its one home. Law 7 says "during
+  loading" rather than "at parse time", "never *merely* warned about" rather
+  than "never a warning", and names both kinds of `shiran`.
+
 ### Added
 
 - **Negative list indices, with Python's meaning.** `{xs[-1]}` is the last

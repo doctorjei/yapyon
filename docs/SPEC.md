@@ -44,11 +44,14 @@ Every rule in both documents is a corollary of a small set of laws:
    scalars: an unquoted word in value position is an error, never a string,
    never a boolean. (YAML's implicit typing — the Norway problem — is
    unrepresentable.)
-2. **Replacement without computation.** The format can splice named values
-   into strings; it can never evaluate, transform, or compute. No expressions,
-   no environment, no functions.
+2. **Replacement without computation.** A record performs no computation:
+   every leaf is a literal, and loading one needs no resolver (§12). The full
+   form splices named values into strings: holes name values and are never
+   expressions, and the only computation is named application of the
+   format's declared encodings (§5.1.2) — never operators, control flow, or
+   bound variables.
 3. **Self-containment.** A document's meaning depends only on its own bytes.
-   No ambient scope, no includes, no environment variables at the format
+   There is no ambient scope, no includes, and no environment at the format
    level. (Loaders and tools may layer such things *above* the format.)
 4. **The closure law.** A splice is legal iff the target's validity is closed
    under splicing there. (This is what excludes splicing into base64 streams.)
@@ -61,8 +64,10 @@ Every rule in both documents is a corollary of a small set of laws:
    explanatory message. Everything with yapyon-native semantics is spelled in
    the `y` namespace.
 7. **Errors at the point of the mistake.** Malformed input is akan (an error)
-   at a line and column, at parse time — never a warning, never a silent
-   reinterpretation.
+   at a line and column, during loading, before any value reaches the
+   consumer. It is never merely warned about, and never silently
+   reinterpreted. Well-formed input may be `shiran` (§10) when it is probably
+   a mistake, or costly enough that implementations may refuse it (§5.3).
 
 ---
 
