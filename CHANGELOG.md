@@ -4,16 +4,27 @@ All notable changes to yapyon are recorded here. Section numbers refer to the
 yapyon specification.
 
 This project uses [PEP 440](https://peps.python.org/pep-0440/) versions.
-Every `0.1.0aN` is a pre-release: `pip install yapyon` will not see it without
-`--pre`.
+`0.1.0` is the first release that is not a pre-release; every `0.1.0aN`
+before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## Unreleased
+## 0.1.0 — 2026-09-29
+
+The first release that is not an alpha, and the first `pip install yapyon`
+finds without `--pre`.
+
+This is the **self-contained tier**: typed literals, holes and splicing,
+serializers, multimaps, and layering within a document — all resolvable from
+the document's own bytes, with no ambient scope, no includes and no
+environment at the format level. Consumer functions and file embedding are a
+deliberate later tier, not a gap in this one.
 
 **Breaking.** The two-tier limits change what a document between the tiers
 does, and the identifier rule changes which keys are legal and which are the
-same key, so these ride the next release rather than a patch on `0.1.0a4`.
+same key. Both are carried here rather than left spread down the alpha line,
+so if you installed `0.1.0a1`–`a4` with `--pre`, read the two entries below
+before upgrading.
 
 ### Changed
 
