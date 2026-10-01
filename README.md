@@ -33,10 +33,17 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-Pre-alpha, and the `a` in the version means it. Lexer, parser, resolver,
-loader and emitter are done and tested — 592 tests, including a conformance
-suite that turns the splice matrix and the Python divergence table into
-executable cases.
+**`0.1.0` — the first release that is not a pre-release.** Lexer, parser,
+resolver, loader and emitter are done and tested — 592 tests, including a
+conformance suite that turns the splice matrix and the Python divergence
+table into executable cases.
+
+This is the **self-contained tier**: every document resolves from its own
+bytes. There is no ambient scope, no includes and no environment at the
+format level, so a yapyon file cannot reach the filesystem or run
+consumer-supplied code — the format's reach is something you can *prove*
+rather than audit. Consumer-registered functions and file embedding are a
+deliberate later tier, not a gap in this one.
 
 **The normative specification is published, in two documents under
 [`docs/`](docs/):**
@@ -58,7 +65,7 @@ Width variants and canonically equivalent spellings are the same name —
 `fi` stay distinct. `yapyon.UNICODE_VERSION` names the pinned version.
 
 ```console
-$ pip install --pre yapyon
+$ pip install yapyon
 ```
 
 ```python
