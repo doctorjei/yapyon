@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a75.2",
+  "why": "the hole names nothing reachable from its position"
+}

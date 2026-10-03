@@ -43,6 +43,45 @@ before it needed `pip install yapyon --pre` to be seen.
   round-trip `tomllib → to_toml → tomllib` unchanged, where the same
   check reported an obstruction on 2026-09-18.
 
+### Changed
+
+- **§4.3 `b64"..."` must be canonical; a non-canonical literal is now akan.**
+  Base64 packs 3 bytes into 4 six-bit characters, so a final group the
+  input does not fill leaves bits that the padding discards and nothing
+  decodes. `b"hi"` is `aGk=` canonically, but `aGl=`, `aGm=` and `aGn=`
+  decode to it as well, differing only in those two bits — and with two
+  pads a single byte has sixteen such spellings. yapyon accepted all of
+  them, because Python's `base64.b64decode(validate=True)` checks the
+  alphabet and the padding but **not** the discarded bits.
+
+  **Breaking.** A document carrying a non-canonical `b64` literal now
+  refuses to load. That is deliberate: these are different bytes in the
+  document standing for one value, which is precisely the ambiguity a
+  format whose thesis is *the same bytes mean the same data* cannot keep,
+  and no encoder ever writes the discarded bits nonzero — so a document
+  with them is a hand-edit or a corruption rather than something to
+  accommodate. The akan names the canonical spelling. **To fix:** re-encode
+  the value, or write the spelling the message gives you.
+
+### Added
+
+- **`docs/conformance/` — a portable conformance corpus.** 44 cases written
+  in the format's own terms: an input file and the **record** it must
+  denote, or an input plus a sidecar naming the rule it is refused under.
+  Nothing in it is Python, so a second implementation runs the same files
+  against its own loader and gets a yes or no. The record tier is covered
+  completely, which is what unblocks a record-only port; the full tier
+  covers the lexeme rule, nearest-wins resolution and `__ROOT__`, relative
+  references, the dot as bracket sugar, indirect keys, negative indices,
+  the multimap list view, chained splices, and all three serializers
+  including TOML arrays of tables. Expectations are hand-authored from the
+  spec and deliberately spelled *differently* from their input — `b"hi"`
+  against `b64"aGk="`, `name` against `ｎａｍｅ`, block against flow — because
+  a pair that must be identical is not an oracle. Error cases pin *that* a
+  refusal happens and under which rule, never the message text, which is UX.
+  `docs/conformance/README.md` is the protocol; the suite runs the whole
+  corpus, so it cannot rot.
+
 ---
 
 ## 0.1.0 — 2026-09-29

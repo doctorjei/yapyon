@@ -262,8 +262,13 @@ Stricter than Python in three places:
 is on literal source characters, not on escape values: `b"\x89"` is the point
 of `\xHH`.
 
-**`b64"..."`** content must be valid standard base64; interior whitespace is
-permitted and ignored, and invalid content is akan at parse time.
+**`b64"..."`** content must be **canonical** standard base64; interior
+whitespace is permitted and ignored. Invalid content is akan at parse time,
+and so is content that decodes but is **not canonical** — a final group
+whose padding-discarded bits are not zero. `aGk=` is the canonical encoding
+of `hi`; `aGl=`, `aGm=` and `aGn=` decode to the same bytes while being
+different text. The well-formedness test is that the literal is a fixed point
+of decode-then-encode.
 
 ### §G4.6 Prefixes
 

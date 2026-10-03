@@ -1,0 +1,6 @@
+{
+  "expect": "akan",
+  "loader": "record",
+  "rule": "SPEC \u00a712.1",
+  "why": "the y-family is absent from a record by definition"
+}

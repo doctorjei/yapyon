@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR \u00a7G4.5",
+  "why": "not in the base64 alphabet at all"
+}

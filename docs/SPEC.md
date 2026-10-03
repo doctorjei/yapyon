@@ -133,6 +133,23 @@ See `GRAMMAR §G4.5`.
 
 See `GRAMMAR §G4.6`.
 
+**`b64"..."` must be canonical** (`GRAMMAR §G4.5`), and the reason is law 1
+rather than tidiness. Base64 packs 3 bytes into 4 six-bit characters, so a
+final group the input does not fill leaves bits that the padding discards and
+nothing decodes: `b"hi"` is `aGk=` canonically, but `aGl=`, `aGm=` and
+`aGn=` decode to it as well, differing only in those two bits — and with
+two pads a single byte has sixteen such spellings. Those are **different
+bytes in the document** standing for one value, which is exactly the ambiguity
+a format whose thesis is *the same bytes mean the same data* cannot leave to
+each implementation to discover. Most host decoders accept them, including
+Python's `validate=True`, which checks the alphabet and the padding but not
+the discarded bits.
+
+No encoder ever writes them nonzero, so a document carrying them is a
+hand-edit or a corruption. **Akan at the literal**, naming the canonical
+spelling — law 7, and the same reasoning that makes an unknown escape akan:
+refuse what no tool produces.
+
 ### 4.4 Canonical spelling
 
 The grammar admits several spellings of one value — `'x'` and `"x"`, `r"a\nb"`

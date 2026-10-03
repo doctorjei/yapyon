@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a72",
+  "why": "indentation is spaces only"
+}

@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a77",
+  "why": "the __dunder__ namespace belongs to yapyon, not the document"
+}

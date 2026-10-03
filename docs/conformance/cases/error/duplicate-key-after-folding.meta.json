@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a77 identifier rule",
+  "why": "folding happens before the duplicate check, so a width variant of a key already present is a duplicate"
+}

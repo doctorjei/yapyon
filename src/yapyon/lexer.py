@@ -1016,9 +1016,27 @@ class Lexer:
     def _decode_b64(self, s: str, line: int, col: int) -> bytes:
         cleaned = "".join(s.split())           # permit interior whitespace
         try:
-            return base64.b64decode(cleaned, validate=True)
+            decoded = base64.b64decode(cleaned, validate=True)
         except (ValueError, base64.binascii.Error):
             self._akan("invalid base64 content", line, col)
+
+        # `validate=True` checks the alphabet and the padding, but **not the
+        # bits the padding discards.** Base64 packs 3 bytes into 4 six-bit
+        # characters, so a final group whose bytes don't fill the group
+        # leaves bits that encode nothing: b"hi" is `aGk=` canonically, yet
+        # `aGl=`, `aGm=` and `aGn=` decode to it as well, differing only in
+        # the two discarded bits (sixteen aliases for one byte, with two
+        # pads). No encoder ever writes them nonzero, so a document that
+        # does is a hand-edit or a corruption, and law 7 puts the error at
+        # that literal rather than letting four distinct byte strings pass
+        # silently as one value. The check is that a canonical literal is a
+        # fixed point of decode-then-encode.
+        canonical = base64.b64encode(decoded).decode("ascii")
+        if canonical != cleaned:
+            self._akan(f"non-canonical base64: the bits the padding discards "
+                       f"are not zero, so this is not what any encoder writes; "
+                       f"spell it {canonical!r}", line, col)
+        return decoded
 
     # -- y-family hole scanning ----------------------------------------------
     def _scan_holes(self, s: str, pos: list, is_raw: bool,

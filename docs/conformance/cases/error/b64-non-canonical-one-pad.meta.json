@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a74.3 / GRAMMAR \u00a7G4.5",
+  "why": "the two bits the pad discards are not zero; aGk= is canonical"
+}

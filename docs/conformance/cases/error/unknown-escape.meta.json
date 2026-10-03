@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a74.2",
+  "why": "unknown escapes are refused so the escape namespace stays available to future versions"
+}

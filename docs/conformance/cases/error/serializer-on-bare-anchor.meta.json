@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a75.1.2",
+  "why": "an anchor always contains the hole, so encoding it needs the value the hole is computing"
+}

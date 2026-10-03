@@ -299,6 +299,48 @@ def test_invalid_b64_is_akan():
     akan('x: b64"!!!"', "invalid base64")
 
 
+# --------------------------------------------------------------------------- #
+# b64 must be canonical (SPEC §4.3)
+#
+# Base64 packs 3 bytes into 4 six-bit characters, so a final group that the
+# input doesn't fill leaves bits the padding discards. b"hi" is `aGk=`
+# canonically, but `aGl=`, `aGm=` and `aGn=` decode to it too, differing
+# only in those two bits. Python's validate=True checks the alphabet and the
+# padding and still lets all four through. No encoder ever writes the
+# discarded bits nonzero, so a document carrying them is a hand-edit or a
+# corruption, and law 7 puts the error at that literal rather than letting
+# four distinct byte strings pass silently as one value.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("alias", ["aGl=", "aGm=", "aGn="])
+def test_non_canonical_b64_is_akan(alias):
+    # canonical is aGk=; these three are the other settings of the two
+    # bits that one pad byte discards
+    akan(f'x: b64"{alias}"', "non-canonical base64")
+
+
+@pytest.mark.parametrize("alias", ["YR==", "YS==", "YT=="])
+def test_non_canonical_is_refused_under_two_pads_too(alias):
+    # one real byte leaves four discarded bits: b"a" is YQ== and nothing else
+    akan(f'x: b64"{alias}"', "non-canonical base64")
+
+
+def test_canonical_b64_still_loads():
+    assert value('x: b64"aGk="', "BYTES") == b"hi"
+    assert value('x: b64"YQ=="', "BYTES") == b"a"
+    assert value('x: b64""', "BYTES") == b""
+
+
+def test_the_non_canonical_akan_names_the_canonical_spelling():
+    # the diagnostics register: name the mechanical fix where one exists
+    akan('x: b64"aGl="', "'aGk='")
+
+
+def test_interior_whitespace_is_stripped_before_the_canonical_check():
+    # a wrapped canonical literal stays legal; the check runs on the
+    # cleaned text, not the text as laid out
+    assert value('x: b64"aG k="', "BYTES") == b"hi"
+
+
 def test_raw_bytes():
     assert value(r'x: rb"\d"', "BYTES") == rb"\d"
 

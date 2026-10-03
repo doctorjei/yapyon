@@ -1,0 +1,6 @@
+{
+  "expect": "akan",
+  "loader": "record",
+  "rule": "SPEC \u00a712.1",
+  "why": "a y-string defers its value, so this is not a record and loads_record refuses it"
+}

@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a77",
+  "why": "a mapping cannot bind one key twice"
+}
