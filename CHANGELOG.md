@@ -65,7 +65,7 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ### Added
 
-- **`docs/conformance/` — a portable conformance corpus.** 44 cases written
+- **`docs/conformance/` — a portable conformance corpus.** 46 cases written
   in the format's own terms: an input file and the **record** it must
   denote, or an input plus a sidecar naming the rule it is refused under.
   Nothing in it is Python, so a second implementation runs the same files

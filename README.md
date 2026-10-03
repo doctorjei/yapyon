@@ -36,7 +36,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 **`0.1.0` — the first release that is not a pre-release.** Lexer, parser,
 resolver, loader and emitter are done and tested, including a conformance
 suite that turns the splice matrix and the Python divergence table into
-executable cases. The suite is **716 tests** on the current tree; the
+executable cases. The suite is **718 tests** on the current tree; the
 released `0.1.0` carried fewer, and the number here tracks the tree, not
 the release.
 
@@ -54,6 +54,13 @@ deliberate later tier, not a gap in this one.
 |---|---|
 | [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
+| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 46 portable cases; the directory's own README is the protocol |
+
+The corpus is not a third normative document: it is **derived from** the
+other two, and where they disagree the spec wins and the case is wrong. What
+it adds is a check rather than a definition — every case is data, not code
+in a language, so a second implementation runs the same files against its
+own loader and gets a yes or no.
 
 References run one way: the spec cites the grammar, the grammar cites
 nothing. A parser can be written from the grammar alone, which is the point of
