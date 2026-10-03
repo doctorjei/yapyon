@@ -25,7 +25,8 @@ from .parser import (Mapping, MultiMap, Node, Pair, Parser, Scalar, Sequence,
 from .resolver import Resolver, resolve
 from .multimap import Entry, KeyView, OrderedMultimap
 from .template import Hole, Template
-from .loader import build, is_record, load, load_record, loads, loads_record
+from .loader import (build, is_record, load, load_record, loads, loads_record,
+                    tier_of)
 from .emitter import emit
 
 __version__ = "0.1.0"
@@ -42,6 +43,8 @@ __all__ = [
     "load", "loads", "build", "Template", "Hole", "OrderedMultimap",
     # records — the fixed, literal-only form
     "load_record", "loads_record", "is_record",
+    # the level a document needs to mean itself (python -m yapyon.tier)
+    "tier_of",
     # a record AST back to canonical yapyon source (python -m yapyon.record)
     "emit",
     # diagnostics

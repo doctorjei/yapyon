@@ -157,6 +157,52 @@ def is_record(text: str, *, source: str | None = None) -> bool:
                    for tok in Lexer(text, source=source).tokenize())
 
 
+#: The token kinds that mark a construct reaching **outside the document's own
+#: bytes** — the axis `tier_of` measures.
+#:
+#: **Empty by fact, not by oversight.** Nothing in the shipped language
+#: reaches outside the document: law 3 forbids ambient scope, includes and
+#: environment at the format level, and the only callables are the three
+#: declared serializers, whose results are known. So every well-formed
+#: non-record document is level 2 today, and the set has nothing to hold.
+#:
+#: It is a set rather than a hardcoded `return 2` because the day a
+#: tier-3 construct is built — file embedding, environment access, see
+#: `workbook/designs/document-tiers.md` — its token kind is added here and
+#: `tier_of` starts distinguishing the two with no other change. Growing
+#: this set is a deliberate act: `tests/test_tiers.py` asserts it is empty,
+#: so the change cannot arrive as a silent edit.
+_TIER3_KINDS: frozenset = frozenset()
+
+
+def tier_of(text: str, *, source: str | None = None) -> int:
+    """The lowest loader capability `text` needs in order to mean itself.
+
+    **1** — a record. Every leaf is a literal, so no resolver is needed at
+    all (§12). **2** — self-contained. The document's own bytes decide its
+    meaning, with the resolver in hand (law 3). **3** — meaning needs
+    something outside the document; unreachable today, see `_TIER3_KINDS`.
+
+    The axis is **closure, not power**: what you must have in hand to know
+    what the document means. It is *lexically* decidable, which is what
+    makes the level computable rather than merely declared — a declaration
+    can be a contract, but detection is authoritative. That property is
+    load-bearing: it is why a loader can check a claimed level instead of
+    trusting one.
+
+    Same discipline as `is_record`: this reads the token stream and does not
+    parse, so text that lexes but does not parse still gets a level here,
+    and the parse error surfaces when it is loaded. Text that does not lex
+    raises, there being no document to answer about — hence `source`.
+    """
+    kinds = {tok.kind for tok in Lexer(text, source=source).tokenize()}
+    if kinds & _TIER3_KINDS:
+        return 3
+    if kinds & _DEFERRED_KINDS:
+        return 2
+    return 1
+
+
 def loads_record(text: str, *, warn=None, source: str | None = None):
     """Load a yapyon record from text — the fixed, literal-only form.
 
