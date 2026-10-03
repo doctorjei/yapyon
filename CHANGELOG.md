@@ -9,6 +9,42 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **§5.1.2 `__AS_TOML__()` writes TOML arrays of tables.** A list whose
+  elements are all mappings now becomes `[[name]]`, under its own path
+  (`[[a.b]]`), with each element written out in full before the next
+  header opens — a table nested inside an element attaches to *that*
+  element, not to whichever `[[parent]]` was written last. A super-table
+  above an array of tables gets no header of its own, since `[[a.b]]`
+  already says `a` exists; it keeps its header when it has pairs of its
+  own. A **mixed** list — mappings alongside scalars — goes out with
+  inline tables (`a = [{ x = 1 }, 2]`), because TOML gives a key either
+  an array of tables or an array value and never both. An **empty** list
+  is written inline (`a = []`): a header with no element would drop the
+  key rather than write it empty.
+
+  This shape used to be **refused**. `__AS_TOML__()` raised on any mapping
+  nested in a sequence, because the only alternative then was emitting
+  `str(dict)` and having it read back as a string — and refusing was the
+  right minimum against that. The refusal was over-broad, though: SPEC
+  §5.1.2's akan list names multimaps, bytes and `None` in TOML, and never
+  mentioned a mapping in a sequence at all. The spec already said nested
+  mappings become tables; the writer had simply stopped short of the
+  repeated-key case.
+
+  **Not breaking.** Every document that loaded before still loads, to the
+  same data. What was an error is now a serialization. Verified against
+  real TOML, not just fixtures: the repo's own `kinemata.toml` and
+  kinemata's upstream config — ten array-of-tables sites between them,
+  including nested `registry[i].entry` and a 21-element `gate` — now
+  round-trip `tomllib → to_toml → tomllib` unchanged, where the same
+  check reported an obstruction on 2026-09-18.
+
+---
+
 ## 0.1.0 — 2026-09-29
 
 The first release that is not an alpha, and the first `pip install yapyon`

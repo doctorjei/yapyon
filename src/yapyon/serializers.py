@@ -61,7 +61,7 @@ _TOML_BARE = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def to_toml(value) -> str:
-    """TOML, nesting mappings into tables.
+    """TOML, nesting mappings into tables and lists of mappings into `[[tables]]`.
 
     A TOML document *is* a table, so the top level must be a mapping. `None`
     is akan: TOML has no null, and persona-grata only avoids meeting one
@@ -76,18 +76,70 @@ def to_toml(value) -> str:
     return "\n".join(out).strip() + "\n"
 
 
+def _is_table_array(value) -> bool:
+    """A non-empty list whose every element is a mapping: TOML's `[[array]]`.
+
+    The emptiness check is load-bearing, not tidiness. An empty list has no
+    element to give a header, and emitting no header at all would drop the key
+    rather than write it empty; `name = []` inline is how TOML says that.
+    """
+    return (isinstance(value, list) and bool(value)
+            and all(isinstance(item, dict) for item in value))
+
+
+def _needs_header(data: dict) -> bool:
+    """Does the table at this prefix need a header of its own?
+
+    A super-table holding nothing but sub-tables and arrays of tables is
+    implied by their headers — `[[a.b]]` already says `a` exists — so a
+    header here would name a second, redundant table. A table with key/value
+    pairs of its own must be named, and so must an empty one, or the key it
+    was written under would vanish entirely.
+    """
+    for val in data.values():
+        if not isinstance(val, dict) and not _is_table_array(val):
+            return True
+    return not data
+
+
 def _toml_table(data: dict, prefix: list, out: list) -> None:
-    scalars = {k: v for k, v in data.items() if not isinstance(v, dict)}
-    tables = {k: v for k, v in data.items() if isinstance(v, dict)}
-    # A super-table holding nothing but sub-tables needs no header of its own.
-    if prefix and (scalars or not tables):
+    """Emit `data` as the table at `prefix`, writing its own header if it needs one."""
+    if prefix and _needs_header(data):
         out.append("[" + ".".join(_toml_key(k) for k in prefix) + "]")
-    for key, val in scalars.items():
+    _toml_body(data, prefix, out)
+
+
+def _toml_body(data: dict, prefix: list, out: list) -> None:
+    """Emit `data`'s contents beneath a header the caller has already written.
+
+    TOML puts every key/value pair of a table *before* that table's
+    sub-table headers, so the pairs go out first and the header-emitting
+    children follow. Among themselves the children keep document order —
+    order is data in yapyon, and nothing here needs to reorder it.
+    """
+    for key, val in data.items():
+        if isinstance(val, dict) or _is_table_array(val):
+            continue
         out.append(f"{_toml_key(key)} = {_toml_value(val)}")
-    for key, val in tables.items():
-        if out and out[-1] != "":
-            out.append("")
-        _toml_table(val, prefix + [key], out)
+    for key, val in data.items():
+        if _is_table_array(val):
+            # One header per element. A nested table under a later element
+            # attaches to *that* element, so each element must be written
+            # out in full before the next header opens.
+            header = "[[" + ".".join(_toml_key(k) for k in prefix + [key]) + "]]"
+            for element in val:
+                _toml_gap(out)
+                out.append(header)
+                _toml_body(element, prefix + [key], out)
+        elif isinstance(val, dict):
+            _toml_gap(out)
+            _toml_table(val, prefix + [key], out)
+
+
+def _toml_gap(out: list) -> None:
+    """Separate one table from the last, without ever doubling the blank."""
+    if out and out[-1] != "":
+        out.append("")
 
 
 def _toml_key(key: str) -> str:
@@ -99,17 +151,6 @@ def _toml_str(text: str) -> str:
 
 
 def _toml_value(value) -> str:
-    if isinstance(value, dict):
-        # A mapping nested inside a sequence is a TOML table-array (e.g.
-        # ``[[name]]``) or an inline table inside an array — neither of which
-        # this writer builds. str()-ifying it would render a table as a text
-        # value, so it is refused: faithful, or akan - never approximate (the
-        # same principle that makes None, bytes and b-string overloads akan).
-        raise NotEncodable(
-            "TOML represents a repeated-key mapping as a [[table-array]] "
-            "header, which this emitter does not build; emitting str() would "
-            "render a mapping as a text value, so it is refused (faithful, or "
-            "akan - never approximate)")
     if value is None:
         raise NotEncodable("TOML has no null, so None cannot be written "
                            "faithfully; give the key a value or leave it out "
@@ -123,6 +164,16 @@ def _toml_value(value) -> str:
         return repr(value)
     if isinstance(value, list):
         return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        # Reached only from inside a list: a mapping that is a table's direct
+        # child goes out as a header instead. A mixed list cannot use
+        # `[[name]]` headers at all — TOML gives a key either an array of
+        # tables or an array value, never both — so its mappings go out as
+        # inline tables, which are faithful and keep the non-mappings too.
+        if not value:
+            return "{}"
+        return "{ " + ", ".join(f"{_toml_key(k)} = {_toml_value(v)}"
+                               for k, v in value.items()) + " }"
     return _toml_str(value)
 
 

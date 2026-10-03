@@ -367,19 +367,75 @@ def test_a_toml_document_is_a_table():
     akan('xs: [1, 2]\nu: y"{xs.__AS_TOML__()}"\n', "needs a mapping")
 
 
-def test_toml_refuses_a_mapping_nested_in_a_sequence():
-    # A mapping inside a sequence is a TOML table-array ([[name]]) or an
-    # inline table inside an array -- neither of which this writer builds.
-    # str()-ifying it would render a table as a text value, so it is refused
-    # (faithful, or akan - never approximate). kinemata.toml exercises this
-    # shape in several keys; the regression is asserted here so it cannot
-    # silently return.
-    akan(r"""s:
-  items:
-    - name: "x"
-    - name: "y"
-u: y"{s.__AS_TOML__()}"
-""", "table-array")
+# --------------------------------------------------------------------------- #
+# A list of mappings is a TOML array of tables (SPEC §5.1.2)
+#
+# The refusal that stood here was over-broad. SPEC §5.1.2's akan list names
+# multimaps, bytes and None-in-TOML, and never a mapping nested in a
+# sequence; the spec already said "nested mappings become tables", and the
+# writer had simply stopped short of the repeated-key case. Measured against
+# tomllib before building: `[[a]]`, nested `[[a.b]]`, inline tables inside
+# arrays, and quoted keys in headers are all legal TOML.
+# --------------------------------------------------------------------------- #
+def test_toml_writes_a_list_of_mappings_as_an_array_of_tables():
+    d = loads('s:\n  gate:\n    - name: "check"\n      on: True\n'
+              '    - name: "parity"\n      on: False\n'
+              'u: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == ('[[gate]]\nname = "check"\non = true\n\n'
+                      '[[gate]]\nname = "parity"\non = false\n')
+
+
+def test_toml_gives_a_super_table_no_header_above_an_array_of_tables():
+    # `[[a.b]]` already says `a` exists, so a `[a]` header would name a
+    # second, redundant table.
+    d = loads('s:\n  a:\n    b:\n      - k: 1\n'
+              'u: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == "[[a.b]]\nk = 1\n"
+
+
+def test_toml_keeps_a_super_table_header_when_it_has_pairs_of_its_own():
+    d = loads('s:\n  a:\n    x: 1\n    b:\n      - k: 2\n'
+              'u: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == "[a]\nx = 1\n\n[[a.b]]\nk = 2\n"
+
+
+def test_toml_nests_an_array_of_tables_inside_an_array_of_tables():
+    # Each element must be written out in full before the next header opens.
+    # A nested table attaches to the *most recent* `[[fruit]]`, so emitting
+    # every `[[fruit]]` header first would hang all the varieties off one.
+    d = loads('s:\n  fruit:\n    - name: "apple"\n      variety:\n'
+              '        - n: "red"\n        - n: "gold"\n'
+              'u: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == ('[[fruit]]\nname = "apple"\n\n[[fruit.variety]]\n'
+                      'n = "red"\n\n[[fruit.variety]]\nn = "gold"\n')
+
+
+def test_toml_writes_a_mixed_list_with_inline_tables():
+    # A mixed list cannot use headers at all: TOML gives a key either an
+    # array of tables or an array value, never both. Inline tables keep the
+    # mappings faithful *and* keep the non-mappings, where headers would
+    # have forced a choice.
+    d = loads('s:\n  a:\n    - x: 1\n    - 2\n    - "s"\n'
+              'u: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == 'a = [{ x = 1 }, 2, "s"]\n'
+
+
+def test_toml_writes_an_empty_list_inline_rather_than_losing_the_key():
+    # An empty list has no element to give a header, and no header means no
+    # key at all. `a = []` is how TOML says empty.
+    d = loads('s:\n  a: []\n  b:\n    - {}\n'
+              'u: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == "a = []\n\n[[b]]\n"
+
+
+def test_toml_quotes_a_non_ascii_key_in_an_array_header():
+    # A yapyon key is always an identifier, and an identifier never contains
+    # a dot -- quoted keys are reserved in v0.1 -- so the only key that can
+    # make a header need quoting is a non-ASCII one. TOML's bare-key set is
+    # ASCII-only, so it goes out quoted, which keeps it literal.
+    d = loads('s:\n  日本:\n    - k: 1\n'
+              'u: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == '[["日本"]]\nk = 1\n'
 
 
 def test_yaml_is_block_style_in_declaration_order():
@@ -529,6 +585,18 @@ SERIALIZER_CORPUS = (
     's:\n  tricky: "no"\n  numeric: "3"\n  spaced: "a b"\n  empty: ""\n',
     's:\n  url: "https://api.example.com/v1?a=1&b=2"\n',
     's:\n  deep:\n    xs: [1, 2]\n  after: "kept"\n',
+    # The array-of-tables shapes, added with the emitter that writes them: the
+    # corpus is what checks the output against a reader nobody wrote for it.
+    's:\n  gate:\n    - name: "check"\n      on: True\n'
+    '    - name: "parity"\n      on: False\n',
+    's:\n  a:\n    b:\n      - k: 1\n      - k: 2\n',
+    's:\n  a:\n    x: 1\n    b:\n      - k: 2\n',
+    's:\n  fruit:\n    - name: "apple"\n      variety:\n'
+    '        - n: "red"\n        - n: "gold"\n',
+    's:\n  a:\n    - x: 1\n    - 2\n    - "s"\n',
+    's:\n  a: []\n  b:\n    - {}\n',
+    's:\n  日本:\n    - k: 1\n',
+    's:\n  a:\n    - d:\n        e:\n          - f: 1\n',
 )
 
 

@@ -320,7 +320,7 @@ data in yapyon — and non-ASCII is left as itself.
 | | shape |
 |---|---|
 | `__AS_JSON__()` | indented two spaces |
-| `__AS_TOML__()` | nested mappings become tables (`[a.b]`); newline-terminated |
+| `__AS_TOML__()` | nested mappings become tables (`[a.b]`); a list whose elements are all mappings becomes an array of tables (`[[a.b]]`), a mixed or empty list inline (`a = [{}]`); newline-terminated |
 | `__AS_YAML__()` | block style, scalars never line-wrapped; newline-terminated |
 
 **An implementation must not prune.** Dropping a key because its value is
