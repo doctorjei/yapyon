@@ -36,7 +36,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 **`0.1.0` — the first release that is not a pre-release.** Lexer, parser,
 resolver, loader and emitter are done and tested, including a conformance
 suite that turns the splice matrix and the Python divergence table into
-executable cases. The suite is **631 tests** on the current tree; the
+executable cases. The suite is **632 tests** on the current tree; the
 released `0.1.0` carried fewer, and the number here tracks the tree, not
 the release.
 
@@ -185,6 +185,8 @@ From a checkout, the stages will also dump what they see:
 $ pip install -e ".[dev]" && pytest -q
 $ python -m yapyon lexer  examples/gateway.ypy   # token dump
 $ python -m yapyon parser examples/gateway.ypy   # AST dump
+$ python -m yapyon tier   examples/gateway.ypy   # 2 — this one needs the resolver
+$ python -m yapyon expand examples/bridge.ypy    # level 2 in, a record out
 ```
 
 Every stage writes its output to stdout and its diagnostics to stderr, and

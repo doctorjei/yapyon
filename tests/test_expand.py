@@ -196,6 +196,21 @@ def test_a_shiran_reaches_the_callers_warn_channel_as_it_happens():
     assert any("shiran" in m for m in seen)
 
 
+def test_the_bridged_example_is_the_one_the_readme_shows():
+    # The README shows `expand examples/bridge.ypy` as the demo, so the
+    # example has to actually cross. gateway.ypy carries a `yt` and cannot;
+    # registry.ypy starts as a record, so expanding it proves nothing.
+    from pathlib import Path
+    example = Path(__file__).resolve().parent.parent / "examples" / "bridge.ypy"
+    src = example.read_text(encoding="utf-8")
+    assert tier_of(src) == 2
+    out = expand_record(src)
+    assert tier_of(out) == 1
+    assert loads_record(out) == loads(src)
+    # And the spelling the README's comment promises: 3.10, not 3.1.
+    assert "3.10" in out
+
+
 # --------------------------------------------------------------------------- #
 # The CLI
 # --------------------------------------------------------------------------- #
