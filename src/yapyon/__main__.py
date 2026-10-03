@@ -3,6 +3,7 @@
     python -m yapyon lexer  FILE    # token dump
     python -m yapyon parser FILE    # AST dump
     python -m yapyon record FILE    # a record, normalized back to yapyon
+    python -m yapyon expand FILE    # a full document, resolved into a record
     python -m yapyon tier   FILE    # the level the document needs: 1, 2 or 3
 
 Prefer this spelling over `python -m yapyon.lexer`. Both work, but the
@@ -19,7 +20,7 @@ from __future__ import annotations
 
 import sys
 
-STAGES = ("lexer", "parser", "record", "tier")
+STAGES = ("lexer", "parser", "record", "expand", "tier")
 
 
 def main(argv: list[str]) -> int:
