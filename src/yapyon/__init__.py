@@ -26,7 +26,7 @@ from .resolver import Resolver, resolve
 from .multimap import Entry, KeyView, OrderedMultimap
 from .template import Hole, Template
 from .loader import (build, is_record, load, load_record, loads, loads_record,
-                    tier_of)
+                    lookup, tier_of)
 from .emitter import emit
 from .expand import expand_record
 
@@ -44,6 +44,8 @@ __all__ = [
     "load", "loads", "build", "Template", "Hole", "OrderedMultimap",
     # records — the fixed, literal-only form
     "load_record", "loads_record", "is_record",
+    # §5.2's scope search over a loaded tree, for consumers that assemble one
+    "lookup",
     # the level a document needs to mean itself (python -m yapyon.tier)
     "tier_of",
     # a record AST back to canonical yapyon source (python -m yapyon.record)

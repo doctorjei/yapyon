@@ -9,6 +9,24 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **`yapyon.lookup(tree, ref, *, at)` — §5.2's scope search over a loaded
+  tree.** For a consumer that assembles several loaded documents into one
+  tree and must resolve references against it by yapyon's rules rather than
+  a copy of them. `at` is the path to where the reference sits, and the
+  answer is exactly what a hole written there would get: nearest wins, a
+  slot never finds its own key, lists add no scope, and `ref` takes the
+  full hole grammar — anchors, `__KEY__`, subscripts, negative indices, the
+  multimap list view and serializers. It runs the resolver's own search
+  rather than a second implementation. Refusals are `AkanError`, located by
+  the path since a loaded tree has no lines. A multimap entry inside `at` is
+  refused for now: its keys repeat, so a path cannot pick one.
+
+---
+
 ## 0.2.0 — 2026-10-12
 
 Readiness for persona-grata: a level a loader can check (`tier_of`), a

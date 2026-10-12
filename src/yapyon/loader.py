@@ -21,6 +21,11 @@ str, bytes, int, float, bool, None, list, or dict. A record never yields a
 `Template`, since it needs the resolver; an `OrderedMultimap` is fine in one,
 being plain keyed data.
 
+`lookup(tree, ref, at=path)` is §5.2's search offered to a consumer: a
+loaded tree, a position in it, and a reference resolved the way a hole
+written there would be. It runs the resolver's own search rather than a
+copy of the rule.
+
 `warn=` receives every shiran as a formatted string — the avoidable-bracket
 warning of §5.1, and §5.3's two warn-tier warnings.
 
@@ -35,11 +40,12 @@ neither, since both are resolver limits.
 
 from __future__ import annotations
 
-from .lexer import AkanError, Lexer, Yakamashiwa
+from .lexer import AkanError, Lexer, RefError, Yakamashiwa, fold_name
 from .multimap import OrderedMultimap
-from .parser import (Mapping, MultiMap, Parser, ResolvedTemplate, Scalar,
-                     Sequence, YString)
-from .resolver import REFUSE_DEPTH, REFUSE_SIZE, resolve, splice_text
+from .parser import (Mapping, MultiMap, Pair, Parser, ResolvedTemplate,
+                     Scalar, Sequence, YString)
+from .resolver import (REFUSE_DEPTH, REFUSE_SIZE, Resolver, _Site, resolve,
+                       splice_text)
 from .template import Hole, Template
 
 
@@ -229,3 +235,125 @@ def loads_record(text: str, *, warn=None, source: str | None = None):
 def load_record(fp, *, warn=None, source: str | None = None):
     """Load a record from an open file (text mode, UTF-8)."""
     return loads_record(fp.read(), warn=warn, source=_name_of(fp, source))
+
+
+# --------------------------------------------------------------------------- #
+# §5.2's scope search, over a loaded tree
+# --------------------------------------------------------------------------- #
+class _PathAkan(AkanError):
+    """An akan located by a path in a loaded tree, which has no lines.
+
+    Still an `AkanError`, so a consumer's existing handler catches it; `line`
+    and `col` are None because there is no source text to point into.
+    """
+
+    def __init__(self, msg: str, where: str):
+        Exception.__init__(self, f"akan: at {where}: {msg}")
+        self.msg, self.line, self.col, self.source = msg, None, None, None
+        self.where = where
+
+
+class _PathResolver(Resolver):
+    """The resolver, reporting at a path instead of a line and column.
+
+    Only the reporting changes. Every rule the search applies — nearest
+    wins, the own-key skip, steps, indices, the multimap list view, the
+    anchors, serializers — is the parent class's, which is the point.
+    """
+
+    def __init__(self, tree, where: str):
+        super().__init__(tree)
+        self._where = where
+
+    def _akan(self, msg: str, at):
+        raise _PathAkan(msg, self._where)
+
+
+def lookup(tree, ref: str, *, at=()):
+    """Resolve `ref` in a loaded tree, the way a hole written at `at` would.
+
+    `tree` is what `loads` returns — or several such trees a consumer has
+    assembled into one. `at` is a path from the root to the value the
+    reference sits in: keys for mappings, integers for lists, e.g.
+    `("harness", "protocol")`. That position is the whole of the scope rule:
+    the search starts at the mapping holding the last key, nearest wins
+    (§5.2), and a hole never finds its own key, so `lookup(t, "x",
+    at=("blk", "x"))` reaches an outer `x`, exactly as `x: y"{x}"` would.
+
+    `ref` is a hole's interior in full (GRAMMAR §G5): `mind.dialects[p]`,
+    `__ROOT__.a`, `__PARENT__.b`, `__KEY__`, `xs[-1]`, a serializer. Returns
+    the value it names, as `loads` would have built it — a multimap traversed
+    by key gives its list view.
+
+    **This is the resolver's search, not a second implementation of it.**
+    The tree is wrapped back into the AST and the resolver's own lookup runs
+    from a site built at `at`, so a document hole and this function cannot
+    disagree about what a reference means.
+
+    A multimap entry inside `at` is refused for now: its keys repeat, so a
+    key cannot pick one entry, and positional entry access is reserved.
+    """
+    where = ".".join(str(step) for step in at) or "the root"
+    try:
+        root = _wrap(tree, where)
+        chain = _chain_at(root, at, where)
+        probe = YString(0, 0, "y", [("hole", ref)])
+        found = _PathResolver(root, where)._lookup(
+            ref, _Site(probe, chain, None))
+    except RefError as exc:
+        raise _PathAkan(f"{{{ref}}}: {exc}", where) from None
+    return build(found)
+
+
+def _wrap(value, where: str):
+    """A loaded value back into the AST, so the resolver can walk it.
+
+    The inverse of `build` for data. Positions are zero — a loaded tree has
+    none — and errors report the path instead. A number has no source
+    spelling any more, so a serializer writes it by its value.
+    """
+    if isinstance(value, dict):
+        return Mapping(0, 0, [Pair(0, 0, key, _wrap(item, where))
+                              for key, item in value.items()])
+    if isinstance(value, OrderedMultimap):
+        return MultiMap(0, 0, [Pair(0, 0, entry.key, _wrap(entry.value, where))
+                               for entry in value])
+    if isinstance(value, list):
+        return Sequence(0, 0, [_wrap(item, where) for item in value])
+    if isinstance(value, bool):                  # before int: bool is an int
+        return Scalar(0, 0, "bool", value)
+    if value is None:
+        return Scalar(0, 0, "none", None)
+    for kind, types in (("str", str), ("bytes", (bytes, bytearray)),
+                        ("int", int), ("float", float)):
+        if isinstance(value, types):
+            return Scalar(0, 0, kind, value)
+    raise _PathAkan(f"a {type(value).__name__} is not yapyon data, so the "
+                    f"tree cannot be searched", where)
+
+
+def _chain_at(root, at, where: str) -> list:
+    """The scope chain a hole at `at` would have — the frames `_collect`
+    records, innermost first. Lists add no frame, exactly as in a document."""
+    chain, node = [], root
+    for step in at:
+        if isinstance(node, Mapping) and isinstance(step, str):
+            key = fold_name(step)
+            if key not in node.by_key:
+                raise _PathAkan(f"there is no key {key!r} on the path", where)
+            chain.insert(0, (node, key))
+            node = node.by_key[key]
+        elif (isinstance(node, Sequence) and isinstance(step, int)
+              and not isinstance(step, bool)):
+            if not -len(node.items) <= step < len(node.items):
+                raise _PathAkan(f"index {step} is outside a list of "
+                                f"{len(node.items)} on the path", where)
+            node = node.items[step]
+        elif isinstance(node, MultiMap):
+            raise _PathAkan("a multimap's keys repeat, so a path cannot pick "
+                            "one entry; positional entry access is reserved",
+                            where)
+        else:
+            raise _PathAkan(f"cannot step {step!r} into a "
+                            f"{type(node).__name__.lower()} on the path", where)
+    return chain

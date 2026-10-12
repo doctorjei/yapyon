@@ -37,7 +37,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **753 tests** on the current tree; the number here tracks the tree,
+suite is **779 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 This is the **self-contained tier**: every document resolves from its own
@@ -281,6 +281,24 @@ A serializer names the value it encodes, so it cannot name a *bare* anchor:
 `{__PARENT__.__AS_JSON__()}` would have to encode the string it is computing,
 and is akan. Reach past the anchor — `{__ROOT__.blk.__AS_JSON__()}` — which is
 the shape you want anyway.
+
+### Resolving a reference from code
+
+A consumer that assembles a tree from several loaded documents can resolve a
+reference against it **by the same rules a hole uses**, without writing its
+own copy of the search:
+
+```python
+tree = yapyon.loads(base)
+tree["harness"] = yapyon.loads(harness_doc)
+yapyon.lookup(tree, "mind.dialects[protocol].api_uri", at=("harness", "uri"))
+```
+
+`at` is the path to where the reference sits, and the answer is the one a
+`y"{...}"` written there would get: nearest wins, a slot never finds its own
+key, and the whole hole grammar works, serializers included. It is the
+resolver's own search, so the two cannot disagree. A refusal is an
+`AkanError` naming the path.
 
 ## Prefixes
 
