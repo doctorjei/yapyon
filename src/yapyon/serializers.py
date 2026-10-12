@@ -21,14 +21,23 @@ bytes mean the same data" has to survive the trip through a serializer. A
 consumer wanting that behaviour prunes its own tree first.
 
 Where a format cannot carry a value **faithfully**, the encoding is akan
-rather than approximate — TOML has no null, JSON has no bytes, no format here
-can hold a multimap's repeated keys. Law 1: refuse rather than pick a reading.
+rather than approximate — TOML has no null, JSON has no bytes, and JSON, TOML
+and YAML cannot hold a multimap's repeated keys. Law 1: refuse rather than
+pick a reading.
+
+**`__AS_YAPYON__()` is the exception on both counts.** It is the one encoding
+that carries everything the data model has — multimaps, bytes, `None` — and
+the one that reads the **AST** rather than plain values, because its output
+*is* yapyon source and §5.4's lexeme governs that: `3.10` must stay `3.10`,
+and `b"..."` must not come back respelled as base64. `READS_AST` says which.
 """
 
 from __future__ import annotations
 
 import json
 import re
+
+from .emitter import emit
 
 #: Serializers are declared once, at the foot of this module: `SERIALIZERS` maps
 #: each name to its writer, and `SERIALIZER_NAMES` is derived from it. Declared
@@ -272,6 +281,21 @@ def _looks_numeric(text: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# yapyon
+# --------------------------------------------------------------------------- #
+def to_yapyon(node) -> str:
+    """Canonical **record** text (SPEC §4.4, §12) for a resolved subtree.
+
+    This is `emitter.emit`, unchanged, and that is the point: the emitter
+    already renders a record from the AST, and a second yapyon writer would
+    be the next thing to drift. The caller has checked the subtree is fully
+    resolved and holds no `yt` — the emitter's own refusal speaks of loading
+    a record, which is the wrong problem to name from inside a hole.
+    """
+    return emit(node)
+
+
+# --------------------------------------------------------------------------- #
 def _refuse_bytes(value, fmt: str) -> None:
     if isinstance(value, (bytes, bytearray)):
         raise NotEncodable(f"{fmt} has no bytes and names no encoding for "
@@ -288,7 +312,13 @@ SERIALIZERS = {
     "__AS_JSON__": to_json,
     "__AS_TOML__": to_toml,
     "__AS_YAML__": to_yaml,
+    "__AS_YAPYON__": to_yapyon,
 }
+
+#: The writers handed the resolved **AST** rather than plain values. Only a
+#: writer whose output is yapyon source belongs here — everywhere else a
+#: number encodes by the target format's own rules, and the lexeme is moot.
+READS_AST = frozenset({"__AS_YAPYON__"})
 
 #: The names the grammar accepts (SPEC §5.1.2). **Derived** from `SERIALIZERS`
 #: rather than restated: the two used to be written out separately, so a fourth

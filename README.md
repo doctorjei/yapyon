@@ -36,7 +36,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 **`0.1.0` — the first release that is not a pre-release.** Lexer, parser,
 resolver, loader and emitter are done and tested, including a conformance
 suite that turns the splice matrix and the Python divergence table into
-executable cases. The suite is **718 tests** on the current tree; the
+executable cases. The suite is **753 tests** on the current tree; the
 released `0.1.0` carried fewer, and the number here tracks the tree, not
 the release.
 
@@ -54,7 +54,7 @@ deliberate later tier, not a gap in this one.
 |---|---|
 | [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 46 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 48 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -265,12 +265,17 @@ model = "m1"
 host = "https://api.example.com/v1"
 ```
 
-`__AS_JSON__()`, `__AS_TOML__()` and `__AS_YAML__()`, all written without a
-runtime dependency. Keys stay in document order, nothing is pruned, and where
-a format cannot carry a value faithfully the encoding is an error rather than
-an approximation — `None` in TOML, bytes anywhere, a multimap's repeated keys.
-YAML scalars are quoted unless nothing could misread them, so `"no"` and `"3"`
-survive as strings.
+`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()` and `__AS_YAPYON__()`, all
+written without a runtime dependency. Keys stay in document order, nothing is
+pruned, and where a format cannot carry a value faithfully the encoding is an
+error rather than an approximation — `None` in TOML, bytes in JSON, TOML or
+YAML, a multimap's repeated keys. YAML scalars are quoted unless nothing could
+misread them, so `"no"` and `"3"` survive as strings.
+
+`__AS_YAPYON__()` writes the block as a canonical yapyon **record**, and it is
+the one serializer that carries everything: multimaps, bytes and `None`, with
+`3.10` still spelled `3.10`. The only thing it refuses is a `yt`, which has no
+record form.
 
 A serializer names the value it encodes, so it cannot name a *bare* anchor:
 `{__PARENT__.__AS_JSON__()}` would have to encode the string it is computing,

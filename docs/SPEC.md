@@ -1,4 +1,4 @@
-# yapyon — draft specification v0.1
+# yapyon — draft specification v0.2
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -26,7 +26,7 @@ cites `GRAMMAR §Gn` and moves on. Sections below that consist only of such a
 citation are kept at their original numbers on purpose, so that existing
 references to them still land in the right place.
 
-Sections marked *(reserved)* name syntax deliberately akan in v0.1 but held
+Sections marked *(reserved)* name syntax deliberately akan in v0.2 but held
 for future versions.
 
 yapyon has **two forms**. The unrestricted one is described in §1–§11 and is
@@ -188,7 +188,7 @@ implementation must satisfy is that **reloading its output yields data equal
 to reloading its input.**
 
 **Comments do not survive**, and a conforming emitter is not required to
-preserve them: comment-preserving round-trip is not specified in v0.1. An
+preserve them: comment-preserving round-trip is not specified in v0.2. An
 emitter is a normalizer, not a round-tripper. *(Reserved: comment retention —
 see §9.)*
 
@@ -290,11 +290,12 @@ reader can see it.
 **It is not a function call, and law 2 still holds.** A serializer takes no
 arguments, cannot be composed, and the set of them belongs to the *format*
 rather than to the consumer. Naming an encoding is not computing a value. That
-is the boundary between this and consumer-registered functions, which v0.1
+is the boundary between this and consumer-registered functions, which v0.2
 does not have.
 
-The three names and the call syntax are `GRAMMAR §G5`; **v0.1 defines
-`__AS_JSON__()`, `__AS_TOML__()` and `__AS_YAML__()`**, and a serializer
+The names and the call syntax are `GRAMMAR §G5`; **v0.2 defines
+`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()` and `__AS_YAPYON__()`**,
+and a serializer
 applies to a **list or a mapping**. Applying one to a single value is akan and
 *reserved*.
 
@@ -331,7 +332,7 @@ the pair I sit in" — was considered and declined. It terminates, but it makes
 which is a carve-out the format does not otherwise have.)*
 
 **Every encoding is canonical**, or the same bytes would not mean the same
-data. In all three, **keys are in document order and never sorted** — order is
+data. In all four, **keys are in document order and never sorted** — order is
 data in yapyon — and non-ASCII is left as itself.
 
 | | shape |
@@ -339,6 +340,7 @@ data in yapyon — and non-ASCII is left as itself.
 | `__AS_JSON__()` | indented two spaces |
 | `__AS_TOML__()` | nested mappings become tables (`[a.b]`); a list whose elements are all mappings becomes an array of tables (`[[a.b]]`), a mixed or empty list inline (`a = [{}]`); newline-terminated |
 | `__AS_YAML__()` | block style, scalars never line-wrapped; newline-terminated |
+| `__AS_YAPYON__()` | a **record** in canonical spelling (§4.4, §12); newline-terminated |
 
 **An implementation must not prune.** Dropping a key because its value is
 `None` or `""` is a silent reinterpretation (law 7), and "the same bytes mean
@@ -356,15 +358,31 @@ first is akan on sight.
 **Where a format cannot carry a value faithfully, the encoding is akan** —
 never approximate (law 1: refuse rather than pick a reading).
 
-- A **multimap** is akan in all three: its keys repeat, and none of these
-  formats can hold that.
-- **Bytes** are akan in all three: none of them names an encoding for bytes,
-  so the bridge law has nothing to name.
+- A **multimap** is akan in JSON, TOML and YAML: its keys repeat, and none
+  of these formats can hold that.
+- **Bytes** are akan in JSON, TOML and YAML: none of them names an encoding
+  for bytes, so the bridge law has nothing to name.
 - **`None` is akan in TOML**, which has no null. JSON and YAML write it.
 - `__AS_TOML__()` requires a **mapping**: a TOML document is a table.
 - Numbers encode by the **target format's** rules, not §5.4's lexeme. Inside
   JSON, `3.10` and `3.1` are one number; the lexeme rule governs splicing
-  yapyon source, which this is not.
+  yapyon source, which this is not — except in `__AS_YAPYON__()`, below.
+
+**`__AS_YAPYON__()` writes yapyon source, so yapyon's rules govern it.** Its
+output is the target as a **record** (§12) in canonical spelling (§4.4), and
+it is the one serializer that can carry everything the data model has:
+multimaps, bytes and `None` all encode. The rest follows from what the output
+is:
+
+- Numbers and keywords keep their **lexeme** (§5.4): `v: 3.10` encodes as
+  `v: 3.10`, not `3.1`.
+- Bytes keep the spelling the document used, `b"..."` or `b64"..."`;
+  choosing one for the author would be a guess (law 1).
+- A y-string in the target encodes as the value it resolved to, so the output
+  holds no references and loads as a record.
+- **A `yt` in the target is akan.** A record's leaves are literals, and a
+  template delivered in parts (§6) is not one; joining it would render what
+  §6 leaves to the consumer, and make `yt` silently mean `y`.
 
 **YAML is emitted defensively.** A scalar is written plain only when nothing
 else could read it as another type — so `"no"`, `"3"` and `"true"` come out
@@ -655,7 +673,7 @@ partition is exact and has no other members.
 
 ## 9. Reserved for future versions
 
-Syntax that is akan in v0.1 with the door explicitly open: `yb64` and `ytb`
+Syntax that is akan in v0.2 with the door explicitly open: `yb64` and `ytb`
 prefixes; **quoted keys** (the key side of the grammar's `a["b.c"]`, whose
 reference side is built); a flow spelling for multimaps (`{+ a: 1}`); format
 specs and conversions in holes; list interpolation; **escapes inside a quoted
@@ -663,7 +681,7 @@ hole key**; **applying a serializer to
 a single value**; positional access to a multimap's entries (`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
-round-tripper needs a design v0.1 does not have).
+round-tripper needs a design v0.2 does not have).
 
 **A reservation is a promise, not a plan.** Items arrive on this list by being
 argued individually; nothing should be built from it because it appears here,
@@ -695,7 +713,7 @@ it in the message ("write `{{` for a literal brace"; "respell as b64").
 unusual, and a shiran whose suggested fix would change what a document means
 is not a warning but a trap.
 
-v0.1 specifies **three**, and none of their fixes changes what a document
+v0.2 specifies **three**, and none of their fixes changes what a document
 means. The avoidable bracket is about spelling alone. §5.3's two warn-tier
 warnings assert nothing about what the author intended — they report that a
 document is costly and may be refused elsewhere, which is true whatever was

@@ -39,7 +39,7 @@ def test_serializer_production_matches_code():
 def test_serializer_production_is_actually_read_from_the_document():
     """A parser that silently found nothing would make the check above vacuous."""
     assert set(crg.serializers_from_grammar()) == {
-        "__AS_JSON__", "__AS_TOML__", "__AS_YAML__",
+        "__AS_JSON__", "__AS_TOML__", "__AS_YAML__", "__AS_YAPYON__",
     }
 
 

@@ -46,7 +46,7 @@ from .lexer import (DOLLAR_HINT, AkanError, Ref, Yakamashiwa, fold_name,
                     parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
-from .serializers import SERIALIZERS, NotEncodable
+from .serializers import READS_AST, SERIALIZERS, NotEncodable
 
 # §5.3 defines two tiers, and they are not the same number.
 #
@@ -422,7 +422,10 @@ class Resolver:
                        f"mapping; applying one to a single value is reserved",
                        site.node)
         try:
-            text = SERIALIZERS[parsed.serializer](_plain(target))
+            if parsed.serializer in READS_AST:
+                text = SERIALIZERS[parsed.serializer](_settled(target))
+            else:
+                text = SERIALIZERS[parsed.serializer](_plain(target))
         except _NotYet as pending:
             # Hand the unresolved node back: `_try` defers on a YString, so
             # this rejoins the ordinary fixpoint instead of pre-empting it.
@@ -542,6 +545,35 @@ class _NotYet(Exception):
 
     def __init__(self, node: Node):
         self.node = node
+
+
+def _settled(node: Node) -> Node:
+    """The subtree itself, once nothing in it is still waiting or deferred.
+
+    `_plain`'s twin for the writers that read the AST (`READS_AST`): the same
+    two outcomes, *not yet* and *never*, so a cycle through `__AS_YAPYON__()`
+    is still reported as the cycle it is (trap 9). The only thing this
+    encoding cannot carry is a `yt`, for the reason `expand_record` refuses
+    one: a record's leaves are literals, and a template delivered in parts is
+    not one. Joining it would make yapyon render what §6 leaves to the
+    consumer.
+    """
+    if isinstance(node, YString):
+        raise _NotYet(node)
+    if isinstance(node, ResolvedTemplate):
+        raise NotEncodable("a `yt` delivers its parts unjoined (§6) and a "
+                           "record's leaves must all be literals, so there is "
+                           "no yapyon record form for a template")
+    if isinstance(node, Mapping):
+        for pair in node.pairs:
+            _settled(pair.value)
+    elif isinstance(node, MultiMap):
+        for pair in node.entries:
+            _settled(pair.value)
+    elif isinstance(node, Sequence):
+        for item in node.items:
+            _settled(item)
+    return node
 
 
 def _plain(node: Node):

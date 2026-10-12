@@ -13,6 +13,38 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ### Added
 
+- **§5.1.2 `__AS_YAPYON__()` — a fourth serializer.** It writes the block as
+  a yapyon **record** in canonical spelling (§4.4), and it is the one
+  serializer that can carry everything the data model holds: multimaps,
+  bytes and `None` all encode, where JSON, TOML and YAML each refuse at
+  least one. It writes from the resolved document rather than from loaded
+  values, so numbers keep their source spelling (`3.10` stays `3.10`) and
+  bytes keep the prefix the document chose (`b"..."` stays `b"..."`). A
+  y-string in the block encodes as the value it resolved to. **A `yt` in the
+  block is akan:** a template is delivered in parts (§6) and a record has
+  no form for one, the same reason `expand_record` refuses it. Not breaking
+  — the name was akan before.
+
+- **`yapyon.tier_of(text)` and `python -m yapyon tier FILE` — the level a
+  document needs.** **1** is a record (§12), loadable with no resolver;
+  **2** is self-contained, needing the resolver but nothing outside the
+  document; **3** needs something outside it. The level is computed from
+  the bytes, never read off a declaration, so a loader can check a claimed
+  level rather than trust it. The CLI prints the bare number so it composes
+  in a shell test. **3 is unreachable today**: no shipped construct reaches
+  outside the document. The levels are numbers because they have no names
+  yet.
+
+- **`yapyon.expand_record(text)` and `python -m yapyon expand FILE` — a
+  full document reduced to a record.** Every y-string is replaced by the
+  value it resolves to, and what comes out is canonical record text (§4.4,
+  §12) that a resolver-free implementation can load:
+  `loads_record(expand_record(s)) == loads(s)`. It works from the resolved
+  document rather than loaded values, so a `version: 3.10` the document
+  never splices still comes back as `3.10`. **A `yt` is refused** rather
+  than joined: §6 leaves rendering a template to the consumer, and a record
+  has no form for one. `examples/bridge.ypy` shows the crossing.
+
 - **§5.1.2 `__AS_TOML__()` writes TOML arrays of tables.** A list whose
   elements are all mappings now becomes `[[name]]`, under its own path
   (`[[a.b]]`), with each element written out in full before the next
@@ -43,6 +75,23 @@ before it needed `pip install yapyon --pre` to be seen.
   round-trip `tomllib → to_toml → tomllib` unchanged, where the same
   check reported an obstruction on 2026-09-18.
 
+- **`docs/conformance/` — a portable conformance corpus.** 48 cases written
+  in the format's own terms: an input file and the **record** it must
+  denote, or an input plus a sidecar naming the rule it is refused under.
+  Nothing in it is Python, so a second implementation runs the same files
+  against its own loader and gets a yes or no. The record tier is covered
+  completely, which is what unblocks a record-only port; the full tier
+  covers the lexeme rule, nearest-wins resolution and `__ROOT__`, relative
+  references, the dot as bracket sugar, indirect keys, negative indices,
+  the multimap list view, chained splices, and all four serializers
+  including TOML arrays of tables. Expectations are hand-authored from the
+  spec and deliberately spelled *differently* from their input — `b"hi"`
+  against `b64"aGk="`, `name` against `ｎａｍｅ`, block against flow — because
+  a pair that must be identical is not an oracle. Error cases pin *that* a
+  refusal happens and under which rule, never the message text, which is UX.
+  `docs/conformance/README.md` is the protocol; the suite runs the whole
+  corpus, so it cannot rot.
+
 ### Changed
 
 - **§4.3 `b64"..."` must be canonical; a non-canonical literal is now akan.**
@@ -62,25 +111,6 @@ before it needed `pip install yapyon --pre` to be seen.
   with them is a hand-edit or a corruption rather than something to
   accommodate. The akan names the canonical spelling. **To fix:** re-encode
   the value, or write the spelling the message gives you.
-
-### Added
-
-- **`docs/conformance/` — a portable conformance corpus.** 46 cases written
-  in the format's own terms: an input file and the **record** it must
-  denote, or an input plus a sidecar naming the rule it is refused under.
-  Nothing in it is Python, so a second implementation runs the same files
-  against its own loader and gets a yes or no. The record tier is covered
-  completely, which is what unblocks a record-only port; the full tier
-  covers the lexeme rule, nearest-wins resolution and `__ROOT__`, relative
-  references, the dot as bracket sugar, indirect keys, negative indices,
-  the multimap list view, chained splices, and all three serializers
-  including TOML arrays of tables. Expectations are hand-authored from the
-  spec and deliberately spelled *differently* from their input — `b"hi"`
-  against `b64"aGk="`, `name` against `ｎａｍｅ`, block against flow — because
-  a pair that must be identical is not an oracle. Error cases pin *that* a
-  refusal happens and under which rule, never the message text, which is UX.
-  `docs/conformance/README.md` is the protocol; the suite runs the whole
-  corpus, so it cannot rot.
 
 ---
 

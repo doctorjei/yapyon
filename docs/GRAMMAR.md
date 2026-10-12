@@ -1,4 +1,4 @@
-# yapyon — grammar v0.1
+# yapyon — grammar v0.2
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -156,7 +156,7 @@ document. `__` and `___` count; `_foo`, `__foo` and `foo__` do not.
   | `__ROOT__` | leads a reference (§G5) |
   | `__PARENT__` | leads a reference, and repeats |
   | `__KEY__` | ends a reference |
-  | `__AS_JSON__()` `__AS_TOML__()` `__AS_YAML__()` | ends a reference |
+  | `__AS_JSON__()` `__AS_TOML__()` `__AS_YAML__()` `__AS_YAPYON__()` | ends a reference |
 
 Reserving the whole shape rather than a list of names is deliberate: widening
 the reserved set later would break documents, while narrowing it never can.
@@ -358,6 +358,7 @@ sub         ::= STRING | INDEX | ref
 serializer  ::= "__AS_JSON__" "(" ")"
               | "__AS_TOML__" "(" ")"
               | "__AS_YAML__" "(" ")"
+              | "__AS_YAPYON__" "(" ")"
 
 SEG         ::= NAME, excluding every dunder name (§G4.2)
 INDEX       ::= "-"? followed by one or more ASCII digits "0"–"9"
@@ -423,7 +424,7 @@ apologising afterwards.
 - An **undefined dunder** name: `{__foo__.a}`.
 - **Format specs and conversions** — `{x:...}`, `{x!r}` — are akan and
   reserved.
-- A **serializer that is not one of the three defined**, e.g.
+- A **serializer that is not one of the four defined**, e.g.
   `{a.__AS_BOGUS__()}`, and a serializer with **nothing to encode**,
   `{__AS_JSON__()}`.
 

@@ -133,17 +133,19 @@ inert gate look identical from outside, and only the break tells them apart.
   nearest-wins resolution and the `__ROOT__` escape hatch (§5.2), relative
   references `__PARENT__` / `__KEY__` (§5.1.1), the dot as sugar for the
   bracket, indirect keys, negative indices and the multimap list view
-  (§5.1), chained splices through the fixpoint (§5.3), and all three
+  (§5.1), chained splices through the fixpoint (§5.3), and all four
   serializers including TOML arrays of tables (§5.1.2).
 - **`error/` — the major refusals.** Non-canonical base64, invalid base64,
   duplicate keys including duplicates that appear only after folding, tab
   indentation, unknown escapes, reserved quoted keys, dunder keys,
   unbound holes, a serializer on a bare anchor, a multimap in a
-  serializer, `None` in TOML, bytes in JSON, and a full document refused
-  by `loads_record`.
+  serializer, `None` in TOML, bytes in JSON, a `yt` in `__AS_YAPYON__()`,
+  and a full document refused by `loads_record`.
 
-**`yt` is deliberately absent.** A `yt` value is a template delivered in
-parts (§6), and a record cannot express one — `expand_record` refuses it
-rather than joining it, because §6 puts rendering with the consumer. A
-corpus whose expectations are records therefore cannot carry a `yt`, and
-that is the rule working, not a gap.
+**`yt` is deliberately absent from `full/`.** A `yt` value is a template
+delivered in parts (§6), and a record cannot express one — `expand_record`
+refuses it rather than joining it, because §6 puts rendering with the
+consumer. A corpus whose expectations are records therefore cannot carry a
+`yt`, and that is the rule working, not a gap. The same rule is why `yt`
+appears once, in `error/`: `__AS_YAPYON__()` writes a record, so a `yt` in
+its target is refused.
