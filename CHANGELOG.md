@@ -9,7 +9,14 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## Unreleased
+## 0.2.0 — 2026-10-12
+
+Readiness for persona-grata: a level a loader can check (`tier_of`), a
+bridge from a full document down to a record (`expand_record`), TOML arrays
+of tables, a fourth serializer that writes yapyon itself, and a portable
+conformance corpus. It adds no consumer functions and no environment access.
+**One change is breaking**: a non-canonical `b64"..."` literal is now akan —
+see Changed.
 
 ### Added
 

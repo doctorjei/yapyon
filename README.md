@@ -33,12 +33,12 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-**`0.1.0` — the first release that is not a pre-release.** Lexer, parser,
-resolver, loader and emitter are done and tested, including a conformance
-suite that turns the splice matrix and the Python divergence table into
-executable cases. The suite is **753 tests** on the current tree; the
-released `0.1.0` carried fewer, and the number here tracks the tree, not
-the release.
+**`0.2.0`.** Lexer, parser, resolver, loader and emitter are done and
+tested, including a conformance suite that turns the splice matrix and the
+Python divergence table into executable cases, and a portable corpus in
+`docs/conformance/` that another implementation can run against itself. The
+suite is **753 tests** on the current tree; the number here tracks the tree,
+not a release.
 
 This is the **self-contained tier**: every document resolves from its own
 bytes. There is no ambient scope, no includes and no environment at the
