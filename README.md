@@ -33,7 +33,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-**`0.2.0`.** Lexer, parser, resolver, loader and emitter are done and
+**`0.2.1`.** Lexer, parser, resolver, loader and emitter are done and
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The

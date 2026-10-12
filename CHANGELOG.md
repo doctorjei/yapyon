@@ -9,7 +9,10 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## Unreleased
+## 0.2.1 — 2026-10-12
+
+One addition, for consumers that assemble trees: `lookup`. Nothing is
+breaking.
 
 ### Added
 

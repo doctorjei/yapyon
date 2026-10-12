@@ -30,7 +30,7 @@ from .loader import (build, is_record, load, load_record, loads, loads_record,
 from .emitter import emit
 from .expand import expand_record
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 #: GRAMMAR §G4.1 asks every implementation to document where its identifier
 #: tables come from. yapyon's are generated from this Unicode version by
