@@ -13,17 +13,19 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ### Added
 
-- **`yapyon.lookup(tree, ref, *, at)` — §5.2's scope search over a loaded
-  tree.** For a consumer that assembles several loaded documents into one
-  tree and must resolve references against it by yapyon's rules rather than
-  a copy of them. `at` is the path to where the reference sits, and the
-  answer is exactly what a hole written there would get: nearest wins, a
-  slot never finds its own key, lists add no scope, and `ref` takes the
-  full hole grammar — anchors, `__KEY__`, subscripts, negative indices, the
-  multimap list view and serializers. It runs the resolver's own search
-  rather than a second implementation. Refusals are `AkanError`, located by
-  the path since a loaded tree has no lines. A multimap entry inside `at` is
-  refused for now: its keys repeat, so a path cannot pick one.
+- **`yapyon.lookup(tree, current, ref)` — §5.2's scope search over a
+  loaded tree.** For a consumer that assembles several loaded documents into
+  one tree and must resolve references against it by yapyon's rules rather
+  than a copy of them. `current` is a node the consumer holds from inside
+  `tree`, found by identity, and the answer is exactly what a hole written
+  inside it would get: its own keys first, then outward, nearest winning,
+  with lists and multimap entries adding no scope. `ref` takes the full hole
+  grammar — anchors, subscripts, negative indices, the multimap list view
+  and serializers; `__PARENT__` is `current`, so `__PARENT__.__KEY__` is its
+  own key, and a bare `__KEY__` is refused. It runs the resolver's own
+  search rather than a second implementation. Refusals are `AkanError`,
+  located by where `current` sits, since a loaded tree has no lines; a
+  `current` that is not in the tree, or is in it twice, is refused.
 
 ---
 

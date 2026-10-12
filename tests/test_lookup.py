@@ -39,16 +39,17 @@ harness:
     - here: "SLOT"
 '''
 
-# (path to the slot, reference) — every target here is a string, so the
-# document side can splice it with y"{ref}" and the two can be compared.
+# (path to a slot, reference). The document side writes y"{ref}" at the
+# slot; `lookup` stands at the node holding that slot. They agree whenever
+# the reference does not name the slot's own key, which a hole skips and a
+# node does not have.
 CASES = [
     (("harness", "deep", 1, "here"), "path"),          # nearest: /inner
-    (("harness", "path"), "path"),                    # own key skipped
     (("harness", "deep", 0, "leaf"), "name"),          # a sibling in a list item
     (("harness", "deep", 1, "here"), "name"),          # lists add no frame
     (("harness", "deep", 1, "here"), "__ROOT__.path"),
     (("harness", "deep", 1, "here"), "__PARENT__.__PARENT__.path"),
-    (("harness", "deep", 1, "here"), "__KEY__"),
+    (("harness", "deep", 1, "here"), "__PARENT__.__PARENT__.__KEY__"),
     (("harness", "deep", 1, "here"), "xs[-1]"),
     (("harness", "deep", 1, "here"), "xs[idx]"),
     (("harness", "deep", 1, "here"), "mm.k[1]"),
@@ -59,12 +60,9 @@ CASES = [
 
 def _with_hole(path, ref):
     """DOC with the slot at `path` replaced by a hole naming `ref`."""
-    text = DOC
-    if path == ("harness", "path"):
-        return text.replace('  path: "/inner"', f'  path: y"{{{ref}}}"')
     if path == ("harness", "deep", 0, "leaf"):
-        return text.replace('leaf: "L"', f'leaf: y"{{{ref}}}"')
-    return text.replace('here: "SLOT"', f'here: y"{{{ref}}}"')
+        return DOC.replace('leaf: "L"', f'leaf: y"{{{ref}}}"')
+    return DOC.replace('here: "SLOT"', f'here: y"{{{ref}}}"')
 
 
 def _get(tree, path):
@@ -76,7 +74,8 @@ def _get(tree, path):
 @pytest.mark.parametrize("path,ref", CASES)
 def test_lookup_agrees_with_a_document_hole(path, ref):
     by_hole = _get(loads(_with_hole(path, ref)), path)
-    by_lookup = lookup(loads(DOC), ref, at=path)
+    tree = loads(DOC)
+    by_lookup = lookup(tree, _get(tree, path[:-1]), ref)
     assert by_lookup == by_hole
 
 
@@ -84,65 +83,90 @@ def test_lookup_over_an_assembled_tree():
     # the use it exists for: documents loaded separately, assembled, searched
     tree = loads('supported_dialects:\n  - "responses"\n  - "chat"\n')
     tree["mind"] = loads('dialects:\n  chat:\n    api_uri: "c"\n')
-    tree["harness"] = {"protocol": "chat", "uri": "${...}"}
-    assert lookup(tree, "supported_dialects",
-                  at=("harness", "uri")) == ["responses", "chat"]
-    assert lookup(tree, "mind.dialects[protocol].api_uri",
-                  at=("harness", "uri")) == "c"
+    tree["harness"] = harness = {"protocol": "chat"}
+    assert lookup(tree, harness, "supported_dialects") == ["responses", "chat"]
+    assert lookup(tree, harness, "mind.dialects[protocol].api_uri") == "c"
 
 
-def test_a_slot_never_finds_its_own_key():
-    # as `protocol: y"{protocol}"` cannot: a hole skips the key it sits under
-    tree = {"harness": {"protocol": "chat"}}
-    with pytest.raises(AkanError):
-        lookup(tree, "protocol", at=("harness", "protocol"))
+def test_the_search_starts_at_current_itself():
+    # a node's own keys are nearest; there is no slot, so nothing is skipped
+    tree = loads(DOC)
+    assert lookup(tree, tree["harness"], "path") == "/inner"
+    assert lookup(tree, tree, "path") == "/outer"
+
+
+def test_parent_is_current_as_for_a_hole_inside_it():
+    tree = loads(DOC)
+    assert lookup(tree, tree["harness"], "__PARENT__.protocol") == "chat"
+    assert lookup(tree, tree["harness"], "__PARENT__.__KEY__") == "harness"
 
 
 def test_lookup_returns_containers_as_loaded():
     tree = loads(DOC)
-    assert lookup(tree, "mind.dialects.chat", at=("harness", "protocol")) == {
-        "api_uri": "c-uri"}
+    here = tree["harness"]
+    assert lookup(tree, here, "mind.dialects.chat") == {"api_uri": "c-uri"}
     # a multimap by key is its list view, as in a document (§5.1)
-    assert lookup(tree, "mm.k", at=("harness", "protocol")) == ["k1", "k2"]
-    assert isinstance(lookup(tree, "mm", at=("harness", "protocol")),
-                      OrderedMultimap)
+    assert lookup(tree, here, "mm.k") == ["k1", "k2"]
+    assert isinstance(lookup(tree, here, "mm"), OrderedMultimap)
 
 
 def test_lookup_runs_a_serializer():
-    out = lookup(loads(DOC), "xs.__AS_YAPYON__()", at=("harness", "protocol"))
+    tree = loads(DOC)
+    out = lookup(tree, tree["harness"], "xs.__AS_YAPYON__()")
     assert out == '- "x0"\n- "x1"\n- "x2"\n'
 
 
-def test_path_keys_are_folded_like_document_keys():
+def test_current_may_sit_inside_a_multimap():
+    # found by identity, so repeated keys do not matter; entries add no frame
+    tree = loads('name: "outer"\nmm:\n  + k:\n      a: 1\n  + k:\n      a: 2\n')
+    second = tree["mm"]["k"].values()[1]
+    assert lookup(tree, second, "a") == 2
+    assert lookup(tree, second, "name") == "outer"
+
+
+def test_current_may_be_a_list():
     tree = loads(DOC)
-    assert lookup(tree, "path", at=("ｈａｒｎｅｓｓ", "protocol")) == "/inner"
-
-
-def test_the_root_is_a_position():
-    assert lookup(loads(DOC), "__ROOT__.idx") == 1
+    assert lookup(tree, tree["xs"], "idx") == 1
 
 
 # --------------------------------------------------------------------------- #
-# Refusals: AkanError, located by the path
+# Refusals: AkanError, located by where current sits
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("ref,at,needle", [
-    ("nope", ("harness", "protocol"), "no value named 'nope'"),
-    ("a b", ("harness", "protocol"), "not an identifier"),
-    ("xs[9]", ("harness", "protocol"), "past the end"),
-    ("path", ("nokey",), "no key 'nokey' on the path"),
-    ("path", ("xs", 9), "outside a list of 3"),
-    ("path", ("path", "x"), "cannot step 'x' into a scalar"),
-    ("path", ("mm", "k"), "a path cannot pick one entry"),
+@pytest.mark.parametrize("ref,needle", [
+    ("nope", "no value named 'nope'"),
+    ("a b", "not an identifier"),
+    ("xs[9]", "past the end"),
+    ("__KEY__", "you are at a node"),
 ])
-def test_refusals_are_akan_at_the_path(ref, at, needle):
+def test_refusals_are_akan_at_current(ref, needle):
+    tree = loads(DOC)
     with pytest.raises(AkanError) as e:
-        lookup(loads(DOC), ref, at=at)
+        lookup(tree, tree["harness"], ref)
     assert needle in str(e.value)
-    assert str(e.value).startswith(f"akan: at {'.'.join(map(str, at))}: ")
+    assert str(e.value).startswith("akan: at harness: ")
     assert e.value.line is None
 
 
-def test_a_tree_holding_something_other_than_data_is_refused():
+@pytest.mark.parametrize("current,needle", [
+    ({"a": 1}, "not a node of this tree"),
+    ("/outer", "must be a mapping, list or multimap"),
+])
+def test_current_must_be_a_node_of_the_tree(current, needle):
     with pytest.raises(AkanError) as e:
-        lookup({"a": object()}, "a", at=("a",))
+        lookup(loads(DOC), current, "path")
+    assert needle in str(e.value)
+
+
+def test_current_placed_twice_has_no_single_answer():
+    tree = loads(DOC)
+    tree["again"] = tree["harness"]
+    with pytest.raises(AkanError) as e:
+        lookup(tree, tree["harness"], "path")
+    assert "more than once" in str(e.value)
+
+
+def test_a_tree_holding_something_other_than_data_is_refused():
+    tree = {"a": {}, "b": object()}
+    with pytest.raises(AkanError) as e:
+        lookup(tree, tree["a"], "b")
     assert "not yapyon data" in str(e.value)

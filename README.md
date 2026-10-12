@@ -290,15 +290,17 @@ own copy of the search:
 
 ```python
 tree = yapyon.loads(base)
-tree["harness"] = yapyon.loads(harness_doc)
-yapyon.lookup(tree, "mind.dialects[protocol].api_uri", at=("harness", "uri"))
+tree["harness"] = harness = yapyon.loads(harness_doc)
+yapyon.lookup(tree, harness, "mind.dialects[protocol].api_uri")
 ```
 
-`at` is the path to where the reference sits, and the answer is the one a
-`y"{...}"` written there would get: nearest wins, a slot never finds its own
-key, and the whole hole grammar works, serializers included. It is the
+`current` is the node you are holding, and the answer is the one a
+`y"{...}"` written inside it would get: its own keys first, then outward,
+nearest winning — which is why the tree comes too, since a dict does not
+know its parents. The whole hole grammar works, serializers included, and
+an indirect key like `[protocol]` resolves from `current`. It is the
 resolver's own search, so the two cannot disagree. A refusal is an
-`AkanError` naming the path.
+`AkanError` naming where `current` sits.
 
 ## Prefixes
 
