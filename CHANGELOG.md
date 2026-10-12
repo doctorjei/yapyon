@@ -46,7 +46,7 @@ see Changed.
 - **§5.1.2 `__AS_YAPYON__()` — a fourth serializer.** It writes the block as
   a yapyon **record** in canonical spelling (§4.4), and it is the one
   serializer that can carry everything the data model holds: multimaps,
-  bytes and `None` all encode, where JSON, TOML and YAML each refuse at
+  bytes, and `None` all encode, where JSON, TOML, and YAML each refuse at
   least one. It writes from the resolved document rather than from loaded
   values, so numbers keep their source spelling (`3.10` stays `3.10`) and
   bytes keep the prefix the document chose (`b"..."` stays `b"..."`). A
@@ -92,7 +92,7 @@ see Changed.
   nested in a sequence, because the only alternative then was emitting
   `str(dict)` and having it read back as a string — and refusing was the
   right minimum against that. The refusal was over-broad, though: SPEC
-  §5.1.2's akan list names multimaps, bytes and `None` in TOML, and never
+  §5.1.2's akan list names multimaps, bytes, and `None` in TOML, and never
   mentioned a mapping in a sequence at all. The spec already said nested
   mappings become tables; the writer had simply stopped short of the
   repeated-key case.
@@ -151,7 +151,7 @@ finds without `--pre`.
 
 This is the **self-contained tier**: typed literals, holes and splicing,
 serializers, multimaps, and layering within a document — all resolvable from
-the document's own bytes, with no ambient scope, no includes and no
+the document's own bytes, with no ambient scope, no includes, and no
 environment at the format level. Consumer functions and file embedding are a
 deliberate later tier, not a gap in this one.
 
@@ -175,7 +175,7 @@ before upgrading.
   which loading fails*; what changed is that they now default above the
   warning rather than sitting on it.
 
-  **This is a behaviour change.** A document between the two tiers — deeper
+  **This is a behavior change.** A document between the two tiers — deeper
   than 32, or rendering more than 1 MiB — previously raised `AkanError` and
   now loads successfully while emitting a shiran to `warn=`. Code relying on
   the old failure should pass `max_depth=32, max_size=1048576` to restore it
@@ -209,10 +209,10 @@ before upgrading.
   `café` precomposed and decomposed were two keys that rendered identically.
   No other NFKC merge applies (`ﬁ` stays distinct from `fi`). **Breaking**
   wherever a document relied on two such spellings being different keys.
-- A keyword, string prefix or dunder name in another spelling (`Ｔｒｕｅ`,
+- A keyword, string prefix, or dunder name in another spelling (`Ｔｒｕｅ`,
   `ｂ"s"`, `_＿ROOT＿_`) is akan: reserved words have exactly one spelling.
 
-- **SPEC §1's laws restated after review; no behaviour changes.** Law 2 now
+- **SPEC §1's laws restated after review; no behavior changes.** Law 2 now
   says what the format does: a record computes nothing, and the full form's
   only computation is named application of its declared encodings — the
   serializers, which the old "never … transform" wording contradicted. "No
@@ -269,7 +269,7 @@ here is breaking; code written against `0.1.0a3` keeps working.
   false — an anchor names a value — and suggested the spelling the author had
   already written. The refusal is correct (an anchor always contains the hole
   naming it, so the reference is circular in every document); only the message
-  was wrong. Behaviour is unchanged.
+  was wrong. Behavior is unchanged.
 
 ### Documentation
 
@@ -425,7 +425,7 @@ in **every** previously published version, described under *Fixed* below.
 - **Multimaps compare by entry sequence**, and a multimap is never equal to a
   mapping. Previously `OrderedMultimap` had no `__eq__` at all, so two loads
   of the same bytes compared unequal. (§7.1)
-- **Holes are recognised before escapes decode**, so `\x7b` is content rather
+- **Holes are recognized before escapes decode**, so `\x7b` is content rather
   than a live hole — matching Python's f-string layering.
 - Akan messages say what was expected, not only what was found.
 
@@ -437,6 +437,6 @@ First public release. A config/data format: Python-style typed literals with
 YAML-like block structure, and parse-time splicing (y-strings) in place of
 YAML's anchors.
 
-- Lexer, parser, resolver and loader; `y` / `yb` / `yt` / `ry` splicing;
+- Lexer, parser, resolver, and loader; `y` / `yb` / `yt` / `ry` splicing;
   ordered multimaps; a conformance suite over the splice matrix and the
   documented divergences from Python and YAML.

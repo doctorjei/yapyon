@@ -18,7 +18,7 @@ containers on the way out, implementing its own schema's "not sent if unset"
 convention. That is a *consumer policy* and yapyon must not adopt it: dropping
 a key the document wrote is a silent reinterpretation (law 7), and "the same
 bytes mean the same data" has to survive the trip through a serializer. A
-consumer wanting that behaviour prunes its own tree first.
+consumer wanting that behavior prunes its own tree first.
 
 Where a format cannot carry a value **faithfully**, the encoding is akan
 rather than approximate — TOML has no null, JSON has no bytes, and JSON, TOML

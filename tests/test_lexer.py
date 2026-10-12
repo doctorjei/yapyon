@@ -255,7 +255,7 @@ def test_escaped_backslash_is_a_backslash():
 
 
 def test_an_escaped_quote_does_not_close_the_string():
-    # GRAMMAR §G4.5's table includes \" and \'. The scan must honour them, or the
+    # GRAMMAR §G4.5's table includes \" and \'. The scan must honor them, or the
     # literal ends at the escaped quote -- which is what used to happen:
     # `"x\"y"` akaned as a dangling backslash. Fixed 2026-09-14.
     assert value('x: "a\\"b"\n', "STRING") == 'a"b'
@@ -427,7 +427,7 @@ def test_plain_strings_are_inert():
 
 
 # --------------------------------------------------------------------------- #
-# GRAMMAR §G4.7 — holes are recognised before escapes decode
+# GRAMMAR §G4.7 — holes are recognized before escapes decode
 # --------------------------------------------------------------------------- #
 def test_an_escape_that_produces_a_brace_is_content_not_structure():
     # the layering Python uses: f"\x7bname\x7d" is the six characters {name}

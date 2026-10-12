@@ -33,7 +33,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-**`0.2.1`.** Lexer, parser, resolver, loader and emitter are done and
+**`0.2.1`.** Lexer, parser, resolver, loader, and emitter are done and
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
@@ -41,7 +41,7 @@ suite is **779 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 This is the **self-contained tier**: every document resolves from its own
-bytes. There is no ambient scope, no includes and no environment at the
+bytes. There is no ambient scope, no includes, and no environment at the
 format level, so a yapyon file cannot reach the filesystem or run
 consumer-supplied code — the format's reach is something you can *prove*
 rather than audit. Consumer-registered functions and file embedding are a
@@ -64,7 +64,7 @@ own loader and gets a yes or no.
 
 References run one way: the spec cites the grammar, the grammar cites
 nothing. A parser can be written from the grammar alone, which is the point of
-separating them. This README summarises the format; those documents define it.
+separating them. This README summarizes the format; those documents define it.
 
 **Identifiers are UAX #31, pinned to Unicode 14.0.0, with invisible
 characters excluded.** yapyon ships its own table rather than asking the
@@ -265,7 +265,7 @@ model = "m1"
 host = "https://api.example.com/v1"
 ```
 
-`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()` and `__AS_YAPYON__()`, all
+`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()`, and `__AS_YAPYON__()`, all
 written without a runtime dependency. Keys stay in document order, nothing is
 pruned, and where a format cannot carry a value faithfully the encoding is an
 error rather than an approximation — `None` in TOML, bytes in JSON, TOML or
@@ -273,7 +273,7 @@ YAML, a multimap's repeated keys. YAML scalars are quoted unless nothing could
 misread them, so `"no"` and `"3"` survive as strings.
 
 `__AS_YAPYON__()` writes the block as a canonical yapyon **record**, and it is
-the one serializer that carries everything: multimaps, bytes and `None`, with
+the one serializer that carries everything: multimaps, bytes, and `None`, with
 `3.10` still spelled `3.10`. The only thing it refuses is a `yt`, which has no
 record form.
 

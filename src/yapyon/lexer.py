@@ -1043,7 +1043,7 @@ class Lexer:
                     line: int, col: int) -> list:
         """Split a raw string body into text chunks and holes.
 
-        Holes are recognised **before** escapes decode (GRAMMAR §G4.7), so an
+        Holes are recognized **before** escapes decode (GRAMMAR §G4.7), so an
         escape that produces a brace is content and never structure — the
         layering Python uses for f-strings, where `f"\\x7bname\\x7d"` is the
         six characters `{name}`.  Text chunks come back raw, for the caller

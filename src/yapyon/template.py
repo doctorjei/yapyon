@@ -91,7 +91,7 @@ class Template:
 
     def __init__(self, parts, line: int = 0, col: int = 0,
                  source: str | None = None):
-        self.parts = tuple(_normalise(parts))
+        self.parts = tuple(_normalize(parts))
         self.line, self.col = line, col
         self.source = source          # where the yt literal was written
 
@@ -144,7 +144,7 @@ class Template:
         return f"Template({list(self.parts)!r})"
 
 
-def _normalise(parts) -> list:
+def _normalize(parts) -> list:
     """Force the total alternation: str, Hole, str, Hole, ... str."""
     out: list = []
     for part in parts:

@@ -36,7 +36,7 @@ non-terminals.
 
 Two properties hold throughout and are relied on by the rest of the document:
 
-- **All context-sensitivity is lexical.** Indentation, frames and string
+- **All context-sensitivity is lexical.** Indentation, frames, and string
   interiors are resolved while producing the token stream (§G3–§G4). The
   phrase grammar (§G6) is a plain LL(1) grammar over that stream, with no
   feedback from parser to lexer.
@@ -120,9 +120,9 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
   intent.
 
 - **A reserved word has exactly one spelling.** A word that folds to a
-  `KEYWORD`, a string prefix (§G4.6) or a dunder name (§G4.2) without being
-  spelled that way is **akan**: `Ｔｒｕｅ`, `ｂ"s"` and `_＿ROOT＿_` are not
-  alternative spellings of `True`, `b"s"` and `__ROOT__`. Folding defines
+  `KEYWORD`, a string prefix (§G4.6), or a dunder name (§G4.2) without being
+  spelled that way is **akan**: `Ｔｒｕｅ`, `ｂ"s"`, and `_＿ROOT＿_` are not
+  alternative spellings of `True`, `b"s"`, and `__ROOT__`. Folding defines
   *names*; it does not multiply the spellings of syntax.
 
 - **One predicate, two uses.** The same test and the same fold define a
@@ -145,7 +145,7 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
 ### §G4.2 The reserved dunder vocabulary
 
 A name that **begins and ends with `__`** belongs to yapyon rather than to the
-document. `__` and `___` count; `_foo`, `__foo` and `foo__` do not.
+document. `__` and `___` count; `_foo`, `__foo`, and `foo__` do not.
 
 - **A dunder name is akan as a key** (§G7).
 - **In a hole reference, exactly these are defined**, and every other dunder
@@ -215,7 +215,7 @@ the reserved set later would break documents, while narrowing it never can.
 
   This dedent is resolved entirely while scanning the literal, in one pass.
 
-  *Precedent: Julia, CoffeeScript and Nix all permit an inline opening and
+  *Precedent: Julia, CoffeeScript, and Nix all permit an inline opening and
   derive the strip from the content lines with the first line exempt; Julia
   and CoffeeScript also drop the newline after the delimiter. yapyon differs
   from all three in taking the anchor from **one line** — the first content
@@ -228,7 +228,7 @@ the reserved set later would break documents, while narrowing it never can.
   escaped delimiter does not end the literal: `"a\"b"` is one string. This is
   a scanning rule and applies to raw strings too — `r"a\"b"` keeps the
   backslash in its value and still does not end early, which is Python's
-  behaviour. Backslash-newline is excluded from this rule so that the dedent
+  behavior. Backslash-newline is excluded from this rule so that the dedent
   above still sees the newline; the continuation is joined afterwards.
 
 ### §G4.5 Escape sequences
@@ -306,9 +306,9 @@ compositions, forever. Holes exist only in the four y-family literals.
 
 ### §G4.7 Holes
 
-Inside a `YSTR`, `YBSTR` or `YTSTR` literal, braces delimit **holes**.
+Inside a `YSTR`, `YBSTR`, or `YTSTR` literal, braces delimit **holes**.
 
-- **Holes are recognised before escapes decode.** A hole is structure, found
+- **Holes are recognized before escapes decode.** A hole is structure, found
   in the source; an escape that produces a brace is content and never opens
   one, so `y"\x7bname\x7d"` is the six characters `{name}`. This is Python's
   own layering for f-strings, and it is what makes `\{` an akan rather than a
@@ -393,7 +393,7 @@ earlier drafts carried as prose beside a looser production — that `__PARENT__`
 leads and repeats, that `__KEY__` ends, that a serializer ends, that
 `__ROOT__` may not follow anything — are expressed **in the grammar itself**,
 which is why `SEG` excludes the dunder names rather than admitting them and
-apologising afterwards.
+apologizing afterwards.
 
 ### §G5.1 What each form admits
 
@@ -500,7 +500,7 @@ These are well-formedness rules that the phrase grammar cannot express. A
 conforming implementation enforces all of them, and needs nothing beyond the
 parse tree to do so.
 
-- **Keys are bare `NAME`s.** Quoted keys, numeric keys and every other key
+- **Keys are bare `NAME`s.** Quoted keys, numeric keys, and every other key
   form are akan. *(Reserved: quoted string keys.)*
 - **Keywords are not keys.** `True: 1` is akan.
 - **Dunder keys are akan** (§G4.2). A document may not define a name that

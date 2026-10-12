@@ -4,7 +4,7 @@ Both spec tables are already test matrices; this file turns each row into a
 case. It is the artifact that makes the format checkable by another
 implementation: a port passes yapyon's conformance suite or it does not.
 
-The §11 cases assert **both** sides where Python's behaviour is stable across
+The §11 cases assert **both** sides where Python's behavior is stable across
 3.11+, because a divergence table that only tests one side is just a list of
 opinions.
 """

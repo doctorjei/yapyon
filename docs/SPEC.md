@@ -203,7 +203,7 @@ normalizes a record (§12).*
 
 **Syntax: `GRAMMAR §G5`** — the `ref` production, what each bracket form
 admits, what is akan inside a hole, and the avoidable-bracket shiran. One
-grammar, shared by `y`, `yb`, `yt` and `ry`.
+grammar, shared by `y`, `yb`, `yt`, and `ry`.
 
 What the grammar does not say is what a reference *names*. That is this
 section and §5.2.
@@ -294,7 +294,7 @@ is the boundary between this and consumer-registered functions, which v0.2
 does not have.
 
 The names and the call syntax are `GRAMMAR §G5`; **v0.2 defines
-`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()` and `__AS_YAPYON__()`**,
+`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()`, and `__AS_YAPYON__()`**,
 and a serializer
 applies to a **list or a mapping**. Applying one to a single value is akan and
 *reserved*.
@@ -358,9 +358,9 @@ first is akan on sight.
 **Where a format cannot carry a value faithfully, the encoding is akan** —
 never approximate (law 1: refuse rather than pick a reading).
 
-- A **multimap** is akan in JSON, TOML and YAML: its keys repeat, and none
+- A **multimap** is akan in JSON, TOML, and YAML: its keys repeat, and none
   of these formats can hold that.
-- **Bytes** are akan in JSON, TOML and YAML: none of them names an encoding
+- **Bytes** are akan in JSON, TOML, and YAML: none of them names an encoding
   for bytes, so the bridge law has nothing to name.
 - **`None` is akan in TOML**, which has no null. JSON and YAML write it.
 - `__AS_TOML__()` requires a **mapping**: a TOML document is a table.
@@ -371,7 +371,7 @@ never approximate (law 1: refuse rather than pick a reading).
 **`__AS_YAPYON__()` writes yapyon source, so yapyon's rules govern it.** Its
 output is the target as a **record** (§12) in canonical spelling (§4.4), and
 it is the one serializer that can carry everything the data model has:
-multimaps, bytes and `None` all encode. The rest follows from what the output
+multimaps, bytes, and `None` all encode. The rest follows from what the output
 is:
 
 - Numbers and keywords keep their **lexeme** (§5.4): `v: 3.10` encodes as
@@ -385,7 +385,7 @@ is:
   §6 leaves to the consumer, and make `yt` silently mean `y`.
 
 **YAML is emitted defensively.** A scalar is written plain only when nothing
-else could read it as another type — so `"no"`, `"3"` and `"true"` come out
+else could read it as another type — so `"no"`, `"3"`, and `"true"` come out
 quoted. yapyon exists partly because YAML guesses; emitting into it must not
 hand that problem to the reader.
 
@@ -557,7 +557,7 @@ spelling no consumer could render it faithfully.
 
 The alternation is **total**: text, value, text, value, … text. A literal
 begins and ends with a text part, and an empty text part sits between adjacent
-holes, so a consumer never special-cases a leading, trailing or doubled hole.
+holes, so a consumer never special-cases a leading, trailing, or doubled hole.
 There are always exactly one more text parts than holes.
 
 ### 6.3 Carrying versus rendering
@@ -583,7 +583,7 @@ implicit join is exactly the mistake the parts exist to prevent.
 
 ### 6.4 A template is not a value a string can absorb
 
-Splicing a `yt` into a `y`, `yb` or another `yt` is **akan**. Joining one
+Splicing a `yt` into a `y`, `yb`, or another `yt` is **akan**. Joining one
 would discard the parts it exists to preserve.
 
 A `yt` is **not** permitted in a record (§12), for the same reason `y` is not:
@@ -595,7 +595,7 @@ it requires the resolver, and a record is the form that needs none.
 
 **Syntax: `GRAMMAR §G4.1`** (identifiers and the Unicode-version requirement),
 **`§G4.2`** (the reserved dunder vocabulary), **`§G7`** (keys are bare names;
-keywords, dunders, duplicates and every other key form are akan).
+keywords, dunders, duplicates, and every other key form are akan).
 
 What belongs here is the **consequence**, which is a claim about
 addressability rather than about well-formedness:
@@ -823,13 +823,13 @@ it is plain keyed data rather than deferred structure; the criterion is
 An implementation **must state which form it implements**. There are two:
 
 - **Record** — the whole of `GRAMMAR.md` except the y-family prefixes
-  (`§G4.6`), holes (`§G4.7`) and the reference grammar (`§G5`); plus this
-  document's §3, §7, §10, §11 and §12.
+  (`§G4.6`), holes (`§G4.7`), and the reference grammar (`§G5`); plus this
+  document's §3, §7, §10, §11, and §12.
 - **Full** — all of the above, plus `GRAMMAR §G4.7`, `§G5`, and this
-  document's §4.4, §5 and §6.
+  document's §4.4, §5, and §6.
 
 A record implementation is genuinely conforming. It needs no resolver, no
-fixpoint, no template machinery and no evaluator, which is the point: the safe
+fixpoint, no template machinery, and no evaluator, which is the point: the safe
 subset is declared first rather than carved out afterwards.
 
 Of §9's reserved syntax, the items that concern holes — `yb64` and `ytb`,
