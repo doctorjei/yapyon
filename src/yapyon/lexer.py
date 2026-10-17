@@ -1,4 +1,4 @@
-"""yapyon reference lexer — v0.1
+"""yapyon reference lexer
 
 YAMLちゃうで。やぴょんやぴょん。
 
@@ -45,6 +45,7 @@ strings, internal invariant failures raise Yakamashiwa.
 from __future__ import annotations
 
 import base64
+import re as _re
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from unicodedata import decomposition as _decomposition
@@ -130,6 +131,11 @@ _ESCAPES = {                                 # Python's table minus \N{...}
     "a": "\a", "b": "\b", "f": "\f", "n": "\n",
     "r": "\r", "t": "\t", "v": "\v",
 }
+
+
+_KEY_RUN = _re.compile(r"([^\s:\[\]{},#]+):(?=[ \t\n]|$)")
+_NUMBER_RUN = _re.compile(r"[+-]?(?:0[xXoObB][0-9A-Za-z_]+|[0-9_]*\.?[0-9_]+"
+                         r"(?:[eE][+-]?[0-9]+)?|[0-9_]+\.)")
 
 
 def _digit(ch: str) -> bool:
@@ -785,7 +791,7 @@ def is_dunder(name: str) -> bool:
     """True for names the __dunder__ namespace reserves for yapyon itself.
 
     **One predicate, two rules** (GRAMMAR §G4.1 and §G5): a hole segment spelled
-    this way names one of yapyon's own built-ins — only `__ROOT__` in v0.1 —
+    this way names one of yapyon's own anchors or built-ins —
     and a *key* spelled this way is akan, so no document can define a name it
     could never address. The parser imports this rather than repeating the
     test, because two rules that must agree will drift when written twice.
@@ -901,6 +907,7 @@ class Lexer:
         self.col = 0                          # 0-based column
         self.indents: list[int] = [0]         # indent anchors (incl. dash frames)
         self.based = False                    # GRAMMAR §G3: base column set yet?
+        self.brackets: list[str] = []         # open "[" / "{", innermost last
         self.depth = 0                        # bracket nesting depth
         self.tokens: list[Token] = []
         self.warnings: list[str] = []         # shiran: ...
@@ -1021,7 +1028,46 @@ class Lexer:
                 raise Yakamashiwa("frame anchor not deeper than stack top")
             self.indents.append(anchor)
             self._emit("INDENT", col=anchor)
+        self._check_key_run()
         return False
+
+    def _check_key_run(self):
+        """Akan a malformed key **as a key** (persona-grata, 2026-10-12).
+
+        Called in key position — a line's content start, or after `{` or
+        `,` in a flow mapping. A run of non-space text ending in `:` and a
+        space or end of line is shaped like a key; if it is not an
+        identifier, the token scan would otherwise report whatever it made
+        of the run — `my-model:` as a stray `-`, `1a:` as the number 1 and
+        a bare word — about a value nobody wrote. Numbers and quoted runs
+        are left alone: the parser already names those as keys. Lexical,
+        so the parser keeps its context-free stream."""
+        m = _KEY_RUN.match(self.text, self.pos)
+        if not m:
+            return
+        run = m.group(1)
+        if is_identifier(run) or "'" in run or '"' in run:
+            return
+        if _NUMBER_RUN.fullmatch(run):
+            return                                 # the parser's message
+        # The reason and the fix both come from the pinned table, never
+        # the host's `\w` (trap 12: `²` is a word character to Python).
+        first = run[0]
+        if _digit(first):
+            why = "a key cannot start with a digit"
+        elif not id_start(first) and _id_continue(first):
+            why = (f"{first!r} cannot start a name, though it may appear "
+                   f"inside one (GRAMMAR §G4.1)")
+        else:
+            bad = next(ch for ch in run if not _id_continue(ch))
+            why = why_not_in_name(bad) or (
+                f"{bad!r} cannot appear in a name (GRAMMAR §G4.1: names are "
+                f"Unicode identifiers, UAX #31)")
+        fix = "".join(ch if _id_continue(ch) else "_" for ch in run)
+        if not id_start(fix[0]):
+            fix = "_" + fix
+        self._akan(f"{run!r} is not a valid key: {why}. Keys are bare "
+                   f"identifiers; write it as {fix!r}")
 
     # -- ordinary tokens -----------------------------------------------------
     def _lex_token(self):
@@ -1034,12 +1080,19 @@ class Lexer:
         if ch in single:
             if ch in "[{":
                 self.depth += 1
+                self.brackets.append(ch)
             elif ch in "]}":
+                if self.brackets:
+                    self.brackets.pop()
                 if self.depth == 0:
                     self._akan(f"unmatched {ch!r}")
                 self.depth -= 1
             self._emit(single[ch], ch)
             self._advance()
+            if ch in "{," and self.brackets[-1:] == ["{"]:
+                while self._peek() and self._peek() in " \t\n":
+                    self._advance()
+                self._check_key_run()
             return
 
         if ch in "'\"":
@@ -1075,8 +1128,8 @@ class Lexer:
 
         for reserved in ("---", "..."):           # GRAMMAR §G6, reserved tokens
             if self.text.startswith(reserved, self.pos):
-                self._akan(f"{reserved!r} is reserved and has no meaning in "
-                           f"v0.1; yapyon is one document per file")
+                self._akan(f"{reserved!r} is reserved and has no meaning; "
+                           f"yapyon is one document per file")
         if ch in "-+" and self._peek(1) in (" ", "\n", ""):
             self._akan(f"{ch!r} opens a block frame only at the start of a "
                        f"line's content")

@@ -607,3 +607,44 @@ def test_numbers_are_ascii_only():
     # str.isdigit() is True for U+0663, but a number literal is ASCII: the
     # akan must name the number, not send the reader hunting for a name.
     akan("a: 1٣", "malformed number")
+
+
+# --------------------------------------------------------------------------- #
+# Key position: a malformed key is reported as a key (persona-grata's
+# letters of 2026-10-12; no rule change -- every one of these was already
+# refused, only the message moves)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("key,fix", [
+    ("my-model", "my_model"),
+    ("1a", "_1a"),
+    ("2x", "_2x"),
+    ("12abc", "_12abc"),
+    ("1-2", "_1_2"),
+    ("a.b", "a_b"),
+    ("$x", "_x"),
+])
+def test_a_malformed_key_is_reported_as_a_key(key, fix):
+    for doc in (f"personas:\n  {key}:\n    endpoint: \"x\"\n",
+                f"- {key}: 1\n", f"x: {{{key}: 1}}\n", f"x: {{a: 1, {key}: 2}}\n",
+                f"x: [{{{key}: 1}}]\n", f"x: {{a: 1,\n  {key}: 2}}\n"):
+        akan(doc, f"{key!r} is not a valid key")
+        akan(doc, f"write it as {fix!r}")
+
+
+@pytest.mark.parametrize("key", ["1", "0x10", "1.5", "1e3", "1_2"])
+def test_a_numeric_key_keeps_the_parser_s_message(key):
+    from yapyon import loads
+    with pytest.raises(AkanError) as e:
+        loads(f"personas:\n  {key}:\n    endpoint: \"x\"\n")
+    assert "numeric keys are akan" in str(e.value)
+
+
+@pytest.mark.parametrize("doc", [
+    'x: "a-b: c"\n', "- a-b\n", "x: [1a, 2]\n", 'url: "http://x"\n',
+])
+def test_value_positions_are_not_key_positions(doc):
+    from yapyon import loads
+    try:
+        loads(doc)
+    except AkanError as e:
+        assert "is not a valid key" not in str(e)

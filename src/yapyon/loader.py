@@ -1,4 +1,4 @@
-"""yapyon loader — v0.1
+"""yapyon loader
 
 Two load modes, one pipeline.
 

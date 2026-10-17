@@ -1,4 +1,4 @@
-"""yapyon reference parser — v0.1
+"""yapyon reference parser
 
 YAMLちゃうで。やぴょんやぴょん。
 
@@ -176,14 +176,14 @@ _BLOCK_FORM = {
 
 
 def _bad_key_msg(tok: Token) -> str:
-    """GRAMMAR §G7: keys are bare identifiers in v0.1."""
+    """GRAMMAR §G7: keys are bare identifiers."""
     if tok.kind in ("STRING", "YSTR", "YTSTR"):
-        return ("keys are bare identifiers in v0.1; quoted keys are reserved "
+        return ("keys are bare identifiers; quoted keys are reserved "
                 "(write name: rather than \"name\":)")
     if tok.kind in ("BYTES", "YBSTR"):
-        return "keys are bare identifiers in v0.1; a bytes literal is not a key"
+        return "keys are bare identifiers; a bytes literal is not a key"
     if tok.kind in ("INT", "FLOAT"):
-        return "keys are bare identifiers in v0.1; numeric keys are akan"
+        return "keys are bare identifiers; numeric keys are akan"
     if tok.kind == "KEYWORD":
         spelling = tok.lexeme or str(tok.value)
         return f"{spelling!r} is a keyword, not a key"

@@ -1,4 +1,4 @@
-"""yapyon reference resolver — v0.1 (SPEC §5.2–5.5)
+"""yapyon reference resolver (SPEC §5.2–5.5)
 
 YAMLちゃうで。やぴょんやぴょん。
 
