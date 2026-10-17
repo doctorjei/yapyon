@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a75.1.2 / \u00a714.5",
+  "why": "a TOML document is a table, so __AS_TOML__ takes dict or multimap by its signature"
+}

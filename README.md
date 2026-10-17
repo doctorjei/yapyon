@@ -33,19 +33,22 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-**`0.2.1`.** Lexer, parser, resolver, loader, and emitter are done and
-tested, including a conformance suite that turns the splice matrix and the
-Python divergence table into executable cases, and a portable corpus in
+**`0.3.0`**, built to specification **v0.3**. Lexer, parser, resolver,
+loader, emitter, the four serializers, and contracts are done and tested,
+including a conformance suite that turns the splice matrix and the Python
+divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1309 tests** on the current tree; the number here tracks the tree,
+suite is **1317 tests** on the current tree; the number here tracks the tree,
 not a release.
 
-This is the **self-contained tier**: every document resolves from its own
-bytes. There is no ambient scope, no includes, and no environment at the
-format level, so a yapyon file cannot reach the filesystem or run
-consumer-supplied code — the format's reach is something you can *prove*
-rather than audit. Consumer-registered functions and file embedding are a
-deliberate later tier, not a gap in this one.
+A document is one of three kinds, and `yapyon.tier_of` says which (§12.5):
+a **record** (1) is literals only and needs no resolver; a **template** (2)
+splices and calls built-ins, and resolves from its own bytes alone; an
+**assembly** (3) calls functions that a **contract** declares, which the
+program loading it supplies. There is no ambient scope, no includes, and no
+environment at the format level: a document reaches outside itself only
+through a contract its loader was handed, never one it names — so its reach
+is something you can *prove* rather than audit.
 
 **The normative specification is published, in two documents under
 [`docs/`](docs/):**
@@ -54,7 +57,7 @@ deliberate later tier, not a gap in this one.
 |---|---|
 | [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 55 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 60 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -292,6 +295,41 @@ A serializer names the value it encodes, so it cannot name a *bare* anchor:
 and is akan. Reach past the anchor — `{__ROOT__.blk.__AS_JSON__()}` — which is
 the shape you want anyway.
 
+### Functions and contracts
+
+A hole may call a function — `{match_first(supported, mind.dialects)}`, or
+the receiver form `{supported.match_first(mind.dialects)}` — if the loader is
+given a **contract** declaring it. A contract is itself a record:
+
+```yapyon
+match_first:
+  params:
+    keys: "list[str]"
+    items: "dict[str, dict[str, str]]"
+  returns: "str"
+  impl:
+    python: {from: "persona_grata.dialects", symbol: "match_first"}
+```
+
+```python
+import yapyon
+
+with open("functions.yap") as fp:
+    contract = yapyon.load_contract(fp)
+with open("persona.yap") as fp:
+    data = yapyon.load(fp, contract=contract)
+```
+
+Without `from`, the loader supplies the code: `provide={"match_first": fn}`.
+Arguments are checked against the declared types before the call — deep,
+and reported where the offending value is written — and a container
+argument arrives as a read-only, ordered **borrow** of the document's node.
+The result is checked against `returns` and becomes fresh data. Calls nest
+and chain, and wait for their arguments like any hole, so two calls waiting
+on each other are reported as the cycle they are. A function that raises is
+akan naming it, never a traceback. The serializers are the format's
+**built-in** functions, called the same way and declared by the spec itself.
+
 ### Resolving a reference from code
 
 A consumer that assembles a tree from several loaded documents can resolve a
@@ -316,7 +354,8 @@ resolver's own search, so the two cannot disagree. A refusal is an
 
 | Spelling | Name | Spoken | Result |
 |---|---|---|---|
-| `b`, `b64` | bytes literals | — | bytes |
+| `b` | bytes literal | — | bytes |
+| `bin dna oct hex c32 b64` | stream literals: symbols in a radix | — | bytes |
 | `r`, `rb` | raw | — | str, bytes |
 | `y` | yapyon string | y-string | str, spliced at parse |
 | `yb` | yapyon byte string | yeeb-string | bytes, spliced at parse |

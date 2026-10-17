@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR \u00a7G4.1 / \u00a7G7",
+  "why": "a key is a bare identifier, and - cannot appear in one"
+}

@@ -655,6 +655,10 @@ SERIALIZER_CORPUS = (
     's:\n  a: []\n  b:\n    - {}\n',
     's:\n  日本:\n    - k: 1\n',
     's:\n  a:\n    - d:\n        e:\n          - f: 1\n',
+    # 0.2's YAML writer single-quoted this, and YAML folds a line break in
+    # single quotes into a space: "line break" came back. Nothing here had a
+    # newline in it, so nothing caught it.
+    's:\n  nl: "line\\nbreak"\n  tab: "a\\tb"\n  nel: "x\\x85y"\n  ls: "p\\u2028q"\n',
 )
 
 

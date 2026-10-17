@@ -9,6 +9,100 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## 0.3.0 — Unreleased
+
+The specification is **v0.3**, and this release builds it. Holes take
+**calls**: the serializers become built-in functions, and a document may
+call functions a **contract** declares, which the loader is given. Holes
+splice **values**, as Python's interpolation does, while every literal keeps
+its **lexeme** for anything that writes yapyon back. Bytes gain five
+**stream** spellings and integers two radixes; serializer output is fixed
+exactly by a new SPEC §14, and approximates what a format cannot carry
+instead of refusing it. **Several changes are breaking** — see Changed.
+
+### Changed — breaking
+
+- **§5.4: a hole splices its value, not its lexeme**, as Python's `str()`
+  writes it (operator, 2026-10-12: *"we are going to match language
+  behavior … Python will be a primary guide"*). `3.10` splices as `3.1`,
+  `0xFF` as `255`, `1_000` as `1000`; a version that must keep `3.10` is a
+  string. Bytes in any spelling splice into text as their repr, `b'hi'` — so
+  `b"..."` in a `y` is no longer akan, and `b64"aGk="` splices as `b'hi'`,
+  not `aGk=`. `yb` takes the ASCII of the same text, and a `yt` renders the
+  same way.
+- **§5.1.2, §14: serializer output.** Layout is §14.1's — a container that
+  fits in 100 columns is one line — so JSON is no longer `indent=2`
+  throughout. Serializers **approximate rather than refuse**: a multimap,
+  bytes, and TOML's `None` were akan and are now written (a JSON-LD node,
+  base64url text with its spelling in `@_lexemes`, a left-out key that is
+  recorded), and a non-decimal integer carries an `@_lexemes` entry. YAML
+  quotes with double quotes, writes a flat list that fits as a flow
+  sequence, and marks types with `%TAG` handles; TOML writes an integer
+  outside 64 bits as a string. Single values are accepted (JSON, YAML,
+  yapyon) and written plain; `__AS_TOML__()` refuses what is not a table
+  by its signature. A `yt` in a serializer's argument draws §5.1.2's one
+  message, which `expand_record` now shares.
+- **§4.4: writers keep spellings.** `record`, `expand_record`, and
+  `__AS_YAPYON__()` write each literal's lexeme — `'x'` keeps its quotes,
+  `r"..."` stays raw, a key stays as spelled before folding — and use the
+  canonical form only for values with none; canonical bytes are `b"..."`.
+  A short flat list is written on one line.
+- **The file extension is `.yap`** (was `.ypy`) for the examples and the
+  conformance corpus.
+- **Literals that were silently wrong are akan:** a float literal that
+  overflows (`1e400` read as infinity, which yapyon has no spelling for);
+  `b64` whitespace other than space, tab, or newline. A name that folds onto
+  one of the new stream prefixes (`ｈｅｘ`) is akan as any reserved spelling
+  is.
+- **An argument that contains the call site is akan** for any reference
+  (`blk: {me: y"{blk.__AS_JSON__()}"}`), where a named ancestor used to be
+  reported as a cycle. An unknown built-in such as `__AS_XML__()` is now
+  akan when its hole resolves, not when it is lexed, since the grammar
+  admits any dunder call.
+
+### Added
+
+- **§13: functions and contracts.** `loads_contract` / `load_contract`
+  read a contract — a record of function names, parameter and result types
+  (§13.3's type strings), and where each language finds the code — and
+  `loads`, `load`, `expand_record`, and `lookup` take `contract=` and
+  `provide=`. A declared function receives container arguments as
+  read-only **borrows** in document order, and its result is checked deep
+  against the contract, its keys folded. Every failure is akan naming the
+  function, never a traceback. `tier_of` returns **3** for a document that
+  calls a declared function.
+- **GRAMMAR §G5: calls in holes** — `{f(x)}`, `{a.f(x)}` (the same call),
+  chains `{f(x).g()}`, nesting, Python-literal arguments, keyword arguments
+  to built-ins (`{cfg.__AS_JSON__(lexemes=False)}`), whitespace between
+  tokens, a trailing comma, escapes in hole strings, and PEP 701 quote reuse
+  (`y"{a["b"]}"`).
+- **Stream literals** `bin dna oct hex c32` beside `b64` (§4.3): bytes as
+  symbols in a radix, padded at the end, with the symbol count and the spare
+  bits checked; and integer prefixes **`0q`** (base 4) and **`0z`**
+  (Crockford base 32), with the prefix letter in either case in every radix.
+- **Long decimals (§3.1):** a decimal integer past 4,300 digits is shiran,
+  past `max_digits` (default 17,200) akan; conversion never depends on the
+  host's own digit limit.
+- **Indented documents (GRAMMAR §G3):** the first line holding a token sets
+  the base column; blank and comment lines are not measured.
+- **The pinned display-width table** (`tools/gen_wcwidth_table.py`,
+  Unicode 14.0.0) that §14.1's layout measures with.
+- Conformance corpus: 60 cases (was 48).
+
+### Fixed
+
+- **`__AS_YAML__()` wrote exponent floats as `1e+16`**, which YAML 1.1
+  readers (PyYAML) read as a string; it writes `1.0e+16` (§14.4).
+- **A malformed key is reported as a key** (persona-grata, 2026-10-12):
+  `my-model:` said "unexpected character '-'", and `1a:` was read as the
+  number 1 and a stray word. The message now names the key and a legal
+  spelling. Messages no longer say "v0.1".
+- YAML strings holding a newline were single-quoted, where YAML folds a
+  line break into a space; quoted strings are now double-quoted with
+  escapes.
+
+---
+
 ## 0.2.1 — 2026-10-12
 
 One addition, for consumers that assemble trees: `lookup`. Nothing is

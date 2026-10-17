@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a713.1",
+  "why": "blk contains the hole, so encoding it needs the value being computed"
+}
