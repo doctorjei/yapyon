@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR \u00a7G4.6",
+  "why": "two 3-bit symbols is no whole number of bytes an encoder writes: 0 bytes is 0 symbols, 1 byte is 3"
+}

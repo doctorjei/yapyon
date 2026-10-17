@@ -36,6 +36,7 @@ over the whole corpus, plus that a second emit changes nothing.
 
 from __future__ import annotations
 
+from ._digits import decimal_text
 from .parser import (AkanError, Mapping, MultiMap, Node, Pair, Scalar,
                      Sequence, YString, Yakamashiwa)
 
@@ -133,7 +134,9 @@ def _block_lines(value: str, level: int) -> list[str]:
 
 def _scalar(node: Scalar) -> str:
     """Canonical form (§4.4), for a scalar that has no lexeme."""
-    if node.type in ("int", "float", "bool", "none"):
+    if node.type == "int":                    # §3.1: never the host's limit
+        return decimal_text(node.value)
+    if node.type in ("float", "bool", "none"):
         return repr(node.value)
     if node.type == "bytes":
         return 'b"' + _escape_bytes(node.value) + '"'

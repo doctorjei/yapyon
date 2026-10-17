@@ -1,0 +1,8 @@
+bin: b"hi"
+dna: b"hi"
+oct: b"hi"
+hex: b"hi"
+c32: b"hi"
+b64: b"hi"
+padded: b"\xba\xdf\x00\xd0"
+dna_odd: b"\xe4"

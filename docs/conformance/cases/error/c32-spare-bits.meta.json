@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a74.3 / GRAMMAR \u00a7G4.6",
+  "why": "the four spare bits after the second byte are not zero; c32'D1MG' is canonical"
+}

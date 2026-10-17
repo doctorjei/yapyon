@@ -40,6 +40,7 @@ neither, since both are resolver limits.
 
 from __future__ import annotations
 
+from ._digits import REFUSE_DIGITS
 from .lexer import AkanError, Lexer, RefError, Yakamashiwa, fold_name
 from .multimap import OrderedMultimap
 from .parser import (Mapping, MultiMap, Pair, Parser, ResolvedTemplate,
@@ -91,13 +92,17 @@ def _hole(part, source: str | None) -> Hole:
 
 
 def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
-          max_size: int = REFUSE_SIZE, source: str | None = None):
+          max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
+          source: str | None = None):
     """Load a document from text.
 
     `source` names the text for diagnostics — pass it when the caller knows
     where the bytes came from, and every akan reports `name:line:col`.
+    `max_depth`, `max_size`, and `max_digits` are this implementation's
+    refusal ceilings (SPEC §5.3, §3.1); past the spec's warn thresholds a
+    document draws shiran, past these it is akan.
     """
-    lexer = Lexer(text, source=source)
+    lexer = Lexer(text, source=source, max_digits=max_digits)
     parser = Parser(lexer.tokenize(), lexer.warnings, source=source)
     tree = parser.parse()
     if warn is not None:
@@ -108,14 +113,16 @@ def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
 
 
 def load(fp, *, warn=None, max_depth: int = REFUSE_DEPTH,
-         max_size: int = REFUSE_SIZE, source: str | None = None):
+         max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
+         source: str | None = None):
     """Load a document from an open file (text mode, UTF-8).
 
     `source` defaults to the file's own name when it has one, so reading a
     file gets located diagnostics without the caller asking.
     """
     return loads(fp.read(), warn=warn, max_depth=max_depth,
-                 max_size=max_size, source=_name_of(fp, source))
+                 max_size=max_size, max_digits=max_digits,
+                 source=_name_of(fp, source))
 
 
 # --------------------------------------------------------------------------- #
@@ -209,7 +216,8 @@ def tier_of(text: str, *, source: str | None = None) -> int:
     return 1
 
 
-def loads_record(text: str, *, warn=None, source: str | None = None):
+def loads_record(text: str, *, warn=None, max_digits: int = REFUSE_DIGITS,
+                 source: str | None = None):
     """Load a yapyon record from text — the fixed, literal-only form.
 
     A separate function rather than `loads(..., record=True)`: it reads
@@ -221,7 +229,7 @@ def loads_record(text: str, *, warn=None, source: str | None = None):
     asking whether something belongs to the subset is only meaningful once it
     belongs to the set.
     """
-    lexer = Lexer(text, source=source)
+    lexer = Lexer(text, source=source, max_digits=max_digits)
     tokens = lexer.tokenize()
     parser = Parser(tokens, lexer.warnings, source=source)
     tree = parser.parse()
@@ -232,9 +240,11 @@ def loads_record(text: str, *, warn=None, source: str | None = None):
     return build(tree, source)
 
 
-def load_record(fp, *, warn=None, source: str | None = None):
+def load_record(fp, *, warn=None, max_digits: int = REFUSE_DIGITS,
+                source: str | None = None):
     """Load a record from an open file (text mode, UTF-8)."""
-    return loads_record(fp.read(), warn=warn, source=_name_of(fp, source))
+    return loads_record(fp.read(), warn=warn, max_digits=max_digits,
+                        source=_name_of(fp, source))
 
 
 # --------------------------------------------------------------------------- #

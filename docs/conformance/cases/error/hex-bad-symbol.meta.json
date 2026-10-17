@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR \u00a7G4.6",
+  "why": "g is not in hex's alphabet"
+}

@@ -17,7 +17,9 @@ Design decisions implemented (from the design session):
     (dedent anchored at the opening delimiter's column; blank lines exempt;
     closing may not sit shallower than the anchor).
   * Prefixes (lowercase, canonical spellings only):
-        b, b64          — bytes spellings
+        b               — bytes, with escapes
+        bin dna oct hex c32 b64
+                        — stream literals: symbols in a radix, no escapes
         r, rb           — raw (backslash is literal); rb = raw bytes
         y, yb, yt, ry   — the y-family (holes live; {{ }} escapes)
     Unknown or non-canonical prefixes (F, BR, yr, ...) are akan by name.
@@ -31,8 +33,9 @@ Design decisions implemented (from the design session):
     end inside a hole (PEP 701). `parse_ref` is the one implementation of
     that grammar (GRAMMAR §G5); the lexer validates with it and the resolver
     and templates traverse with it.
-  * Numbers: Python literals (0x/0o/0b, underscores, floats, exponents),
-    optional leading sign. No inf/nan spellings.
+  * Numbers: Python literals plus 0q and 0z (Crockford), prefix letter in
+    either case, PEP 515 underscores, optional leading sign; long decimals
+    converted without the host's digit limit (SPEC §3.1). No inf/nan.
   * Keywords: True / False / None. Any other bare word is a NAME token
     (legal as a key; the parser akans it in value position).
   * Escapes: Python's table minus \\N{...}; unknown escapes are akan
@@ -44,13 +47,16 @@ strings, internal invariant failures raise Yakamashiwa.
 
 from __future__ import annotations
 
+import ast
 import base64
+import math
 import re as _re
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from unicodedata import decomposition as _decomposition
 from unicodedata import normalize as _normalize
 
+from ._digits import REFUSE_DIGITS, WARN_DIGITS, int_from_decimal
 from ._xid import UNICODE_VERSION, XID_CONTINUE, XID_IGNORED, XID_START
 from unicodedata import category as _category, name as _uname
 
@@ -102,7 +108,9 @@ class Token:
         return f"<{self.kind}{v} @{self.line}:{self.col}>"
 
 
-STRING_PREFIXES = {"b", "b64", "r", "rb", "y", "yb", "yt", "ry"}
+STRING_PREFIXES = {"b", "bin", "dna", "oct", "hex", "c32", "b64",
+                   "r", "rb", "y", "yb", "yt", "ry"}
+STREAM_PREFIXES = {"bin", "dna", "oct", "hex", "c32", "b64"}   # GRAMMAR §G4.6
 RAW_PREFIXES = {"r", "rb", "ry"}
 BYTES_PREFIXES = {"b", "rb", "yb"}          # b64 handled separately
 Y_PREFIXES = {"y", "yb", "yt", "ry"}
@@ -110,7 +118,8 @@ KEYWORDS = {"True": True, "False": False, "None": None}
 
 _TOKEN_KIND_FOR_PREFIX = {
     "": "STRING", "r": "STRING",
-    "b": "BYTES", "b64": "BYTES", "rb": "BYTES",
+    "b": "BYTES", "rb": "BYTES", "bin": "BYTES", "dna": "BYTES",
+    "oct": "BYTES", "hex": "BYTES", "c32": "BYTES", "b64": "BYTES",
     "y": "YSTR", "ry": "YSTR", "yb": "YBSTR", "yt": "YTSTR",
 }
 
@@ -131,6 +140,51 @@ _ESCAPES = {                                 # Python's table minus \N{...}
     "a": "\a", "b": "\b", "f": "\f", "n": "\n",
     "r": "\r", "t": "\t", "v": "\v",
 }
+
+
+_C32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"       # Crockford, in value order
+# GRAMMAR §G4.3: radix prefix letter (either case) -> (base, digit class).
+
+_C32_VALUE = {ch: i for i, ch in enumerate(_C32)} | {"O": 0, "I": 1, "L": 1}
+_C32_DIGITS = "0-9A-HJ-NP-TV-Za-hj-np-tv-zOoIiLl"   # all of the above, either case
+_RADIXES = {}
+for _letter, _spec in {"b": (2, "01"), "q": (4, "0-3"), "o": (8, "0-7"),
+                       "x": (16, "0-9a-fA-F"), "z": (32, _C32_DIGITS)}.items():
+    _RADIXES[_letter] = _RADIXES[_letter.upper()] = _spec
+
+# GRAMMAR §G4.6's stream literals: bits per symbol, the alphabet in value
+# order, whether case folds, glyph aliases, and characters ignored.
+_STREAMS = {
+    "bin": (1, "01", False, {}, ""),
+    "dna": (2, "TCAG", True, {}, ""),
+    "oct": (3, "01234567", False, {}, ""),
+    "hex": (4, "0123456789ABCDEF", True, {}, ""),
+    "c32": (5, _C32, True, {"O": "0", "I": "1", "L": "1"}, "-"),
+}
+_B64_ALPHABET = ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                 "0123456789+/")
+_STREAM_NAMES = {
+    "bin": "0 and 1", "dna": "T, C, A, and G, either case",
+    "oct": "0-7", "hex": "0-9 and a-f, either case",
+    "c32": "Crockford's base 32: 0-9 and A-Z but I, L, O, U, either case "
+           "(O reads as 0, I and L as 1)",
+    "b64": "RFC 4648's A-Z, a-z, 0-9, +, and /, padded with =",
+}
+
+
+def stream_text(prefix: str, data: bytes) -> str:
+    """The canonical symbols of `data` in a stream spelling: what an encoder
+    writes, in the alphabet's own case (`hex` lowercase, as in `0x`)."""
+    if prefix == "b64":
+        return base64.b64encode(data).decode("ascii")
+    bits, alphabet = _STREAMS[prefix][:2]
+    if prefix == "hex":
+        alphabet = alphabet.lower()
+    total = 8 * len(data)
+    count = -(-total // bits)
+    acc = int.from_bytes(data, "big") << (count * bits - total)
+    return "".join(alphabet[acc >> (bits * (count - 1 - i)) & ((1 << bits) - 1)]
+                   for i in range(count))
 
 
 _KEY_RUN = _re.compile(r"([^\s:\[\]{},#]+):(?=[ \t\n]|$)")
@@ -899,8 +953,10 @@ def reserved_fold(name: str) -> str | None:
 # Lexer
 # --------------------------------------------------------------------------- #
 class Lexer:
-    def __init__(self, text: str, *, source: str | None = None):
+    def __init__(self, text: str, *, source: str | None = None,
+                 max_digits: int = REFUSE_DIGITS):
         self.text = text
+        self.max_digits = max_digits          # SPEC §3.1's refusal ceiling
         self.source = source                  # a name for diagnostics, if known
         self.pos = 0
         self.line = 1
@@ -1163,38 +1219,99 @@ class Lexer:
         start = self.pos
         if self._peek() and self._peek() in "+-":
             self._advance()
-        is_float = False
-        if self._peek() == "0" and self._peek(1) in "xXoObB":
+        is_float = radix = False
+        word = lambda ch: ch.isascii() and (ch.isalnum() or ch == "_")
+        if self._peek() == "0" and self._peek(1) and self._peek(1) in _RADIXES:
+            radix = True
             self._advance(2)
-            while self._peek().isalnum() or self._peek() == "_":
+            while word(self._peek()):
                 self._advance()
         else:
-            while self._peek().isdigit() or self._peek() == "_":
+            while _digit(self._peek()) or self._peek() == "_":
                 self._advance()
             if self._peek() == ".":
                 is_float = True
                 self._advance()
-                while self._peek().isdigit() or self._peek() == "_":
+                while _digit(self._peek()) or self._peek() == "_":
                     self._advance()
-            if self._peek() and self._peek() in "eE" and (self._peek(1).isdigit()
+            if self._peek() and self._peek() in "eE" and (_digit(self._peek(1))
                                          or (self._peek(1) in "+-"
-                                             and self._peek(2).isdigit())):
+                                             and _digit(self._peek(2)))):
                 is_float = True
                 self._advance()
                 if self._peek() and self._peek() in "+-":
                     self._advance()
-                while self._peek().isdigit():
+                while _digit(self._peek()) or self._peek() == "_":
                     self._advance()
+        if _id_continue(self._peek()) or self._peek().isalnum():
+            # A name character glued to a number is part of the mistake:
+            # `1٣` and `1.5f` are malformed numbers, not a number and a name.
+            while _id_continue(self._peek()) or self._peek().isalnum():
+                self._advance()
+            self._akan(f"malformed number {self.text[start:self.pos]!r}",
+                       line, col)
         lexeme = self.text[start:self.pos]
-        try:                                   # Python's own rules judge validity
-            import ast
-            value = ast.literal_eval(lexeme)
-        except (ValueError, SyntaxError):
-            self._akan(f"malformed number {lexeme!r}", line, col)
-        if isinstance(value, float) and not is_float:
-            raise Yakamashiwa("number classified inconsistently")
-        # The lexeme rides along: y-strings splice what the author wrote (§5.4).
+        sign, body = (lexeme[0], lexeme[1:]) if lexeme[0] in "+-" else ("", lexeme)
+        if radix:
+            value = self._radix_int(body, lexeme, line, col)
+        elif not is_float:
+            value = self._decimal_int(body, lexeme, line, col)
+        else:
+            try:                               # Python's own rules judge validity
+                value = ast.literal_eval(body)
+            except (ValueError, SyntaxError):
+                self._akan(f"malformed number {lexeme!r}", line, col)
+            if not isinstance(value, float):
+                raise Yakamashiwa("number classified inconsistently")
+            if math.isinf(value):
+                # Python reads 1e400 as inf; yapyon has no inf (§3), so a
+                # literal that overflows is refused rather than becoming one.
+                self._akan(f"{lexeme!r} is too large for a float, and yapyon "
+                           f"has no infinity", line, col)
+        if sign == "-":
+            value = -value
         self._emit("FLOAT" if is_float else "INT", value, line, col, lexeme=lexeme)
+
+    def _radix_int(self, body: str, lexeme: str, line, col) -> int:
+        """`0b 0q 0o 0x 0z`, prefix letter in either case, PEP 515's
+        underscores (GRAMMAR §G4.3). Powers of two convert in linear time,
+        so no length is limited here (SPEC §3.1)."""
+        base, digits = _RADIXES[body[1]]
+        rest = body[2:]
+        if not _re.fullmatch(rf"_?[{digits}]+(?:_[{digits}]+)*", rest):
+            self._akan(f"malformed number {lexeme!r}: after {body[:2]!r} come "
+                       f"base-{base} digits, with one '_' at most between "
+                       f"two of them", line, col)
+        rest = rest.replace("_", "")
+        if base != 32:
+            return int(rest, base)
+        value = 0
+        for ch in rest:                         # Crockford, aliases included
+            value = value * 32 + _C32_VALUE[ch.upper()]
+        return value
+
+    def _decimal_int(self, body: str, lexeme: str, line, col) -> int:
+        """Python's decimal rule — no leading zeros but all-zero, PEP 515
+        underscores — converted without the host's digit limit (SPEC §3.1)."""
+        if not _re.fullmatch(r"0(?:_?0)*|[1-9](?:_?[0-9])*", body):
+            self._akan(f"malformed number {lexeme!r}", line, col)
+        digits = body.replace("_", "")
+        if len(digits) > self.max_digits:
+            self._akan(f"a decimal integer of {len(digits):,} digits exceeds "
+                       f"this implementation's ceiling of {self.max_digits:,} "
+                       f"(SPEC §3.1) -- raise max_digits to accept it, or "
+                       f"write it in a power-of-two radix", line, col)
+        if len(digits) > WARN_DIGITS:
+            self._shiran(f"a decimal integer of {len(digits):,} digits: past "
+                         f"{WARN_DIGITS:,}, converting decimal costs time that "
+                         f"grows faster than its length, and an implementation "
+                         f"may refuse it (SPEC §3.1)", line, col)
+        return int_from_decimal(digits)
+
+    def _shiran(self, msg: str, line: int, col: int):
+        where = (f"line {line}, col {col}" if self.source is None
+                 else f"{self.source}:{line}:{col}")
+        self.warnings.append(f"shiran: {where}: {msg}")
 
     # -- strings -------------------------------------------------------------
     def _lex_string(self, prefix: str, line: int, col: int):
@@ -1232,7 +1349,9 @@ class Lexer:
             return
 
         if prefix == "b64":
-            value = self._decode_b64(raw_chars, line, col)
+            value = self._decode_b64(raw_chars, raw_pos, line, col)
+        elif prefix in STREAM_PREFIXES:
+            value = self._decode_stream(prefix, raw_chars, raw_pos, line, col)
         elif is_raw:
             if is_bytes:
                 for index, ch in enumerate(raw_chars):
@@ -1422,8 +1541,63 @@ class Lexer:
             return bytes(out), out_pos
         return "".join(chr(c) for c in out), out_pos
 
-    def _decode_b64(self, s: str, line: int, col: int) -> bytes:
-        cleaned = "".join(s.split())           # permit interior whitespace
+    def _decode_stream(self, prefix: str, s: str, pos: list,
+                       line: int, col: int) -> bytes:
+        """A stream literal (GRAMMAR §G4.6; SPEC §4.3): symbols, most
+        significant first, filling bytes from the left and padded at the
+        end. Whitespace between symbols is ignored (hyphens too, in `c32`);
+        no escapes, no holes. With 3 or 5 bits per symbol the count must be
+        one an encoder writes and the spare bits must be zero — the same
+        rule, for the same reason, as `b64`."""
+        bits, alphabet, folds, aliases, ignored = _STREAMS[prefix]
+        symbols = []
+        for index, ch in enumerate(s):
+            if ch in " \t\n" or ch in ignored:
+                continue
+            key = aliases.get(ch.upper() if folds else ch,
+                              ch.upper() if folds else ch)
+            value = alphabet.find(key)
+            if value < 0:
+                self._akan(f"{ch!r} is not a {prefix} symbol; {prefix} is "
+                           f"written in {_STREAM_NAMES[prefix]}",
+                           *(pos[index] if index < len(pos) else (line, col)))
+            symbols.append(value)
+        total = len(symbols) * bits
+        acc = 0
+        for value in symbols:
+            acc = acc << bits | value
+        if 8 % bits == 0:                      # whole symbols per byte
+            nbytes = -(-total // 8)
+            return (acc << (8 * nbytes - total)).to_bytes(nbytes, "big")
+        nbytes = total // 8
+        if -(-8 * nbytes // bits) != len(symbols):
+            lower = -(-8 * nbytes // bits)
+            upper = -(-8 * (nbytes + 1) // bits)
+            self._akan(f"{len(symbols)} {prefix} symbols is not a count an "
+                       f"encoder writes ({lower} make {nbytes} bytes, {upper} "
+                       f"make {nbytes + 1})", line, col)
+        spare = total - 8 * nbytes
+        data = (acc >> spare).to_bytes(nbytes, "big")
+        if acc & ((1 << spare) - 1):
+            self._akan(f"non-canonical {prefix}: the spare bits after the last "
+                       f"byte are not zero, so this is not what any encoder "
+                       f"writes; spell it {prefix}'{stream_text(prefix, data)}'",
+                       line, col)
+        return data
+
+    def _decode_b64(self, s: str, pos: list, line: int, col: int) -> bytes:
+        # GRAMMAR §G4.6's whitespace is space, tab, and newline -- not
+        # `str.split()`'s, which is the host's idea of whitespace.
+        for index, ch in enumerate(s):
+            if ch not in _B64_ALPHABET and ch not in " \t\n=":
+                self._akan(f"{ch!r} is not a b64 symbol; b64 is written in "
+                           f"{_STREAM_NAMES['b64']}",
+                           *(pos[index] if index < len(pos) else (line, col)))
+        cleaned = "".join(ch for ch in s if ch not in " \t\n")
+        if len(cleaned) % 4:
+            self._akan(f"b64 takes RFC 4648's '=' padding, which is required: "
+                       f"{len(cleaned)} symbols is not a multiple of four",
+                       line, col)
         try:
             decoded = base64.b64decode(cleaned, validate=True)
         except (ValueError, base64.binascii.Error):
@@ -1523,9 +1697,7 @@ class Lexer:
         except RefError as e:
             self._akan(str(e), line, col)
         for message in ref.shirans:
-            where = (f"line {line}, col {col}" if self.source is None
-                     else f"{self.source}:{line}:{col}")
-            self.warnings.append(f"shiran: {where}: {message}")
+            self._shiran(message, line, col)
 
 
 def tokenize(text: str, *, source: str | None = None) -> list[Token]:

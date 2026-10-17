@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from ._digits import decimal_text
 from .lexer import (DOLLAR_HINT, AkanError, Ref, Yakamashiwa, fold_name,
                     is_dunder, parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
@@ -634,6 +635,8 @@ def _text(target: Scalar) -> str:
         return target.value
     if target.type == "bytes":
         return repr(target.value)
+    if target.type == "int":                  # §3.1: never the host's limit
+        return decimal_text(target.value)
     return str(target.value)
 
 

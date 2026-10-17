@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import re
 
+from ._digits import decimal_text
 from .emitter import emit
 
 #: Serializers are declared once, at the foot of this module: `SERIALIZERS` maps
@@ -170,7 +171,9 @@ def _toml_value(value) -> str:
     if isinstance(value, (bytes, bytearray)):
         raise NotEncodable("TOML has no bytes and names no encoding for them "
                            "(law 5); spell the text you want")
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):             # §3.1: never the host's limit
+        return decimal_text(value)
+    if isinstance(value, float):
         return repr(value)
     if isinstance(value, list):
         return "[" + ", ".join(_toml_value(v) for v in value) + "]"
@@ -253,7 +256,9 @@ def _yaml_scalar(value) -> str:
     if isinstance(value, (bytes, bytearray)):
         raise NotEncodable("YAML has no bytes and names no encoding for them "
                            "(law 5); spell the text you want")
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):             # §3.1: never the host's limit
+        return decimal_text(value)
+    if isinstance(value, float):
         return repr(value)
     if isinstance(value, (dict, list)):    # only reachable when empty
         return "{}" if isinstance(value, dict) else "[]"

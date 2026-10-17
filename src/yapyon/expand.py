@@ -40,6 +40,7 @@ import sys
 
 from ._cli import run
 from .emitter import emit
+from ._digits import REFUSE_DIGITS
 from .lexer import AkanError, Lexer
 from .parser import Parser
 from .resolver import REFUSE_DEPTH, REFUSE_SIZE, resolve
@@ -71,6 +72,7 @@ def _refuse_template(tokens, source: str | None = None) -> None:
 
 def _expand(text: str, source: str | None = None, *,
             max_depth: int = REFUSE_DEPTH, max_size: int = REFUSE_SIZE,
+            max_digits: int = REFUSE_DIGITS,
             warn=None) -> tuple[str, list[str]]:
     """Full document in; record source out, plus any shirans on the way.
 
@@ -78,7 +80,7 @@ def _expand(text: str, source: str | None = None, *,
     that a later akan cannot swallow an earlier warning — the ordering
     `loads` already keeps.
     """
-    lexer = Lexer(text, source=source)
+    lexer = Lexer(text, source=source, max_digits=max_digits)
     tokens = lexer.tokenize()
     parser = Parser(tokens, lexer.warnings, source=source)
     tree = parser.parse()
@@ -99,7 +101,7 @@ def _expand(text: str, source: str | None = None, *,
 
 
 def expand_record(text: str, *, max_depth: int = REFUSE_DEPTH,
-                 max_size: int = REFUSE_SIZE,
+                 max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
                  source: str | None = None) -> str:
     """A full document in; canonical record source out.
 
@@ -115,7 +117,7 @@ def expand_record(text: str, *, max_depth: int = REFUSE_DEPTH,
     suffix marks the record form the operation is about.
     """
     return _expand(text, source=source, max_depth=max_depth,
-                   max_size=max_size)[0]
+                   max_size=max_size, max_digits=max_digits)[0]
 
 
 def main(argv: list[str]) -> int:

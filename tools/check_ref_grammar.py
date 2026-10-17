@@ -38,11 +38,6 @@ WHY THE TRANSCRIPTION DOES NOT IMPORT THE IMPLEMENTATION
     would pass vacuously (trap 10). The built-in names are read from SPEC.md
     for the same reason: this recognizer speaks for the *documents*.
 
-WHAT THE CORPUS LEAVES OUT, FOR NOW
-    Stream-literal prefixes (`bin dna oct hex c32`) and the `0q`/`0z` radixes
-    are in the grammar but not yet in the lexer (build stage 4); the token
-    rules below transcribe them, and the corpus adds them when they exist.
-
 WHEN TO RUN IT
     After any change to lexer.parse_ref, and after any edit to GRAMMAR §G5.
     `tests/test_ref_grammar.py` also runs it, so the suite covers it.
@@ -93,6 +88,32 @@ TOK = re.compile(rf"[ \t\n]*(?:(?P<str>{_STR})|(?P<num>{_NUM})(?![A-Za-z0-9_])"
                  rf"|(?P<name>[^\W\d]\w*)|(?P<p>[.\[\](),=+-]))")
 
 
+# §G4.3's digit table and §G4.6's alphabet table, transcribed from the text
+# (symbol counts and spare bits are §G4.6's too, and the corpus does not
+# probe them: a structure check needs the tokens, not every token rule).
+RADIX_DIGITS = {"b": "01", "q": "0123", "o": "01234567",
+                "x": "0123456789abcdefABCDEF",
+                "z": "0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz"
+                     "OoIiLl"}
+STREAM_SYMBOLS = {"bin": "01", "dna": "TCAGtcag", "oct": "01234567",
+                  "hex": "0123456789abcdefABCDEF",
+                  "c32": RADIX_DIGITS["z"] + "-",
+                  "b64": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                         "0123456789+/="}
+
+
+def _token_ok(kind, text):
+    """§G4's rules inside a token that the shape regex cannot see."""
+    if kind in ("INT",) and re.match(r"0[a-zA-Z]", text):
+        return all(ch in RADIX_DIGITS[text[1].lower()] + "_" for ch in text[2:])
+    if kind == "BYTES":
+        pre = re.match(r"[a-z0-9]*", text).group(0)
+        if pre in STREAM_SYMBOLS:
+            return all(ch in STREAM_SYMBOLS[pre] + " \t"
+                       for ch in text[len(pre) + 1:-1])
+    return True
+
+
 def lex(s):
     """Tokens as (kind, text), or None if the text is not tokens at all.
     Whitespace between tokens only; no comment token, so `#` fails."""
@@ -106,6 +127,8 @@ def lex(s):
             pre = m.group("pre")
             kind = ("STRING" if pre in STRING_PREFIXES else
                     "BYTES" if pre in BYTES_PREFIXES else "OTHERSTR")
+            if not _token_ok(kind, m.group("str")):
+                return None
             out.append((kind, m.group("str")))
         elif m.group("num") is not None:
             text = m.group("num")
@@ -115,6 +138,8 @@ def lex(s):
                 kind = "INT"
             else:
                 kind = "FLOAT"
+            if not _token_ok(kind, text):
+                return None
             out.append((kind, text))
         elif m.group("name") is not None:
             name = m.group("name")
@@ -225,6 +250,7 @@ def generates(s):
 heads = ["a", "__ROOT__", "__PARENT__", "__PARENT__.__PARENT__", "__foo__",
          "True", "0", "__", "___", "_a", "a1"]
 steps = ["", ".b", "[0]", "[-1]", "[-0]", "[+1]", '["b.c"]', "[p]", ".b[0]", "[p].c",
+         "[hex'68']", "[0x1]",
          ".__KEY__", ".__PARENT__", "[a[b]]", "..b", ".0", ".True", "[__KEY__]",
          "[ - 1 ]", " . b", "[f(x)]", "['b\\'c']", '[b"x"]', "[1.5]", "[0x1]",
          "[01]", "[__ROOT__]", "[a.f()]", "[]"]
@@ -247,7 +273,9 @@ arglists = ["", "x", "x, y", "x,", ",x", ",", "x,,", "x, y ,", "lexemes=False,",
             "k=v=1", "k == 1", "__ROOT__", "__PARENT__", "__PARENT__.x",
             "__ROOT__.x", "__KEY__", "__PARENT__.__KEY__", "g(x)", "x.g()",
             "__AS_JSON__(x)", "[0]", "x[0]", "x[0].g(1)", "1.5e3", "0x1F",
-            "1_000", "x.0", "f(g(h(1)))"]
+            "1_000", "x.0", "f(g(h(1)))", "hex'6869'", "bin'01'", "dna'GA'",
+            "oct'320'", "c32'D1MG'", "0q13", "0z7Z", "-0Z_7z", "0zU", "hex'6g'",
+            "HEX'68'", "rhex'68'"]
 calltails = ["", ".g()", "[0]", ".b", ".g(y)", " . g ( y ) "]
 
 loose = [" a . b ", "f( a , b )", "f (a)", "xs[ - 1 ]", "a .f()", "a. f()",

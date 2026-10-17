@@ -37,7 +37,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **976 tests** on the current tree; the number here tracks the tree,
+suite is **1085 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 This is the **self-contained tier**: every document resolves from its own
@@ -54,7 +54,7 @@ deliberate later tier, not a gap in this one.
 |---|---|
 | [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 50 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 55 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What

@@ -343,7 +343,8 @@ def test_b64_decodes_at_parse_time():
 
 
 def test_invalid_b64_is_akan():
-    akan('x: b64"!!!"', "invalid base64")
+    akan('x: b64"!!!"', "'!' is not a b64 symbol")
+    akan('x: b64"aGk"', "padding, which is required")
 
 
 # --------------------------------------------------------------------------- #
