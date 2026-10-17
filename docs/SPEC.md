@@ -1,4 +1,4 @@
-# yapyon — draft specification v0.2
+# yapyon — draft specification v0.3
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -26,48 +26,59 @@ cites `GRAMMAR §Gn` and moves on. Sections below that consist only of such a
 citation are kept at their original numbers on purpose, so that existing
 references to them still land in the right place.
 
-Sections marked *(reserved)* name syntax deliberately akan in v0.2 but held
+Sections marked *(reserved)* name syntax deliberately akan in v0.3 but held
 for future versions.
 
-yapyon has **two forms**. The unrestricted one is described in §1–§11 and is
-just *yapyon*; the restricted one is a **yapyon record**, in which every leaf
-element has a literal value. §12 defines the record and states what an
-implementation of each form must support.
+A yapyon document is one of **three tiers** (ehmon 2): a **record**, in
+which every leaf element has a literal value (§12); a **template**, which
+also splices and applies the format's built-in functions (§5, §6); and an
+**assembly**, which also calls functions declared in a contract (§13). §12
+states what an implementation of each must support.
 
 ---
 
-## 1. Design laws
+## 1. Ehmon
 
-Every rule in both documents is a corollary of a small set of laws:
+*これ、ええもんやでー Jei*
 
-1. **No guessing.** Value types are visible in the syntax. There are no plain
-   scalars: an unquoted word in value position is an error, never a string,
+Every rule in both documents follows from seven guiding principles, the
+**ehmon** (ええもん, "the good stuff"):
+
+1. **Precision.** A value's type is fixed by its syntax or by a declared
+   contract (§13); it is never inferred from bare text. There are no plain
+   scalars: an unquoted word in value position is akan, never a string,
    never a boolean. (YAML's implicit typing — the Norway problem — is
    unrepresentable.)
-2. **Replacement without computation.** A record performs no computation:
-   every leaf is a literal, and loading one needs no resolver (§12). The full
-   form splices named values into strings: holes name values and are never
-   expressions, and the only computation is named application of the
-   format's declared encodings (§5.1.2) — never operators, control flow, or
-   bound variables.
-3. **Self-containment.** A document's meaning depends only on its own bytes.
-   There is no ambient scope, no includes, and no environment at the format
-   level. (Loaders and tools may layer such things *above* the format.)
-4. **The closure law.** A splice is legal iff the target's validity is closed
-   under splicing there. (This is what excludes splicing into base64 streams.)
-5. **The bridge law.** Nothing crosses a type boundary without naming the
-   encoding. Bytes cross into text only as base64. Text never crosses into
-   bytes. Containers cross into text only via a **named serializer** (§5.1.2).
-6. **The borrowing law.** A Python spelling may be borrowed iff its meaning
+2. **Reducibility.** Computation is driven by data and yields a document. A
+   **record** computes nothing: every leaf is a literal, and loading one
+   needs no resolver (§12). A **template** splices named values into strings
+   and applies only the format's own encodings (§5.1.2), and reduces to a
+   record that is the same on every system. An **assembly** may also apply
+   the functions its contract declares (§13), and reduces to a record given
+   that contract.
+3. **Independence.** A document's meaning depends on nothing it does not
+   declare. A **record** or a **template** depends only on its own bytes. An
+   **assembly** depends also on the contract it is loaded with: every
+   function it calls is named at its call site and declared, with its types,
+   in that contract (§13). There is no ambient scope at the format level, and
+   nothing reaches a document undeclared. (Loaders and tools may layer such
+   things above the format.)
+4. **Closure.** A splice is legal iff the target's validity is closed under
+   splicing there. (This is what excludes splicing into base64 streams.)
+5. **Visibility.** Nothing crosses a type boundary without broadcasting how.
+   Text never crosses silently into bytes; containers cross into text only
+   via a serializer (§5.1.2, §13). A function (§13) call names the crossing
+   explicitly.
+6. **Consistency.** A Python spelling may be borrowed iff its meaning
    survives the removal of the enclosing program. `b`/`r` pass (and are held
-   bit-exact with Python); `f`/`t`/`u` fail by definition and are akan with an
-   explanatory message. Everything with yapyon-native semantics is spelled in
-   the `y` namespace.
-7. **Errors at the point of the mistake.** Malformed input is akan (an error)
-   at a line and column, during loading, before any value reaches the
-   consumer. It is never merely warned about, and never silently
-   reinterpreted. Well-formed input may be `shiran` (§10) when it is probably
-   a mistake, or costly enough that implementations may refuse it (§5.3).
+   bit-exact with Python); `f`/`t`/`u` fail by definition and are akan with
+   an explanatory message. Everything with yapyon-native semantics is spelled
+   in the `y` namespace.
+7. **Direction.** Errors yield direction — what is akan, which line and
+   column — at load time, before any value reaches the consumer. Malformed
+   input is never merely warned about or silently reinterpreted. Well-formed
+   input may be `shiran` (§10) when it is probably a mistake, or costly
+   enough that implementations may refuse it (§5.3).
 
 ---
 
@@ -89,27 +100,56 @@ Nine core types. **Prefixes are *spellings*, not types** — the prefix table is
 | Type | Spelled as | Notes |
 |---|---|---|
 | str | `'...'`, `"..."`, `"""..."""`, prefixed forms | quotes mandatory, always |
-| int | `INT` | Python rules |
+| int | `INT` | signed and unbounded, in decimal or five radixes |
 | float | `FLOAT` | **no inf/nan spellings** |
 | bool | `True` / `False` | capitals |
 | NoneType | `None` | one spelling |
-| bytes | `b"..."`, `b64"..."`, `rb"..."` | three spellings, one type |
+| bytes | `b"..."`, `rb"..."`, and the stream literals `bin dna oct hex c32 b64` | eight spellings, one type |
 | list | `[a, b]` flow, `- ` block | |
 | dict | `{k: v}` flow, indented block | identifier keys (§7) |
 | multimap | `+ ` block | keyed and ordered; keys may repeat (§7.1) |
+
+**Numbers are numbers; bytes are streams.** An integer literal in any radix
+(`0b 0q 0o 0x 0z`, `GRAMMAR §G4.3`) is a signed, unbounded integer: leading
+zeros mean nothing, and only `-` makes it negative — never two's complement,
+so `0xffffffff` is 4294967295. There is one integer type and no unsigned
+one. A bytes literal is a **stream** (§4.3): filled from the left, padded at
+the end, and unsigned by nature. `0b0101` is the int 5; `bin'0101'` is the
+byte `0x50`.
+
+### 3.1 Long decimal integers
+
+Converting a decimal integer to a value and back costs time that grows
+faster than its length, so very long ones are limited, in two parts, as
+§5.3 limits expansion:
+
+| | Threshold | Exceeding it |
+|---|---|---|
+| **Warn threshold** — fixed by this specification | 4,300 decimal digits | **shiran** |
+| **Refusal ceiling** — chosen by the implementation | implementation-defined, at or above the warn threshold | **akan**, naming the digit count and the ceiling |
+
+The same limits apply wherever an integer becomes decimal text — splicing it
+(§5.4) or writing it in any format. An implementation must document its
+ceiling and **should** let a consumer move it. Integers in the other radixes
+convert in linear time and are not limited. **The host's own limits must not
+change meaning:** a decimal within the implementation's ceiling loads on
+every host and in every environment.
 
 The tenth type is **Template** (§6), produced only by `yt"..."`: a resolved
 y-string handed over in parts rather than joined. It is never present in a
 record (§12), since it needs the resolver.
 
-**Numeric and keyword values carry their source lexeme** — the grammar
-requires the token to keep it (`GRAMMAR §G4.3`) — and that lexeme is what
-y-strings splice (§5.4). This is the one place where a value's *spelling*
-survives into the data model, and §4.4 depends on it too.
+**Every literal carries its source lexeme** beside its value — the grammar
+requires the token to keep it (`GRAMMAR §G4.3`): a string with its quotes and
+escapes, bytes with their prefix, a number or keyword as written, and a key
+as spelled before folding (§7). The **value** is what a document means, and
+it is what splicing (§5.4) and the JSON, TOML, and YAML serializers use. The
+**lexeme** is how the author wrote it, and it is what a yapyon writer
+reproduces (§4.4).
 
-`bytes` has three spellings and one type, so a loaded value does not record
-which was used. An **emitter** needs that distinction and must take it from
-the parse tree, not the value (§4.4).
+A loaded value does not record which spelling produced it — `bytes` has
+several spellings and one type, and `0xff` and `255` are one `int`. A writer
+that needs the spelling takes it from the parse tree, not the value.
 
 ---
 
@@ -133,22 +173,45 @@ See `GRAMMAR §G4.5`.
 
 See `GRAMMAR §G4.6`.
 
-**`b64"..."` must be canonical** (`GRAMMAR §G4.5`), and the reason is law 1
-rather than tidiness. Base64 packs 3 bytes into 4 six-bit characters, so a
-final group the input does not fill leaves bits that the padding discards and
-nothing decodes: `b"hi"` is `aGk=` canonically, but `aGl=`, `aGm=` and
-`aGn=` decode to it as well, differing only in those two bits — and with
-two pads a single byte has sixteen such spellings. Those are **different
-bytes in the document** standing for one value, which is exactly the ambiguity
-a format whose thesis is *the same bytes mean the same data* cannot leave to
-each implementation to discover. Most host decoders accept them, including
-Python's `validate=True`, which checks the alphabet and the padding but not
-the discarded bits.
+**Stream literals** spell bytes as symbols in a radix, one prefix per
+radix:
 
-No encoder ever writes them nonzero, so a document carrying them is a
-hand-edit or a corruption. **Akan at the literal**, naming the canonical
-spelling — law 7, and the same reasoning that makes an unknown escape akan:
-refuse what no tool produces.
+| Prefix | Radix | Standard | `b"hi"` |
+|---|---|---|---|
+| `bin` | 2 | — | `0110100001101001` |
+| `dna` | 4 | UCSC `.2bit` (`T C A G` = 0 1 2 3) | `CAATCAAC` |
+| `oct` | 8 | Multibase Base8 (draft) | `320644` |
+| `hex` | 16 | — | `6869` |
+| `c32` | 32 | Crockford's Base32 | `D1MG` |
+| `b64` | 64 | RFC 4648 Base64 | `aGk=` |
+
+One name each, and no aliases. **Each accepts what its own standard
+accepts**: Crockford's case-insensitivity, glyph aliases (`O` → 0, `I`/`L`
+→ 1), and hyphens in `c32`; either case in `dna` and `hex`. Lowercase `dna`
+carries no meaning — FASTA's soft-masking is not preserved. `c32` takes no
+check symbol.
+
+**Every stream is padded at the end.** Its symbols' bits, most significant
+first, fill bytes from the left:
+
+- With 1, 2, or 4 bits per symbol (`bin`, `dna`, `hex`), symbols that end
+  partway through a byte are completed with zero bits: `hex'badf00d'` is
+  `badf00d0`, the bytes `ba df 00 d0`; `bin'0101'` is `0x50`; `dna'GAC'` is
+  `GACT`, `0xe4`.
+- With 3, 5, or 6 (`oct`, `c32`, `b64`), the trailing bits that do not make a
+  byte are **spare**, and must be zero (`GRAMMAR §G4.6`). `c32` departs here
+  from Crockford's numeric reading, which pads at the front; that reading is
+  the `0z` integer literal (§3).
+
+**Spare bits must be zero, and the reason is agreement.** The standards say
+they should be zero, and no encoder writes them otherwise. But they are not
+an explicit mapping: Crockford's `O` → 0 is one, and is accepted, while a
+spare bit maps to nothing. Host decoders disagree about them — Python's
+`base64` with `validate=True` and Go's decoder accept nonzero spare bits,
+Rust's `base64` crate refuses them — so leaving them to each implementation
+would let the same document load in one and fail in another. `b"hi"` is
+`aGk=`; `aGl=`, `aGm=`, and `aGn=` are akan at the literal, naming the
+canonical spelling (ehmon 7).
 
 ### 4.4 Canonical spelling
 
@@ -163,7 +226,11 @@ well-formedness rule. Every spelling it rejects is well-formed; what it
 constrains is a writer's choice among them, and it states its requirement as a
 property of **loaded values**, which the grammar has no vocabulary for.)*
 
-An implementation that emits yapyon **must** use these spellings:
+An implementation that emits yapyon **must write each literal's lexeme**
+(§3), so every value the author spelled comes back spelled the same way:
+`3.10` stays `3.10`, `0x1f` stays `0x1f`, `'x'` stays `'x'`, and a key stays
+as written. Where a value has **no lexeme** — a resolved y-string, the result
+of a call — the writer uses its **canonical form**:
 
 - **Strings: double quotes**, with the `"""` block form used exactly when the
   value contains a newline and the block form can hold it unambiguously — that
@@ -173,22 +240,24 @@ An implementation that emits yapyon **must** use these spellings:
 - **Escape only what must be escaped**: `\` and the enclosing quote, plus
   characters below U+0020 and U+007F. Everything else stays literal, so UTF-8
   remains readable — `"café"`, never `"café"`.
-- **Numbers and keywords: the source lexeme, verbatim.** `3.10` emits as
-  `3.10`, `1_000` as `1_000`, `0x1f` as `0x1f`. This is §5.4's rule serving a
-  second purpose, and it is why an emitter must work from the parse tree: the
-  spelling is gone once the value is a host-language float.
-- **Bytes: whichever of `b` / `b64` the document used.** An emitter must not
-  choose an encoding on the author's behalf — the same reason §6 hands a
-  consumer the bytes rather than a rendering of them.
-- **Containers: block form**, except that an empty container has no block
-  spelling and is written flow (`[]`, `{}`).
+- **Numbers and keywords: their text under §5.4** — an `int` in decimal, a
+  `float` as its shortest round-tripping form, `True`, `False`, and `None` as
+  themselves.
+- **Bytes: `b"..."`**, escaped as a string is, with every byte that is not
+  printable ASCII as `\xhh`.
 
-Normalization therefore **loses spelling but never value**. The property an
-implementation must satisfy is that **reloading its output yields data equal
-to reloading its input.**
+Whatever the source, **layout is the writer's**, since comments, blank lines,
+indentation, and the choice of flow or block are not tokens and carry no
+lexeme: a sequence that holds no mapping or multimap is written on one line if
+it fits, and every other container in block form (§14.1); an empty container
+has no block spelling and is written flow (`[]`, `{}`).
+
+Normalization therefore **keeps every spelling and every value, and loses
+only layout and comments**. The property an implementation must satisfy is
+that **reloading its output yields data equal to reloading its input.**
 
 **Comments do not survive**, and a conforming emitter is not required to
-preserve them: comment-preserving round-trip is not specified in v0.2. An
+preserve them: comment-preserving round-trip is not specified in v0.3. An
 emitter is a normalizer, not a round-tripper. *(Reserved: comment retention —
 see §9.)*
 
@@ -222,11 +291,13 @@ section and §5.2.
 - **`__ROOT__` anchors at the document root** (§5.2). One definition, one
   scope: since a `yt` resolves against the document like any other y-family
   literal (§6), there is no second scope for it to mean something else in.
-- A **serializer** names an encoding of the value reached (§5.1.2).
-- Holes contain **references, not expressions**. There is no arithmetic, no
-  call syntax beyond the fixed serializer set, and no way to reach outside the
-  document. This is law 2, and it is why the grammar is small enough to be
-  implemented identically twice.
+- A **call** applies a function to the values its arguments name — a
+  built-in such as a serializer (§5.1.2), or a function a contract declares
+  (§13).
+- Holes contain **references, calls, and literal arguments**, and nothing
+  else: no arithmetic, no operators, and no way to reach outside the
+  document except through a declared function. The grammar admits nothing
+  more, which is why it is small enough to be implemented identically twice.
 
 ### 5.1.1 Relative references: `__PARENT__` and `__KEY__`
 
@@ -254,8 +325,8 @@ and has no key of its own. `{__ROOT__.__KEY__}` is therefore akan too, and
 says so.
 
 A key is always an identifier (`GRAMMAR §G4.1`), so splicing one into text is
-closure-safe by construction (law 4). Into a `yb` string it is text→bytes and
-akan under law 5, by the ordinary rule and with no special case.
+closure-safe by construction (ehmon 4). Into a `yb` string it is text→bytes and
+akan under ehmon 5, by the ordinary rule and with no special case.
 
 ```
 store: "/cfg"
@@ -269,11 +340,11 @@ The same text in every block, each resolving to its own name — which is what
 these exist for. Without them a block cannot be moved or renamed without
 editing its contents.
 
-### 5.1.2 Named serializers
+### 5.1.2 Serializers
 
-A container cannot be spliced into text (§5.5), because there is no one text
-form for it and picking one would be guessing. A **named serializer** is the
-author saying which they mean:
+A container cannot be spliced into text (§5.5), because there is no one
+text form for it and picking one would be guessing. A **serializer** is
+the author saying which they mean:
 
 ```
 cfg:
@@ -282,32 +353,56 @@ cfg:
 body: y"payload={cfg.__AS_JSON__()}"
 ```
 
-This is law 5's reserved extension — *containers cross into text only via a
-named serializer* — and it stands to a container exactly as `b64"..."` stands
-to bytes: the **document author** names the encoding, in the document, where a
-reader can see it.
+This is ehmon 5 (Visibility) — *containers cross into text only via a
+serializer* — with the **document author** naming the encoding, in the
+document, where a reader can see it.
 
-**It is not a function call, and law 2 still holds.** A serializer takes no
-arguments, cannot be composed, and the set of them belongs to the *format*
-rather than to the consumer. Naming an encoding is not computing a value. That
-is the boundary between this and consumer-registered functions, which v0.2
-does not have.
+**Serializers are the format's built-in functions.** Each is defined here,
+by the format, under a dunder name, and is called exactly as a declared
+function is (§13): its argument is type-checked before the call, it waits
+for that argument to resolve, and its result is placed by §5.5. No
+contract declares a serializer. Every implementation that resolves holes
+provides all four; a records-only implementation (§12) has no holes to
+call one from. The format defines:
 
-The names and the call syntax are `GRAMMAR §G5`; **v0.2 defines
-`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()`, and `__AS_YAPYON__()`**,
-and a serializer
-applies to a **list or a mapping**. Applying one to a single value is akan and
-*reserved*.
+| name | signature |
+|---|---|
+| `__AS_JSON__` | `(Any) -> str` |
+| `__AS_TOML__` | `(dict[str, Any] \| multimap[str, Any]) -> str` — a TOML document is a table, with no top-level form for a list or a single value |
+| `__AS_YAML__` | `(Any) -> str` |
+| `__AS_YAPYON__` | `(Any) -> str` |
 
-**A serializer may not be applied to a bare anchor**, and this is a rule
-rather than an accident. `{__ROOT__.__AS_JSON__()}` and
-`{__PARENT__.__AS_JSON__()}` are **akan**; `{__ROOT__.blk.__AS_JSON__()}` and
-`{a.__AS_JSON__()}` are legal.
+`__AS_JSON__` and `__AS_TOML__` take one keyword argument, `lexemes`
+(default `True`); `lexemes=False` writes no `@_lexemes` (§14.2). Keyword
+arguments belong to built-ins only in this version (§13.7).
 
-**The reason is circularity, not anchors.** An anchor is *always* an ancestor
-of the hole that names it — `__PARENT__` is by definition the mapping the hole
-sits in, and `__ROOT__` contains it. So encoding an anchor would require the
-value of the very y-string doing the encoding:
+`{cfg.__AS_JSON__()}` is the receiver spelling of `{__AS_JSON__(cfg)}`;
+both are legal (§13.1). A result is a `str`, so chaining one
+serializer onto another (`{a.__AS_JSON__().__AS_YAML__()}`) is a type
+error at the second link. **A dunder call that names none of these is
+akan** at the call, naming the serializers that exist: a dunder call names
+a built-in or nothing.
+
+**Every serializer outputs a record.** Its output is the record (§12) its
+argument resolves to — no holes, no calls, no templates — written in the
+target format. A **`yt` anywhere in the argument is akan**, in every
+serializer and in `expand_record`, with one message:
+
+```
+akan: yeeted yt; a record cannot hold a template's unjoined parts. Use a y-string to join them.
+```
+
+Joining it would render what §6 leaves to the consumer and make `yt`
+silently mean `y`.
+
+**An argument may not contain the call site** (§13.1). For a serializer
+the commonest form is an anchor — `{__ROOT__.__AS_JSON__()}` and
+`{__PARENT__.__AS_JSON__()}` are **akan**, while
+`{__ROOT__.blk.__AS_JSON__()}` and `{a.__AS_JSON__()}` are legal. An anchor
+is always an ancestor of the hole that names it, so encoding one needs the
+value of the very y-string doing the encoding; no document resolves it.
+The mistake is visible in the reference, so ehmon 7 puts the akan there,
+at parse.
 
 ```
 blk:
@@ -315,79 +410,61 @@ blk:
   me: y"{__PARENT__.__AS_JSON__()}"     # akan: me = {"a":1,"me":<me>}
 ```
 
-There is no document in which such a reference resolves, which is what makes
-this akan **at parse** rather than a cycle reported later: the mistake is
-visible in the reference itself, so law 7 puts the error there. The message
-names the real reason and the fix, rather than claiming the anchor names no
-value — it names one perfectly well.
+**Nothing useful is lost**: an anchor followed by any step leading away
+from the hole is the shape authors want. *(Encoding "my parent, excluding
+the pair I sit in" was considered and declined: it terminates, but makes
+`__AS_JSON__()` mean different things depending on where it is written.)*
 
-**Nothing useful is lost.** An anchor followed by any step leading away from
-the hole is legal and is the shape authors actually want:
-`{__ROOT__.blk.__AS_JSON__()}` encodes a named block, and
-`{__PARENT__.blk.__AS_JSON__()}` encodes a sibling.
+**A target that is not resolved yet is not an encoding failure.** The
+call defers to a later pass of §5.3's fixpoint (§13.1), so two serializers
+whose targets hold each other are reported as the **cycle** they are,
+naming every stuck reference.
 
-*(The alternative — defining the anchor form as "encode my parent, excluding
-the pair I sit in" — was considered and declined. It terminates, but it makes
-`__AS_JSON__()` mean something different depending on where it is written,
-which is a carve-out the format does not otherwise have.)*
+**Every encoding is deterministic.** This section and §14 fix the output
+exactly — layout included — so the same argument gives the same text from
+every implementation. In all four, **keys are in document order and never
+sorted** (order is data), and non-ASCII is left as itself.
 
-**Every encoding is canonical**, or the same bytes would not mean the same
-data. In all four, **keys are in document order and never sorted** — order is
-data in yapyon — and non-ASCII is left as itself.
+**Where a format cannot carry a value directly, the serializer
+approximates it — never refuses, and never guesses.** Each approximation
+is fixed by §14, so it is the same everywhere. A reader that knows §14
+recovers the yapyon value exactly; a reader that does not still receives
+correct plain data in that format — never an error, and never a stream
+that reads as a number. Each format's own mechanisms are used first (JSON-LD
+shapes and I-JSON in JSON; `%TAG` handles onto YAML's standard tags), and
+no marker carries yapyon's name. In brief (§14 has the detail):
 
-| | shape |
-|---|---|
-| `__AS_JSON__()` | indented two spaces |
-| `__AS_TOML__()` | nested mappings become tables (`[a.b]`); a list whose elements are all mappings becomes an array of tables (`[[a.b]]`), a mixed or empty list inline (`a = [{}]`); newline-terminated |
-| `__AS_YAML__()` | block style, scalars never line-wrapped; newline-terminated |
-| `__AS_YAPYON__()` | a **record** in canonical spelling (§4.4, §12); newline-terminated |
+- A **multimap** becomes an ordered list of one-entry mappings, marked as
+  a multimap.
+- **Bytes** become base64url text in JSON and TOML (with the spelling
+  recorded beside them) and a tagged string in YAML.
+- A **number** is written as its value; a non-decimal spelling is recorded
+  beside it (JSON, TOML) or carried by a tag (YAML).
+- **TOML** writes `None` by leaving the key out and recording it, and an
+  integer outside 64 bits as a string, recorded as an integer.
 
-**An implementation must not prune.** Dropping a key because its value is
-`None` or `""` is a silent reinterpretation (law 7), and "the same bytes mean
-the same data" has to survive a serializer. A consumer wanting that pruning
-does it to its own tree first.
+**An implementation must not prune silently.** Dropping a key because its
+value is `None` or `""` is a silent reinterpretation (ehmon 7), and "the
+same bytes mean the same data" has to survive a serializer. A consumer
+wanting that pruning does it to its own tree first. **The one omission the
+format makes is TOML's `None`:** TOML has no null, so `__AS_TOML__()`
+leaves the key out of its table and records it in that table's
+`@_lexemes` as `"None"`, from which a yapyon-aware reader restores it.
+Nothing is lost; a plain TOML reader sees the key absent, as TOML tools
+commonly write a null.
 
-**A target that is not resolved yet is not an encoding failure.** If the
-container still holds an unresolved y-string, the encoding **defers** to a
-later pass of §5.3's fixpoint rather than refusing. Two serializers whose
-targets hold each other are therefore reported as the **cycle** they are,
-naming every stuck reference, rather than as a failure to encode — the
-distinction is between *never encodable* and *not encodable yet*, and only the
-first is akan on sight.
+**YAML is emitted defensively.** A scalar is written plain only when
+nothing else could read it as another type — so `"no"`, `"3"`, and
+`"true"` come out quoted, and in a flow sequence nothing that could end
+or open a flow collection is left plain. yapyon exists partly because YAML
+guesses; emitting into it must not hand that problem to the reader.
 
-**Where a format cannot carry a value faithfully, the encoding is akan** —
-never approximate (law 1: refuse rather than pick a reading).
-
-- A **multimap** is akan in JSON, TOML, and YAML: its keys repeat, and none
-  of these formats can hold that.
-- **Bytes** are akan in JSON, TOML, and YAML: none of them names an encoding
-  for bytes, so the bridge law has nothing to name.
-- **`None` is akan in TOML**, which has no null. JSON and YAML write it.
-- `__AS_TOML__()` requires a **mapping**: a TOML document is a table.
-- Numbers encode by the **target format's** rules, not §5.4's lexeme. Inside
-  JSON, `3.10` and `3.1` are one number; the lexeme rule governs splicing
-  yapyon source, which this is not — except in `__AS_YAPYON__()`, below.
-
-**`__AS_YAPYON__()` writes yapyon source, so yapyon's rules govern it.** Its
-output is the target as a **record** (§12) in canonical spelling (§4.4), and
-it is the one serializer that can carry everything the data model has:
-multimaps, bytes, and `None` all encode. The rest follows from what the output
-is:
-
-- Numbers and keywords keep their **lexeme** (§5.4): `v: 3.10` encodes as
-  `v: 3.10`, not `3.1`.
-- Bytes keep the spelling the document used, `b"..."` or `b64"..."`;
-  choosing one for the author would be a guess (law 1).
-- A y-string in the target encodes as the value it resolved to, so the output
-  holds no references and loads as a record.
-- **A `yt` in the target is akan.** A record's leaves are literals, and a
-  template delivered in parts (§6) is not one; joining it would render what
-  §6 leaves to the consumer, and make `yt` silently mean `y`.
-
-**YAML is emitted defensively.** A scalar is written plain only when nothing
-else could read it as another type — so `"no"`, `"3"`, and `"true"` come out
-quoted. yapyon exists partly because YAML guesses; emitting into it must not
-hand that problem to the reader.
+**`__AS_YAPYON__()` writes yapyon source**, so yapyon's own rules govern
+it and it carries everything the data model has. Its output is the
+argument as a record (§12) in the spelling §4.4 gives every yapyon writer:
+each value as written — its lexeme, so `v: 3.10` stays `3.10` and
+`hex'6869'` stays `hex'6869'` — and a value with no lexeme (a resolved
+y-string, a function result) in its canonical form.
 
 ### 5.2 Resolution scope: nearest wins
 
@@ -407,7 +484,7 @@ document root — the escape hatch.
 outer candidate of the same name exists is ordinary, correct resolution: the
 search is total and deterministic, so nothing is ambiguous and there is
 nothing to report. Implementations **must not** warn on it. *(v0.1 briefly
-specified a shiran here. It was removed 2026-09-14: it fired on correct
+specified shiran here. It was removed 2026-09-14: it fired on correct
 layered configuration — `path: y"{path}/claude"` refining an outer `path`,
 once per derived value — and the `{__ROOT__.name}` spelling it offered as the
 fix resolves to a different value, so following the advice broke the
@@ -420,7 +497,7 @@ traversal into a *named* multimap reaches one.
 **By-key traversal of a multimap yields a LIST VIEW.** `{mm.registry}` names
 **every** value filed under `registry`, in order, as a list: 0 entries give an
 empty list, 1 gives one element, N give N. `{mm.registry[0]}` then indexes it.
-Nothing is picked, so law 1 is satisfied — the reference names the whole view
+Nothing is picked, so ehmon 1 is satisfied — the reference names the whole view
 rather than choosing among candidates. Splicing the view into a string is akan
 exactly as for any list (§5.5), so `y"{mm.registry}"` is an error while
 `y"{mm.registry[0]}"` is not.
@@ -441,14 +518,14 @@ supported; forward references work). A pass that makes no progress while
 references remain means a missing target or a cycle: akan, listing the stuck
 references with positions.
 
-**Expansion limits have two tiers, and they are different numbers.**
+**Expansion limits come in two parts, and they are different numbers.**
 
 | | Threshold | Exceeding it |
 |---|---|---|
-| **Warn tier** — fixed by this specification | resolution depth 32; total rendered size 1 MiB per document | **shiran** |
-| **Refusal ceiling** — chosen by the implementation | implementation-defined, at or above the warn tier | **akan** |
+| **Warn threshold** — fixed by this specification | resolution depth 32; total rendered size 1 MiB per document | **shiran** |
+| **Refusal ceiling** — chosen by the implementation | implementation-defined, at or above the warn threshold | **akan** |
 
-Passing the warn tier is a `shiran` (§10) and resolution continues: the
+Passing the warn threshold is `shiran` (§10) and resolution continues: the
 document is *expensive*, which is a fact about the machine, not a mistake in
 the bytes. An implementation **may** refuse a document above a ceiling of its
 own; one that does **must document where that ceiling is**, and **should**
@@ -461,42 +538,53 @@ program that parses configuration it did not write. This specification
 declines to fix one ceiling for every implementation — it does not suggest
 having none.
 
-*Both tiers are about resource cost only. They are unrelated to the cycle rule
-above, which stays an akan: a cycle or a missing target can never resolve, so
-the document is wrong and law 7 puts the error at the point of the mistake.*
+*Both limits are about resource cost only. They are unrelated to the cycle rule
+above, which stays akan: a cycle or a missing target can never resolve, so
+the document is wrong and ehmon 7 puts the error at the point of the mistake.*
 
 **Depth is measured as the dependency chain**, not as a count of fixpoint
 passes. A pass counter makes the answer depend on the order keys happen to
 appear in the document, which a format whose thesis is "the same bytes mean
 the same data" cannot permit.
 
-### 5.4 What splices: the lexeme rule
+### 5.4 What splices: the value
 
-- Non-string scalars splice their **source lexeme**: `version: 3.10`
-  referenced from a y-string splices the characters `3.10`; `0xFF` splices as
-  `0xFF`; `1_000` keeps its underscores; `True` and `None` splice as
-  themselves. What the author wrote is what appears.
-- Strings splice their **content** (the decoded value, not the quoted lexeme),
-  so chains compose.
+A hole splices its **value**, never its lexeme, as Python's `str()` writes
+it — the behavior of every mainstream language's interpolation, and the only
+rule that also covers values with no lexeme, such as a call's result (§13).
+Equal values therefore always splice as equal text.
+
+- **`int`**: decimal, with a `-` if negative. `0xFF` splices as `255`,
+  `1_000` as `1000`.
+- **`float`**: the shortest decimal that reads back as the same float. It is
+  written positionally when the decimal exponent lies in −4 … 15, always with
+  a fractional part (`3.10` splices as `3.1`, `1e3` as `1000.0`); otherwise
+  as a mantissa, `e`, a sign, and at least two exponent digits (`1e+16`,
+  `1e-05`, `1.5e+300`). Negative zero splices as `-0.0`.
+- **`bool` and `None`**: `True`, `False`, `None`.
+- **`bytes`**: Python's repr — `b`, a quote, the bytes, the same quote.
+  The quote is `'` unless the bytes contain `'` and no `"`. `\` and the
+  quote are escaped, as are tab, newline, and carriage return (`\t`, `\n`,
+  `\r`); every other byte outside printable ASCII is `\xhh`, lowercase.
+  `b"hi"`, `rb"hi"`, and `b64"aGk="` all splice as `b'hi'`: the `b'…'`
+  marks the crossing (ehmon 5).
+- **Strings** splice their **content** (the decoded value, not the quoted
+  lexeme), so chains compose.
 - Resolved y-strings splice their resolved result. Result strings are inert.
-
-This is only possible because resolution happens at parse time, while lexemes
-still exist; `GRAMMAR §G4.3` is what guarantees they do.
 
 ### 5.5 The splice matrix
 
-| Hole in… | str | b-bytes | b64-bytes | int/float/bool/None | container | yt value |
-|---|---|---|---|---|---|---|
-| `y` / `ry` | ✓ content | akan¹ | ✓ as base64 text | ✓ lexeme | akan² | akan³ |
-| `yb` | akan⁴ | ✓ decoded | ✓ decoded | ✓ ASCII lexeme | akan | akan |
-| `yt` carry (§6) | ✓ | ✓ | ✓ | ✓ | ✓ | akan³ |
-| `yt` render (§6) | *as `y`* | *as `y`* | *as `y`* | *as `y`* | *as `y`* | — |
+| Hole in… | str | bytes | int/float/bool/None | container | yt value |
+|---|---|---|---|---|---|
+| `y` / `ry` | ✓ content | ✓ repr (§5.4) | ✓ text (§5.4) | akan¹ | akan² |
+| `yb` | akan³ | ✓ the bytes | ✓ ASCII of the text | akan | akan |
+| `yt` carry (§6) | ✓ | ✓ | ✓ | ✓ | akan² |
+| `yt` render (§6) | *as `y`* | *as `y`* | *as `y`* | *as `y`* | — |
 
-¹ b-spelled bytes have no text form; the akan says "respell as b64 to splice
-into text." &nbsp; ² container = list, dict, or multimap: "cannot interpolate
-a list, dict, or multimap into a string" *(the named bridge is §5.1.2's
-`__AS_JSON__()`)*. &nbsp; ³ "cannot splice a template into a string."
-&nbsp; ⁴ no implicit encode, ever (PEP 461's wall, both sides).
+¹ container = list, dict, or multimap: "cannot interpolate a list, dict, or
+multimap into a string" *(the named bridge is a serializer, §5.1.2)*.
+&nbsp; ² "cannot splice a template into a string." &nbsp; ³ no implicit
+encode, ever (PEP 461's wall, both sides).
 
 **A `yt` has no matrix of its own.** It *carries* anything, because nothing
 crosses into text when a value is handed over rather than joined; and its
@@ -507,7 +595,7 @@ parse; a `yt` akans only if a consumer asks for the join.
 
 ---
 
-## 6. yt — the yapyon template
+## 6. yt — template strings
 
 **A `yt` literal is a y-string that is not joined.** Its holes resolve against
 the document at parse time by §5.2's ordinary rules, exactly as `y`'s do. The
@@ -519,7 +607,7 @@ consumer the literal text parts and the resolved values, separately.
 Interior syntax is identical to any other y-family literal (`GRAMMAR §G5`) —
 one scanner, one divergence-table row. An unbound hole is akan **at parse**,
 like any other unresolved reference: the mistake is in the document, so it
-lands on the document's author (law 7).
+lands on the document's author (ehmon 7).
 
 ### 6.1 Why the parts are kept apart
 
@@ -538,7 +626,7 @@ This is the constructive half of the format's position on text substitution.
 The destructive half is that **yapyon does not resolve names it cannot
 define**: `$VAR` and `~` are ordinary characters (`GRAMMAR §G4.7`), because
 `$HOME` does not name a value — it names *a lookup in an unspecified place*,
-and picking one would be guessing (law 1). Pre-parse text substitution is also
+and picking one would be guessing (ehmon 1). Pre-parse text substitution is also
 where injection lives: a value containing a quote and a newline can add a
 key its author never wrote, whereas splicing replaces a value in the parsed
 tree and is structurally incapable of that.
@@ -549,11 +637,12 @@ An implementation **must** deliver, per literal:
 
 - the **literal text parts**, in order, and
 - for each hole, its **resolved value**, the **source lexeme** of that value
-  where it has one (§5.4), and the **reference as written**.
+  where it has one (§3), and the **reference as written**.
 
 The lexeme is required, not decorative: `version: 3.10` resolves to a value
-that in most languages is indistinguishable from `3.1`, and without the
-spelling no consumer could render it faithfully.
+that in most languages is indistinguishable from `3.1`. The canonical join
+(§6.3) uses the value, as `y` does; a consumer that wants the author's
+spelling has it.
 
 The alternation is **total**: text, value, text, value, … text. A literal
 begins and ends with a text part, and an empty text part sits between adjacent
@@ -565,10 +654,8 @@ There are always exactly one more text parts than holes.
 **Carrying is unconstrained.** A hole may carry any value a document can hold,
 containers and b-spelled bytes included. §5.5 constrains what may cross into
 *text*, and nothing crosses into text here — the consumer that wants hex
-rather than base64 receives the bytes and encodes them itself. This is what
-the bridge law (law 5) was asking for: a document author has no code to run
-and must spell `b64"..."`, while a consumer is code and can name its own
-encoder.
+rather than a repr receives the bytes and encodes them itself — a consumer is
+code and can name its own encoder.
 
 **Canonical rendering is constrained**, by §5.5 exactly as for `y`. An
 implementation **must** provide a canonical join, and it **must** produce what
@@ -652,7 +739,7 @@ changes:
 - Entry keys are **invisible to holes** (§5.2). There is no flow spelling in
   this version (§9).
 
-Why a marker rather than simply permitting repeated keys in a mapping: law 1.
+Why a marker rather than simply permitting repeated keys in a mapping: ehmon 1.
 A repeated key would otherwise be indistinguishable from a typo, and the
 choice between "the second wins" and "collect both" would be a guess. The `+ `
 says which was meant, in the document's own bytes.
@@ -673,15 +760,15 @@ partition is exact and has no other members.
 
 ## 9. Reserved for future versions
 
-Syntax that is akan in v0.2 with the door explicitly open: `yb64` and `ytb`
+Syntax that is akan in v0.3 with the door explicitly open: `yb64` and `ytb`
 prefixes; **quoted keys** (the key side of the grammar's `a["b.c"]`, whose
 reference side is built); a flow spelling for multimaps (`{+ a: 1}`); format
-specs and conversions in holes; list interpolation; **escapes inside a quoted
-hole key**; **applying a serializer to
-a single value**; positional access to a multimap's entries (`{mm[0]}`);
+specs and conversions in holes; list interpolation; **keyword arguments to
+declared functions** (§13.7); positional access to a multimap's entries
+(`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
-round-tripper needs a design v0.2 does not have).
+round-tripper needs a design v0.3 does not have).
 
 **A reservation is a promise, not a plan.** Items arrive on this list by being
 argued individually; nothing should be built from it because it appears here,
@@ -689,8 +776,8 @@ and nothing should be inferred to be wanted because it sits beside something
 that is.
 
 *Built and therefore no longer reserved: `__PARENT__` and `__KEY__` (§5.1.1);
-all three named serializers, `__AS_JSON__()`, `__AS_TOML__()` and
-`__AS_YAML__()` (§5.1.2); quoted hole segments (`{a."b.c"}` → `{a["b.c"]}`)
+the four serializers (§5.1.2), which now take a single value as well as a
+container; escapes in a hole's string literals (`GRAMMAR §G5.1`); quoted hole segments (`{a."b.c"}` → `{a["b.c"]}`)
 and interior addressing of lists and multimaps (`{xs.0}` → `{xs[0]}`,
 `{mm.key}` → a list view), both subsumed by the subscript rather than added
 beside it; negative indices, which take Python's meaning (§5.1). `self` was withdrawn rather than built — it named a consumer's own
@@ -707,18 +794,21 @@ key convention, not anything the format needed.*
 | `yakamashiwa:` | internal invariant violated — a bug in the implementation, not the document | indent stack underflow |
 
 Every akan carries a line and column and, wherever a fix is mechanical, names
-it in the message ("write `{{` for a literal brace"; "respell as b64").
+it in the message ("write `{{` for a literal brace"; "use rb").
 
-**A shiran must fire where something is probably a mistake**, not merely
-unusual, and a shiran whose suggested fix would change what a document means
-is not a warning but a trap.
+**Shiran must fire only where something is probably a mistake**, not merely
+where it is unusual, and shiran whose suggested fix would change what a
+document means is not a warning but a trap.
 
-v0.2 specifies **three**, and none of their fixes changes what a document
-means. The avoidable bracket is about spelling alone. §5.3's two warn-tier
-warnings assert nothing about what the author intended — they report that a
-document is costly and may be refused elsewhere, which is true whatever was
-meant — and their fixes (shorten the chain, or raise the consumer's ceiling)
-leave the resolved value identical.
+v0.3 specifies **five**, and none of their fixes changes what a document
+means. The avoidable bracket is about spelling alone. §5.3's two warn
+thresholds and §3.1's long decimal assert nothing about what the author
+intended — they report that a document is costly and may be refused
+elsewhere, which is true whatever was meant — and their fixes (shorten the
+chain or the number, or raise the consumer's ceiling) leave the resolved
+value identical. The fifth reports that JSON output has no place for a
+lexeme (§14.3); its fix, `lexemes=False`, says that only the values were
+wanted, and the values are the same either way.
 
 *The grammar states the akan and shiran registers too (`GRAMMAR §G1`), because
 it must be readable alone. That overlap is the concept only; this table is
@@ -741,10 +831,13 @@ normative; the individual rows are cross-references to the rule's own home.
 | `\N{NAME}` | named character | akan (excluded) |
 | surrogate `\u` escapes | lone surrogates allowed | akan |
 | octal escape above `\377` in bytes | truncates to a byte, warns | akan |
-| `f"..."` / `t"..."` / `u"..."` | formatted / template / no-op | akan with hint (borrowing law) |
+| `f"..."` / `t"..."` / `u"..."` | formatted / template / no-op | akan with hint (ehmon 6) |
 | `y*` prefixes | syntax error | yapyon-native (holes, §5) |
 | prefix spelling | `rb`/`br`, any capitalization | canonical only (`rb`, lowercase) |
 | `inf` / `nan` | via `float()` | no spelling |
+| `0q`, `0z` integer prefixes | syntax error | base 4 and Crockford base 32 (`GRAMMAR §G4.3`) |
+| `bin dna oct hex c32 b64` string prefixes | syntax error | bytes stream literals (§4.3) |
+| decimal integers over 4,300 digits | `ValueError` by default (3.11+) | shiran; akan only above the implementation's ceiling (§3.1) |
 | dict keys | any hashable | bare identifiers only |
 | duplicate dict keys | last wins, silently | akan; `+ ` multimap if repeats are meant (§7.1) |
 | identifier folding | NFKC | width variants, then NFC — `ｎａｍｅ` ≡ `name`, but `ﬁ` ≢ `fi` (GRAMMAR §G4.1) |
@@ -755,9 +848,13 @@ normative; the individual rows are cross-references to the rule's own home.
 
 ## 12. Conformance: the yapyon record
 
-yapyon has two forms. The unrestricted one is just **yapyon**, and is what
-§1–§11 and the grammar together describe. The restricted one is a **yapyon
-record** — records are implied to be fixed, and this one is.
+A document is a **record**, a **template**, or an **assembly** (ehmon 2),
+and each tier contains the one before it: a record is a template that
+splices nothing, and a template is an assembly that calls no declared
+function. The record is the restricted form — records are implied to be
+fixed, and this one is. The tier a document needs is computable from its
+bytes: a y-family literal makes it a template, and a call to a declared
+function an assembly.
 
 ### 12.1 The rule
 
@@ -768,9 +865,9 @@ number, or a keyword (§3). Nothing about a leaf's value depends on anything
 else in the document. Containers — mapping, sequence, multimap — are structure
 rather than leaves, so the rule reaches all the way down.
 
-This is law 3 stated at the leaf: self-containment, made local. It also
+This is ehmon 3 stated at the leaf: independence, made local. It also
 explains why the existing akans are the right ones — a bare word is not a
-literal (law 1, no plain scalars), and `key:` with nothing after it is not a
+literal (ehmon 1, no plain scalars), and `key:` with nothing after it is not a
 literal either (`GRAMMAR §G7`, no implicit null).
 
 ### 12.2 The mechanical test
@@ -792,8 +889,8 @@ implementation tests it. The test reads the token stream and nothing else:
 - **Compositional.** The marker is the prefix, per string. It is not something
   the document announces as a whole.
 - **A strict subset.** Every record is a valid yapyon document with the same
-  meaning: a full implementation loading a record returns exactly what a
-  record implementation returns.
+  meaning: a template or assembly implementation loading a record returns
+  exactly what a record implementation returns.
 - **Unambiguous in a minimal implementation.** A plain string containing
   `{foo}` is six characters under every composition (`GRAMMAR §G4.6`), so an
   implementation with no resolver never has to decide anything.
@@ -811,7 +908,7 @@ record" must not be read as "this value reaches the application unchanged".
 | §6 templates | n/a | yes |
 | Resolver required | **no** | yes |
 | The avoidable-bracket shiran | never fires (no holes) | may fire |
-| §5.3 expansion limits (both tiers) | n/a | apply |
+| §5.3 expansion limits | n/a | apply |
 | Values produced | str, bytes, int, float, bool, None, list, dict, multimap | the above, plus Template |
 
 A multimap (§7.1) is permitted in a record. It is a yapyon-specific type, but
@@ -820,23 +917,25 @@ it is plain keyed data rather than deferred structure; the criterion is
 
 ### 12.5 Conformance
 
-An implementation **must state which form it implements**. There are two:
+An implementation **must state which tier it implements**. There are three:
 
 - **Record** — the whole of `GRAMMAR.md` except the y-family prefixes
   (`§G4.6`), holes (`§G4.7`), and the reference grammar (`§G5`); plus this
   document's §3, §7, §10, §11, and §12.
-- **Full** — all of the above, plus `GRAMMAR §G4.7`, `§G5`, and this
-  document's §4.4, §5, and §6.
+- **Template** — all of the above, plus `GRAMMAR §G4.7`, `§G5`, and this
+  document's §4.4, §5, §6, and §14, and §13 as it applies to built-ins.
+- **Assembly** — all of the above, plus the whole of §13: contracts, their
+  types, and calls to declared functions.
 
 A record implementation is genuinely conforming. It needs no resolver, no
 fixpoint, no template machinery, and no evaluator, which is the point: the safe
 subset is declared first rather than carved out afterwards.
 
 Of §9's reserved syntax, the items that concern holes — `yb64` and `ytb`,
-format specs and conversions, list interpolation, escapes
-inside a quoted hole key, serializers on a single value, positional multimap
-access — are **full form only**, since a record has no holes at all. §5.1.1's
-relative references are full form only for the same reason. The rest — quoted
+format specs and conversions, list interpolation, keyword arguments to
+declared functions, positional multimap access — are **template and above**,
+since a record has no holes at all. §5.1.1's relative references are
+template and above for the same reason. The rest — quoted
 keys, a flow spelling for multimaps, `---` streams, timestamp prefixes — would
 concern both forms.
 
@@ -846,6 +945,414 @@ syntax error: the document is well-formed yapyon, it is simply not a record.
 
 *Reference implementation: `yapyon.loads_record` and `yapyon.load_record` load
 a record; `yapyon.is_record` performs the §12.2 test without loading.*
+
+---
+
+## 13. Functions and contracts
+
+A document may **call functions** inside a hole (`GRAMMAR §G5`):
+`{match_first(supported, mind.dialects)}`, or in the receiver form
+`{supported.match_first(mind.dialects)}`. A dunder name calls a
+**built-in**, defined by this specification (§5.1.2); any other name calls a
+function **declared** in a **contract** (§13.2) that the program loading the
+document supplies.
+
+### 13.1 Calls
+
+A **call** applies a function to arguments. Its result depends on exactly
+three things: the contract, the name, and the argument values. **An
+argument's value may be a borrow**: a reference argument naming a mapping,
+list, or multimap lends the function that node — not a copy of it, not a
+literal rendering of it, and not ownership of it.
+
+- **Built-in or declared.** A dunder name names a built-in; any other name
+  names a function the contract declares. A name neither defines is akan at
+  the call site.
+- **The receiver form is sugar.** `{a.f(x)}` is `{f(a, x)}`.
+- **Keyword arguments are for built-ins only** in this version:
+  `{cfg.__AS_JSON__(lexemes=False)}`. A keyword argument to a declared
+  function, or a keyword a built-in does not define, is akan at the call.
+- **Tier.** A document that calls a declared function is an **assembly**;
+  calls to built-ins alone leave it a **template**. A record holds no calls
+  (§12).
+- **Inside-out, left to right.** Every argument resolves to a value before
+  the call that takes it; a chain applies its links in order.
+- **Arguments must be resolved.** A call is applied only once every argument
+  has resolved to a value. For a borrow that means **the whole node**: no
+  hole anywhere in its subtree is still pending, so nothing the function
+  reads can be unresolved. Until then the call **defers** to a later pass of
+  §5.3's fixpoint — at every level of nesting and every link of a chain — so
+  two calls waiting on each other are reported as the **cycle** they are.
+- **A borrow is read-only and downward.** The function can read the node's
+  kind, its keys and entries in document order, and its descendants; it
+  cannot reach the node's parent or change anything. The node keeps its
+  identity (the same node passed twice is the same node) and its source
+  position, so a type mismatch inside it is reported where it is written
+  (§13.3).
+- **No argument may contain the call site.** A reference argument naming an
+  ancestor of the hole is akan. For an anchor this is visible in the syntax,
+  which does not generate it (`GRAMMAR §G5`); for any other reference it is
+  checked when the reference resolves, and reported at parse. A nested
+  call's *result* is a fresh value with no position and is never checked.
+- **Depth and size** count toward §5.3 exactly as splices do.
+
+### 13.2 Contracts
+
+A **contract** declares the functions a document may call. It is a yapyon
+**record** (§12), so every implementation reads it with no resolver:
+
+```
+match_first:
+  params:
+    keys: "list[str]"
+    items: "dict[str, dict[str, str]]"
+  returns: "str"
+  impl:
+    python:
+      from: "persona_grata.dialects"
+      symbol: "match_first"
+    c:
+      from: "persona_grata"
+      symbol: "pg_match_first"
+```
+
+- Each top-level key is a **function name** — an identifier (§7), and so
+  never a dunder: a dunder key is akan in every record. Dunders are the
+  format's alone.
+- `params` — **required**; an ordered mapping from parameter name to type
+  (§13.3). Its order is the argument order. An empty mapping `{}` declares
+  no parameters.
+- `returns` — **required**; a type.
+- `impl` — **required**; maps a **language** to where that language finds
+  the code: `symbol` (required) and `from` (optional). **With `from`**, the
+  implementation locates the code itself: a Python module path, or a library
+  name **without** a platform suffix (`.so`, `.dll`, and `.dylib` are added
+  per platform). **Without `from`**, the program loading the document
+  provides the code.
+- **Languages.** This version defines `python` and `c`. An implementation
+  reads only its own language's entry and **ignores the others**, whatever
+  their names, so one contract can serve bindings an implementation lacks. A
+  function with no entry an implementation can use is akan **when the
+  contract is loaded**, naming the function.
+- **Any other key is akan**, at any level of the contract.
+- A contract is given to the **loader**, never named by a document
+  (ehmon 3).
+
+### 13.3 Types
+
+A type is written as a string, in Python's typing spelling over §3's type
+names:
+
+```ebnf
+type    ::= alt ( "|" alt )*
+alt     ::= "str" | "bytes" | "int" | "float" | "bool" | "None" | "Any"
+          | "list"     "[" type "]"
+          | "dict"     "[" "str" "," type "]"
+          | "multimap" "[" "str" "," type "]"
+```
+
+Spaces and tabs may appear between any two tokens (`list[ str ]`,
+`dict[str,int]`, `int|None`), as in a Python annotation. Writers use the
+PEP 8 form: `dict[str, int]`, `int | None`.
+
+- A bare `list`, `dict`, or `multimap` is akan — the contained type is
+  required.
+- **`Any`** is Python's `typing.Any`, or its equivalent in each binding. It
+  accepts everything a document can hold, and a container's contents below
+  it are not checked; a value received as `Any` is checked again at any
+  later call that declares a narrower type. It is written, never implied:
+  `list[Any]`, not `list`.
+- `dict` and `multimap` write their key type, which must be `str` (keys are
+  identifiers). It is written so that a later version can admit other key
+  types without respelling.
+- No type names a template (§6), so a `yt` value is never a valid argument
+  or result.
+
+**Checking — before every call, and on every result.**
+
+- An argument is checked against its parameter's type **before the call**;
+  a mismatch is akan **at the offending value's own line and column**,
+  naming the function and the parameter. **The check is deep**: every
+  element of a container is checked against the contained type, all the way
+  down, stopping only at `Any`. It reads types only, so it needs no
+  evaluation, and an implementation may cache it per node.
+- A function's result is checked against `returns` the same way; a mismatch
+  is akan at the call site, naming the function.
+- A **union** matches if any alternative does. An **exact** match beats
+  widening: `float | int` keeps `3` an `int`. Where several alternatives
+  match — an empty list against `list[str] | list[int]` — the **first
+  declared** is taken.
+- **`bool` is not `int`**: yapyon's types decide, never a host language's
+  subtyping.
+- **`int` is accepted where `float` is declared**, and arrives as a `float`
+  in every binding. Every `int` up to 2⁵³ in magnitude converts exactly;
+  beyond that, not every integer has a float, and the nearest is taken, ties
+  to even, as Python converts (`2**53 + 1` → `9007199254740992.0`). An `int`
+  outside the float range is akan. The same rule applies to results and
+  inside containers.
+- **Order is data**: a function sees a `dict`'s keys and a `multimap`'s
+  entries in document order, in every binding.
+
+### 13.4 Results
+
+A result is placed by §5.5, unchanged: a `str` splices into a `y`; a list in
+a `y` is akan as any list is; other scalars splice by value (§5.4). A
+function cannot return a node of the document; its result is fresh data.
+**Returned data must be yapyon data**: a returned mapping's keys obey the
+identifier rule and are folded (§7), so a key that is not an identifier, or
+two keys that fold alike, is akan at the call, naming the function. A
+result has no lexemes; a yapyon writer gives it canonical form (§4.4).
+
+### 13.5 Errors
+
+All at the call site, in the existing register: an unknown name; the wrong
+number of arguments, which is checked at parse against the contract; an
+unknown or misplaced keyword; an argument or result of the wrong type; an
+argument containing the call site; and **a function that fails** — reported
+as akan naming the function and its message, never as a host-language
+traceback.
+
+### 13.6 Determinism
+
+A declared function **must** be deterministic: same contract, name, and
+arguments, same result. An implementation cannot check this; it is an
+obligation on whoever provides the function. Its consequence is stated
+plainly: **two loaders with different contracts produce different data from
+the same bytes** — which is why the contract is explicit, named in ehmon 3,
+and never discovered.
+
+### 13.7 Not in this version
+
+Bare calls as values; returning a node; a key or index after a call
+(`{f(x)[0]}`); keyword arguments to declared functions (planned); default
+or variadic arguments; a template in a signature; contracts a document can
+name.
+
+---
+
+## 14. Serializer output
+
+This section fixes, exactly, the text each serializer (§5.1.2) produces,
+so that every implementation writes the same output for the same
+argument. A serializer's output is a `str`. TOML, YAML, and yapyon output
+end with a newline; JSON output does not.
+
+### 14.1 Width and layout
+
+The **width** of a line is the sum of the widths of its code points, by
+the Unicode 14.0.0 database (the same pin as identifiers, §7):
+
+- **0** for a combining mark (`Mn`, `Me`), a format character (`Cf`), or
+  any other `Default_Ignorable_Code_Point`;
+- **2** for `East_Asian_Width` `W` or `F`;
+- **1** otherwise;
+- except that **U+FE0F** (emoji presentation) makes the character before
+  it count 2 — so `❤️` counts 2. The model may overcount a rendering; it
+  never undercounts one, so a long line is broken early, never late.
+
+A container **fits** if its one-line form, on its line — indentation,
+key, and any trailing comma included — has width **at most 100**.
+Layout goes **outermost first**: a container that fits is written on one
+line; one that does not is written one member per line, indented two
+spaces deeper than its opening line, and each member is judged the same
+way.
+
+Which containers may take a one-line form depends on the format:
+
+| Format | One line if it fits | Always broken |
+|---|---|---|
+| JSON | every array and object | — |
+| TOML | arrays | tables (sections); an inline table is always one line, at any width |
+| YAML, yapyon | a sequence holding no mapping or multimap | mappings, multimaps |
+
+### 14.2 Lexemes beside values — `@_lexemes` (JSON, TOML)
+
+JSON and TOML write each value as plain data in that format and record,
+beside it, what a plain value cannot say. The record is a member named
+**`@_lexemes`** in the object (table) that holds the value. Its entries
+are yapyon source text — the value's lexeme (§4.4).
+
+**What gets an entry:**
+
+- an integer written in a **non-decimal radix** (`0x`, `0o`, `0b`, `0q`,
+  `0z`) — its lexeme;
+- **every bytes value** — its lexeme, or, with none, its canonical form
+  (`b"..."`, §4.4), so bytes are never mistaken for text;
+- in TOML only: an **integer outside −2⁶³ … 2⁶³−1** — its lexeme, or its
+  decimal digits with none — and **`None`** — the entry `"None"`.
+
+Decimal numbers, strings, booleans, and (in JSON) `None` get no entry:
+the plain value is the yapyon value. *(A decimal's spelling — `1_000`,
+`3.10` — is not kept; only yapyon output keeps every lexeme.)*
+
+**Entry keys.** A value that is a member of the object is keyed by its
+key. A value inside an array is keyed by a **path** from the nearest
+containing object: the member's key, then each index, joined with `/` —
+`"ports/0"`, `"matrix/0/1"`. (Keys are identifiers, §7, so no key holds a
+`/`.) **In a multimap node** the table is the node's own, and a path is
+`entries/<i>` — the entry, not its key, since an entry holds exactly one
+value — continuing with indices only if that value is an array
+(`entries/0/1`). Entries are in document order.
+
+**Placement.** In JSON, `@_lexemes` is the **last** member of its object
+. In TOML, it is one inline table if that line fits (§14.1);
+otherwise a `["@_lexemes"]` section (`[server."@_lexemes"]` for a nested
+table) written after the table's own keys.
+
+A key beginning with `@` can never be yapyon data (§7), so neither the
+side table nor any wrapper below can be mistaken for content. The name is
+not keyword-shaped under JSON-LD (`"@"` followed by letters only), so
+JSON-LD processors drop it or keep it as a property without warning;
+I-JSON readers ignore it (RFC 7493 §4.2).
+
+### 14.3 JSON
+
+Output is I-JSON (RFC 7493). One-line spacing is `", "` between members
+and `": "` after a key; a broken container puts each member on its own
+line with its comma at the end, and its closing bracket at the opening
+line's indentation. `[]` and `{}` are written so. Strings: `"` and `\` escaped, U+0000–U+001F as `\b \f \n \r \t` where those exist
+and `\u00XX` otherwise, lowercase hex; everything else, non-ASCII
+included, as itself.
+
+| yapyon value | JSON |
+|---|---|
+| `True`, `False`, `None` | `true`, `false`, `null` |
+| `str` | a string |
+| decimal integer | the number |
+| non-decimal integer | its decimal value, plus an entry: `{"port": 255, "@_lexemes": {"port": "0xff"}}` |
+| integer beyond 2⁵³ | the number as-is — valid JSON; a reader that parses numbers as doubles may change it, which is that reader's limit |
+| `float` | the shortest text that reads back as the same float (`1.5`, `1e+16`, `1e-05`, `-0.0`) |
+| bytes | padded base64url (RFC 4648 §5; RFC 7493 §4.4), plus an entry: `{"data": "aGk=", "@_lexemes": {"data": "hex'6869'"}}` |
+| mapping | an object, keys in document order |
+| list | an array |
+| multimap | `{"@type": "multimap", "entries": {"@list": [{"registry": "a"}, {"file": "b"}]}}` — one single-member object per entry, in order |
+| a list or single value as the whole output | written plain, **never wrapped**; a lexeme it holds has no object to live in, so it is dropped, with shiran naming `lexemes=False` |
+
+The multimap node is valid JSON-LD.
+
+### 14.4 YAML
+
+Block style; scalars are never line-wrapped. Every marker is a **`%TAG`
+handle resolving to YAML's standard prefix** `tag:yaml.org,2002:`, so an
+ordinary loader constructs a standard type and the handle's name is the
+hint. A handle is declared only if the output uses it, in order of first
+use, and `---` follows the declarations; output with no handle
+has neither.
+
+```yaml
+%TAG !multimap! tag:yaml.org,2002:
+%TAG !hex! tag:yaml.org,2002:
+%TAG !x! tag:yaml.org,2002:
+---
+foo: !multimap!pairs
+  - registry: a
+  - file: b
+data: !hex!str "6869"
+port: !x!int 0xff
+```
+
+| yapyon value | YAML |
+|---|---|
+| `True`, `False`, `None` | `true`, `false`, `null` |
+| decimal integer | plain |
+| `0x` / `0o` / `0b` integer | `!x!int 0xff`, `!o!int 0o377`, `!b!int 0b11111111` — the lexeme, negatives included |
+| `0q` / `0z` integer | `!q!int 255`, `!z!int 255` — the **value**, since YAML cannot read the lexeme |
+| `float` | plain, as JSON writes it, **with `.0` inserted** when the mantissa has no `.` (`1.0e+16`, `1.0e-05`): YAML 1.1 reads `1e+16` as a string |
+| `b64` bytes | `!!binary "<lexeme>"` |
+| other bytes spellings, `b`, `rb` | `!<spelling>!str "<lexeme>"` (`!hex!str "6869"`) |
+| bytes with no lexeme | `!!binary "<base64>"` |
+| multimap | `!multimap!pairs`, then a block sequence of one-entry mappings |
+
+One handle may serve two suffixes — `!b!str` (b-bytes) and `!b!int`
+(a binary integer); the pair is the meaning. **Bytes are always quoted**,
+so a lost tag never turns a stream into a number.
+
+**Emitted defensively** (§5.1.2): a scalar is plain only if every YAML
+1.1 and 1.2 reader would read it as the intended type; any other string is
+quoted. **In a flow sequence**, a string holding `,`, `[`, `]`, `{`, or `}`
+is also quoted.
+
+**Never written:** bare custom tags (`!hex`), which make `safe_load` fail
+the whole document; JSON-LD keys; `!!pairs` alone.
+
+A YAML tool that rewrites the output may drop the handles (YAML treats
+them as presentation); the data stays correct.
+
+### 14.5 TOML
+
+**TOML output reads as the same tree as JSON output** (§14.3), with two
+differences TOML forces: it has no null, and its integers are 64-bit.
+
+| yapyon value | TOML |
+|---|---|
+| `True`, `False` | `true`, `false` |
+| `None` in a table | **the key is left out**, and recorded: `"@_lexemes"` entry `"None"` |
+| `None` in an array | the string `"None"`, recorded the same way (`"xs/1" = "None"`) — leaving it out would shift every later index |
+| integer in −2⁶³ … 2⁶³−1 | its decimal value (plus an entry if non-decimal — TOML's own `0x`/`0o`/`0b` are unsigned-only, and readers discard the spelling) |
+| integer outside that range | **a string** of its decimal digits, recorded as an integer by its entry (TOML readers must reject the number) |
+| `float` | as JSON writes it |
+| bytes | padded base64url, plus an entry |
+| mapping | a table: `[a.b]` |
+| list of mappings, non-empty | an array of tables: `[[a.b]]` |
+| any other list | an inline array (`a = [{}]` for a mixed one) |
+| multimap | `foo."@type" = "multimap"` and `foo.entries = [{registry = "a"}, {file = "b"}]` — an array of single-entry inline tables |
+| list or single value as the argument | **akan** — TOML has no top-level form for either (operator, 2026-10-13); refused by `__AS_TOML__`'s signature |
+| multimap root | `"@type" = "multimap"` and `entries = [...]` at the top level |
+
+**Layout:** an array is one line if it fits (§14.1); otherwise `[` stays
+on the key's line (TOML requires it), one element per line indented two
+spaces, with no trailing comma. An inline table is one line at any width
+(TOML 1.0 cannot break it).
+
+**Order.** A table's own keys come before its sub-tables and its
+`["@_lexemes"]` section; a table defined by dotted keys is never given a
+header later, and an inline table is never extended. Keys are bare when
+they are TOML bare keys — ASCII letters, digits, `_`, `-` — and quoted
+otherwise.
+
+### 14.6 yapyon
+
+`__AS_YAPYON__()` writes the argument as a **record** (§12), every value
+in its lexeme as written, or in its canonical form when it has none
+(§4.4): a string as a double-quoted literal, a number in decimal, a float
+as JSON writes it, bytes as `b"..."`, `True` / `False` / `None` as
+themselves. Layout is §14.1's: a sequence holding no mapping or multimap
+is one line if it fits; mappings and multimaps are block, a multimap's
+entries marked `+ `.
+
+### 14.7 Reading output back
+
+A reader that knows this section recovers the yapyon value from JSON or
+TOML output:
+
+- An `@_lexemes` entry **overrides the plain value's type**: a number
+  lexeme restores the integer and its spelling; a bytes lexeme makes the
+  string bytes; a number lexeme on a string makes it an integer; `"None"`
+  restores a left-out key, or replaces its stand-in in an array.
+- **A stale entry is akan**: a lexeme that does not produce the plain value
+  beside it; a `"None"` entry for a table key that is present; or a
+  `"None"` entry for an array element that is not the string `"None"`.
+  The akan names the key and both values, and the fixes: update
+  the entry, delete it, or read with lexemes ignored.
+- A reader **may be told to ignore lexemes**, and then takes the plain
+  values as they are.
+- `@type: multimap` nodes are restored to multimaps.
+
+YAML output has no side table — its lexemes are its content, under the
+handles — so it cannot go stale. A yapyon-aware YAML reader reads the
+handles from the token stream, before a loader discards them.
+
+### 14.8 Known limits
+
+- **Key order.** Order is data in yapyon; JSON and TOML do not promise to
+  keep it, though most readers do. A multimap's order is safe — it is an
+  array.
+- **JSON and TOML differ** exactly where §14.5 says: `None`, and integers
+  outside 64 bits.
+- **A plain reader sees the approximation**, not the yapyon value: bytes
+  as base64url text, a non-decimal integer in decimal, a multimap as a
+  tagged list. That is the design: correct plain data for every reader,
+  and the exact value for a reader that knows §14.
 
 ---
 

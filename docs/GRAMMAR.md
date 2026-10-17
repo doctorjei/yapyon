@@ -1,4 +1,4 @@
-# yapyon — grammar v0.2
+# yapyon — grammar v0.3
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -26,7 +26,7 @@ documents this document generates and rejects every other byte sequence.
 offending character**, and are never warnings and never silent
 reinterpretations. Where a fix is mechanical, an implementation should name it
 in the message. A second register, **shiran**, marks input that is well-formed
-but suspicious; a shiran never changes whether a document is accepted. This
+but suspicious; shiran never changes whether a document is accepted. This
 document specifies exactly one shiran (§G5.4).
 
 Grammar fragments are EBNF: `::=` defines, `|` alternates, `?` optional, `*`
@@ -75,6 +75,14 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
   permitted.
 
 ## §G4 Tokens
+
+**Every literal token, and every key, retains its source lexeme**
+alongside its value: the characters the author wrote, from the first to the
+last — a string's prefix, quotes, and escapes included, and a key as
+spelled before any folding (§G4.1). `3.10`, `0x1f`, and `1_000` are
+distinguishable after tokenizing, and so are `'x'` and `"x"`. *(Consumers
+of this requirement are defined in the specification; a conforming lexer
+simply keeps the spelling.)*
 
 ### §G4.1 Names and keywords
 
@@ -148,27 +156,43 @@ A name that **begins and ends with `__`** belongs to yapyon rather than to the
 document. `__` and `___` count; `_foo`, `__foo`, and `foo__` do not.
 
 - **A dunder name is akan as a key** (§G7).
-- **In a hole reference, exactly these are defined**, and every other dunder
-  name is akan:
+- **In a hole reference, a dunder name is legal only as one of these**, and
+  akan anywhere else:
 
   | Name | Where it is legal |
   |---|---|
   | `__ROOT__` | leads a reference (§G5) |
   | `__PARENT__` | leads a reference, and repeats |
   | `__KEY__` | ends a reference |
-  | `__AS_JSON__()` `__AS_TOML__()` `__AS_YAML__()` `__AS_YAPYON__()` | ends a reference |
+  | any other dunder name, followed by `(` | names a **built-in function** (§G5); which built-ins exist is not this document's subject |
 
 Reserving the whole shape rather than a list of names is deliberate: widening
 the reserved set later would break documents, while narrowing it never can.
 
 ### §G4.3 Numbers
 
-`INT` and `FLOAT` follow **Python's rules** for spelling:
+`INT` and `FLOAT` follow **Python's rules** for spelling, plus two radix
+prefixes Python does not have:
 
 | Token | Spellings |
 |---|---|
-| `INT` | decimal, `0x`, `0o`, `0b`, `_` group separators, optional sign |
+| `INT` | decimal; `0b` (base 2), `0q` (base 4), `0o` (base 8), `0x` (base 16), `0z` (base 32); `_` group separators; optional sign |
 | `FLOAT` | `3.10`, `1e-6`, `.5`, `3.`, `_` group separators, optional sign |
+
+| Prefix | Digits |
+|---|---|
+| `0b` | `0` `1` |
+| `0q` | `0`–`3` |
+| `0o` | `0`–`7` |
+| `0x` | `0`–`9`, `a`–`f`, either case |
+| `0z` | Crockford's base 32: `0`–`9` and the letters `A`–`Z` except `I`, `L`, `O`, `U`, in that order (`Z` is 31), either case; `O` and `o` are also read as `0`, and `I`, `i`, `L`, `l` as `1` |
+
+- **The prefix letter may be either case** in every radix — `0X`, `0B`,
+  `0O`, `0Q`, `0Z` — as in Python, C, C++, and Java.
+- **Underscores follow Python (PEP 515) in every radix**, `0q` and `0z`
+  included: one `_` may stand between two digits, or between the prefix and
+  the first digit (`0z_7Z`); never two in a row, and never at the end.
+- **The sign** is one optional `+` or `-` before the literal.
 
 - **There is no `inf` or `nan` spelling.** Python has none either; they are
   reachable in Python only through a function call.
@@ -176,11 +200,6 @@ the reserved set later would break documents, while narrowing it never can.
   Unicode digits (`٣`, U+0663) are `XID_Continue`, so they are legal *inside*
   a name (§G4.1) and nowhere else. `str.isdigit()` accepts them and is
   therefore the wrong test for a number.
-- **A numeric or keyword token retains its source lexeme** alongside its
-  value. An implementation must keep the characters the author wrote: `3.10`,
-  `0x1f` and `1_000` are distinguishable after tokenizing. *(Consumers of this
-  requirement are defined in the specification; a conforming lexer simply
-  keeps the spelling.)*
 
 ### §G4.4 String literals: quoting forms
 
@@ -262,14 +281,6 @@ Stricter than Python in three places:
 is on literal source characters, not on escape values: `b"\x89"` is the point
 of `\xHH`.
 
-**`b64"..."`** content must be **canonical** standard base64; interior
-whitespace is permitted and ignored. Invalid content is akan at parse time,
-and so is content that decodes but is **not canonical** — a final group
-whose padding-discarded bits are not zero. `aGk=` is the canonical encoding
-of `hi`; `aGl=`, `aGm=` and `aGn=` decode to the same bytes while being
-different text. The well-formedness test is that the literal is a fixed point
-of decode-then-encode.
-
 ### §G4.6 Prefixes
 
 **Canonical spellings only.** Each prefix has exactly one legal spelling:
@@ -282,7 +293,12 @@ them yields two tokens.
 |---|---|---|---|
 | *(none)* | `STRING` | string | — |
 | `b` | `BYTES` | bytes literal | — |
-| `b64` | `BYTES` | base64 bytes literal | — |
+| `bin` | `BYTES` | binary stream literal | — |
+| `dna` | `BYTES` | DNA stream literal | — |
+| `oct` | `BYTES` | octal stream literal | — |
+| `hex` | `BYTES` | hex stream literal | — |
+| `c32` | `BYTES` | Crockford base-32 stream literal | — |
+| `b64` | `BYTES` | base64 stream literal | — |
 | `r` | `STRING` | raw string | — |
 | `rb` | `BYTES` | raw bytes | — |
 | `y` | `YSTR` | yapyon string | y-string |
@@ -293,9 +309,41 @@ them yields two tokens.
 *The `y` is a long-e glide wherever it sits, so its position marks
 composition order.*
 
-A `BYTES` token records **which of `b` / `b64` / `rb`** produced it, and a
-`YSTR` token records whether it was raw. That distinction is not recoverable
-from the value and implementations must keep it.
+A `BYTES` token records **which prefix** produced it, and a `YSTR` token
+records whether it was raw. That distinction is not recoverable from the
+value and implementations must keep it.
+
+**Stream literals.** The six prefixes `bin`, `dna`, `oct`, `hex`, `c32`, and
+`b64` spell bytes as symbols in a radix. Their content has **no escapes and
+no holes**: it is symbols of the prefix's alphabet, and whitespace (space,
+tab, newline) between symbols, which is permitted and ignored. In `c32`,
+hyphens are permitted and ignored too. Any other character is akan.
+
+| Prefix | Bits per symbol | Alphabet, in value order | Case |
+|---|---|---|---|
+| `bin` | 1 | `0 1` | — |
+| `dna` | 2 | `T C A G` | either |
+| `oct` | 3 | `0`–`7` | — |
+| `hex` | 4 | `0`–`9`, `a`–`f` | either |
+| `c32` | 5 | `0`–`9`, then `A`–`Z` except `I L O U` | either; `O`/`o` also read as `0`, and `I`/`i`/`L`/`l` as `1` |
+| `b64` | 6 | `A`–`Z`, `a`–`z`, `0`–`9`, `+`, `/` (RFC 4648 §4) | exact |
+
+Symbols are read **most significant first**, each contributing its bits in
+order. With 1, 2, or 4 bits per symbol a byte holds whole symbols, so **any
+number of symbols** is well-formed. With 3, 5, or 6 it does not, and two
+further rules apply:
+
+- **The symbol count must be one an encoder writes**: for some whole number
+  of bytes *n*, exactly ⌈8*n*/*k*⌉ symbols, where *k* is the bits per
+  symbol. Any other count is akan. `b64` also takes RFC 4648's `=` padding,
+  which is required, to a multiple of four symbols.
+- **The spare bits must be zero.** The bits after the 8*n*-th are spare:
+  they exist only because a symbol cannot be split, and no encoder writes
+  them nonzero. Nonzero spare bits are akan, naming the canonical spelling.
+  `aGk=` is the canonical `b64` spelling of `hi`; `aGl=`, `aGm=`, and `aGn=`
+  would decode to the same bytes if the spare bits were ignored, and are
+  akan. The test is that the literal is a fixed point of decode-then-encode,
+  up to case, glyph aliases, whitespace, and hyphens.
 
 **Akan, with hints:** `f` ("yapyon has no f-strings"), `t` ("use yt"), `u`,
 and every non-canonical order or capitalization (`br` → "use rb", `yr`).
@@ -311,13 +359,20 @@ Inside a `YSTR`, `YBSTR`, or `YTSTR` literal, braces delimit **holes**.
 - **Holes are recognized before escapes decode.** A hole is structure, found
   in the source; an escape that produces a brace is content and never opens
   one, so `y"\x7bname\x7d"` is the six characters `{name}`. This is Python's
-  own layering for f-strings, and it is what makes `\{` an akan rather than a
+  own layering for f-strings, and it is what makes `\{` akan rather than a
   second way to spell a literal brace.
 - **`{{` and `}}` are the only brace escapes.** A backslash never escapes a
   brace, including in non-raw strings: `\{` is akan.
 - A `{` that does not open a well-formed hole is **akan**; for `{2,3}`-shaped
   content the message points at `{{n,m}}`. A lone `}` is **akan**.
 - A hole's interior is a **reference** (§G5) and nothing else.
+- **A literal does not end inside a hole.** A hole is scanned to its closing
+  `}` before the literal's end is looked for, and inside a hole a quote opens
+  a string literal of the reference (§G5) — **even the enclosing literal's
+  own quote mark**: `y"{a["b"]}"` and `y"{f("x")}"` are well-formed, as in
+  Python since PEP 701. Inside such a string, braces and quotes of the other
+  kind are content: `y"{a["}"]}"` names the key `}`. The enclosing literal
+  ends at its first closing quote outside every hole.
 - **Braces are the only structure.** Inside a y-family literal, `$`, `%`,
   backtick and every other character are ordinary content. `y"$HOME/x"` is the
   eight characters `$HOME/x` and no substitution of any kind occurs; `y"{$HOME}"`
@@ -338,12 +393,29 @@ ref         ::= key_ref | value_ref
 key_ref     ::= parents "." "__KEY__"
               | "__KEY__"
 
-value_ref   ::= path | serialized
+value_ref   ::= path | applied
 
 path        ::= ( anchor | SEG ) step*
 
-serialized  ::= anchor step+ "." serializer
-              | SEG    step* "." serializer
+applied     ::= receiver suffix+
+              | call suffix*
+
+receiver    ::= anchor step+
+              | SEG    step*
+
+suffix      ::= "." call
+
+call        ::= SEG    "(" [ args ] ")"
+              | DUNDER "(" [ args ] ")"
+              | DUNDER "(" [ args "," ] kwargs ")"
+
+args        ::= arg ( "," arg )*
+
+arg         ::= key_ref | receiver | applied | LITERAL
+
+kwargs      ::= kwarg ( "," kwarg )*
+
+kwarg       ::= SEG "=" arg
 
 anchor      ::= "__ROOT__" | parents
 
@@ -355,45 +427,76 @@ subscript   ::= "[" sub "]"
 
 sub         ::= STRING | INDEX | ref
 
-serializer  ::= "__AS_JSON__" "(" ")"
-              | "__AS_TOML__" "(" ")"
-              | "__AS_YAML__" "(" ")"
-              | "__AS_YAPYON__" "(" ")"
+LITERAL     ::= STRING | BYTES | [ "+" | "-" ] ( INT | FLOAT )
+              | "True" | "False" | "None"
+
+INDEX       ::= [ "-" ] DIGITS
 
 SEG         ::= NAME, excluding every dunder name (§G4.2)
-INDEX       ::= "-"? followed by one or more ASCII digits "0"–"9"
+DUNDER      ::= NAME that is a dunder name, other than "__ROOT__",
+                "__PARENT__", and "__KEY__"
+DIGITS      ::= one or more ASCII digits "0"–"9"
 ```
 
-Two asymmetries in that production are deliberate and are the kind of thing a
-looser grammar would have hidden:
+`STRING`, `BYTES`, `INT`, and `FLOAT` are the tokens of §G4, with two
+differences inside a hole: a `STRING` is single-line (`'...'` or `"..."`,
+raw or not), and `INT` and `FLOAT` carry **no sign of their own** — the sign
+is a separate token, so `- 1` is the literal −1, as in Python. A `STRING`
+takes the escapes of §G4.5.
 
-- **`serialized` requires at least one step after an anchor.** `{a.__AS_X__()}`
-  and `{__ROOT__.a.__AS_X__()}` are legal; `{__ROOT__.__AS_X__()}` and
-  `{__PARENT__.__AS_X__()}` are **not**. An anchor is always an ancestor of
-  the hole naming it, so encoding one would require the value being encoded —
-  the reference is circular in every document, which is why it is refused
-  here, in the grammar, rather than left for a resolver to discover.
+**Whitespace.** Spaces and tabs may appear before or after any token of this
+production, and nowhere inside one — `{ a . b }`, `{f( a , b )}`,
+`{f (a)}`, `{xs[ - 1 ]}` — as in a Python expression and in an f-string's
+replacement field. A newline counts as whitespace too; one can occur only in
+a `"""` literal (§G4.4).
+
+**No comments.** The reference grammar has no comment token: a `#` in a hole
+outside a string literal is akan. Inside one it is content — `{f("#x")}`.
+
+What the production says, and why:
+
+- **A call is a name and a parenthesized argument list**, chained after a
+  receiver or standing alone: `{a.f(x)}`, `{f(a, x)}`, `{f(x).g()}`. A
+  dunder name calls a built-in and any other name a declared function; which
+  ones exist, and how many arguments each takes, are the specification's
+  business — a grammar cannot enumerate them. `{a.__AS_BOGUS__()}` is
+  well-formed here and akan when it is resolved.
+- **Keyword arguments belong to built-ins** (`{cfg.__AS_JSON__(lexemes=False)}`),
+  after any positional ones, and take anything a positional argument can —
+  `{cfg.__AS_JSON__(lexemes=opts.keep)}` is as well-formed as a literal. A
+  keyword argument in a call to a non-dunder name is not generated.
+- **Nothing follows a call but another call.** `suffix ::= "." call`, so
+  `{f(x).g()}` chains, but `{f(x)[0]}` and `{f(x).name}` are not generated.
+- **A literal appears only as an argument** (positional or keyword), or a
+  key in a bracket — never
+  as the whole hole (`{8080}`) and never as a receiver (`{"x".f()}`). A
+  literal is a Python literal: one optional sign on a number, and nothing
+  that is an expression in Python — `--1` and `-True` are not generated.
+- **A bare anchor is never a receiver or an argument.** `{__PARENT__.f()}`,
+  `{f(__ROOT__)}`, and `{f(__PARENT__.__PARENT__)}` are not generated; an
+  anchor with a step (`{__PARENT__.blk.f()}`) is. An anchor is always an
+  ancestor of the hole naming it, so a call on one would need the value it is
+  computing — circular in every document, which is why it is refused here, in
+  the grammar, rather than left for a resolver to discover.
 - **`INDEX` is decimal, with an optional `-` and no `+`.** It is not the
-  whole of `INT`: no `0x`/`0o`/`0b`, no `_` separators. A bracket names a
+  whole of `INT`: no radix prefixes, no `_` separators. A bracket names a
   position, and one spelling per position is enough. The sign rule differs
-  from `INT`'s on purpose: a sign is admitted where it carries information. In
-  a value, `+3` survives into a splice (`UTC+3`); in an index, `-` selects
+  from a value's on purpose: a sign is admitted where it carries information.
+  In a value, `+3` survives into a splice (`UTC+3`); in an index, `-` selects
   from the end, while `+` would only be a second spelling of the same
-  position. Spelling that in the
-  production rather than beside it is the difference between a grammar and a
-  grammar with a footnote.
+  position.
 
 The production is **complete**: every form an implementation accepts is
 generated by it, and every form it generates is accepted. *That claim is
 machine-checked against the reference implementation over a combinatorial
 corpus — a normative sentence with nothing executing it is indistinguishable
 from a false one, and an earlier draft of this production could not generate
-`{cfg.__AS_JSON__()}` at all.* The constraints that
-earlier drafts carried as prose beside a looser production — that `__PARENT__`
-leads and repeats, that `__KEY__` ends, that a serializer ends, that
-`__ROOT__` may not follow anything — are expressed **in the grammar itself**,
-which is why `SEG` excludes the dunder names rather than admitting them and
-apologizing afterwards.
+`{cfg.__AS_JSON__()}` at all.* The constraints that earlier drafts carried as
+prose beside a looser production — that `__PARENT__` leads and repeats, that
+`__KEY__` ends, that `__ROOT__` may not follow anything, that a bare anchor
+is never encoded — are expressed **in the grammar itself**, which is why
+`SEG` excludes the dunder names rather than admitting them and apologizing
+afterwards.
 
 ### §G5.1 What each form admits
 
@@ -402,9 +505,9 @@ apologizing afterwards.
   identifiers. They are not two constructs — one reduces to the other, which
   is why "canonical spellings only" (§G4.6) does not object.
 - A **quoted literal** in a bracket is a key: `{a["b.c"]}` names the key
-  `b.c`. Because the enclosing string's own delimiter would end that string, a
-  key must be quoted with the *other* mark — `y"{a['b']}"` or `y'{a["b"]}'`.
-  **Escapes inside a quoted key are reserved**; write the characters directly.
+  `b.c`. Either quote mark may be used, the enclosing literal's own included
+  (§G4.7): `y"{a["b"]}"` and `y"{a['b']}"` are the same reference. Escapes
+  work as in any string: `{a['b\'c']}`.
 - An **integer** in a bracket is a list position: `{xs[0]}`. Brackets only —
   `{xs.0}` is akan, because `0` is not a `NAME` and `SEG` admits none. That
   restriction is exactly what keeps `a.b` ≡ `a["b"]` true. **A negative index
@@ -424,9 +527,7 @@ apologizing afterwards.
 - An **undefined dunder** name: `{__foo__.a}`.
 - **Format specs and conversions** — `{x:...}`, `{x!r}` — are akan and
   reserved.
-- A **serializer that is not one of the four defined**, e.g.
-  `{a.__AS_BOGUS__()}`, and a serializer with **nothing to encode**,
-  `{__AS_JSON__()}`.
+- A **`#` outside a string literal** — holes have no comments.
 
 ### §G5.3 A note on borrowing
 
@@ -437,12 +538,12 @@ means by `d[p]` and nothing diverges.
 
 ### §G5.4 The one shiran
 
-**`{a["bar"]}` where `bar` is an identifier is a shiran** — legal, equivalent,
+**`{a["bar"]}` where `bar` is an identifier is shiran** — legal, equivalent,
 but `{a.bar}` is the canonical spelling. The warning fires **only where the
 bracket is avoidable**: `{a["b.c"]}`, `{xs[0]}`, `{d[p]}` and `{a[__KEY__]}`
 are silent, because a dot could not have been written there.
 
-A shiran never changes whether a document is accepted, and taking this one's
+Shiran never changes whether a document is accepted, and taking this one's
 advice never changes what a document means.
 
 ## §G6 Phrase grammar
@@ -528,8 +629,8 @@ Non-normative, and listed so that a reader knows where the edge is.
 
 This document says nothing about what a document **means**: the type model,
 how a hole's reference is resolved against the document, what a value splices
-as, which splices are legal, what a `yt` hands to a consumer, what the three
-serializers emit, which spelling a *writer* must choose among the several this
+as, which splices are legal, what a `yt` hands to a consumer, what the
+serializers and other functions emit, which spelling a *writer* must choose among the several this
 grammar admits, or what an implementation must state about the form it
 implements. All of that is the companion specification's subject.
 
