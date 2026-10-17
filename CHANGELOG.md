@@ -87,7 +87,7 @@ instead of refusing it. **Several changes are breaking** — see Changed.
   the base column; blank and comment lines are not measured.
 - **The pinned display-width table** (`tools/gen_wcwidth_table.py`,
   Unicode 14.0.0) that §14.1's layout measures with.
-- Conformance corpus: 60 cases (was 48).
+- Conformance corpus: 61 cases (was 48).
 
 ### Fixed
 

@@ -50,6 +50,12 @@ misfiled: a `record/` input must report `tier_of == 1`, and a `full/` input
 must **not**. A full-form document parked under `record/` would be testing
 the resolver while claiming not to, which is worse than having no case.
 
+**Assemblies are not in the corpus.** A document that calls a declared
+function (SPEC §13, level 3) means nothing without a contract and the code
+it binds, and that code is per-language — a corpus case could not carry it
+portably. Calls to the **built-ins** are covered (`full/19-calls`), and a
+call to an undeclared name with no contract is covered as an error.
+
 ---
 
 ## Running it

@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a713.1",
+  "why": "a name that is not a dunder calls a declared function, and no contract declares f"
+}

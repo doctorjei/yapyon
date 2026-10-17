@@ -38,7 +38,7 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1317 tests** on the current tree; the number here tracks the tree,
+suite is **1318 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 A document is one of three kinds, and `yapyon.tier_of` says which (§12.5):
@@ -57,7 +57,7 @@ is something you can *prove* rather than audit.
 |---|---|
 | [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 60 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 61 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
