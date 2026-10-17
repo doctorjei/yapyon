@@ -37,7 +37,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **895 tests** on the current tree; the number here tracks the tree,
+suite is **927 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 This is the **self-contained tier**: every document resolves from its own
@@ -147,10 +147,11 @@ A record also prints back out as yapyon, normalized:
 $ python -m yapyon record examples/registry.yap
 ```
 
-Spelling becomes canonical — double quotes, minimal escapes, block containers
-— while every value survives exactly: `3.10` stays `3.10` rather than becoming
-`3.1`, and `b"..."` is not respelled as base64. It works from the parse tree
-for that reason; the source spelling is gone once a value is a Python `float`.
+Every literal comes back as the author wrote it — `3.10` stays `3.10` rather
+than becoming `3.1`, `'x'` keeps its quotes, `b"..."` is not respelled as
+base64 — and only layout is normalized (block containers, the writer's
+indentation). It works from the parse tree for that reason; the source
+spelling is gone once a value is a Python `float`.
 **Comments do not survive**, so this is a normalizer rather than a
 round-tripper. `yapyon.emit` is the same thing as a function. A non-record is
 refused at the offending prefix, with the record rule as the reason.
@@ -272,7 +273,8 @@ error rather than an approximation — `None` in TOML, bytes in JSON, TOML or
 YAML, a multimap's repeated keys. YAML scalars are quoted unless nothing could
 misread them, so `"no"` and `"3"` survive as strings.
 
-`__AS_YAPYON__()` writes the block as a canonical yapyon **record**, and it is
+`__AS_YAPYON__()` writes the block as a yapyon **record**, every value as
+written, and it is
 the one serializer that carries everything: multimaps, bytes, and `None`, with
 `3.10` still spelled `3.10`. The only thing it refuses is a `yt`, which has no
 record form.

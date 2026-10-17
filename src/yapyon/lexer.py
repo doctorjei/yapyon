@@ -94,7 +94,7 @@ class Token:
     line: int = 0
     col: int = 0
     prefix: str = ""          # string prefix as written: "" r b rb b64 y yb yt ry
-    lexeme: str = ""          # source spelling of numbers and keywords (§5.4)
+    lexeme: str = ""          # source spelling, as written (GRAMMAR §G4; SPEC §3)
     parts: list = field(default_factory=list)  # y-family: [("text", x)|("hole", ref_src)]
 
     def __repr__(self):
@@ -1198,6 +1198,7 @@ class Lexer:
 
     # -- strings -------------------------------------------------------------
     def _lex_string(self, prefix: str, line: int, col: int):
+        start = self.pos - len(prefix)          # the prefix is adjacent
         quote = self._peek()
         # Anchor = the column where the literal *starts*, prefix included, so
         # y"""...""" aligns with its block just as """...""" does.
@@ -1226,7 +1227,8 @@ class Lexer:
             empty = b"" if is_bytes else ""
             value = empty.join(part for kind, part in parts if kind == "text")
             self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
-                       prefix=prefix, parts=parts)
+                       prefix=prefix, parts=parts,
+                       lexeme=self.text[start:self.pos])
             return
 
         if prefix == "b64":
@@ -1244,7 +1246,7 @@ class Lexer:
             value = self._process_escapes(raw_chars, raw_pos, is_bytes,
                                           line, col)[0]
         self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
-                   prefix=prefix)
+                   prefix=prefix, lexeme=self.text[start:self.pos])
 
     def _scan_string_body(self, quote, triple, line, col, holes=False):
         """Scan a string body, dedenting block strings (SPEC 4.1).

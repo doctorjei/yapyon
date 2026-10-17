@@ -75,20 +75,52 @@ def test_numbers_and_keywords_keep_their_source_lexeme():
     assert emit(parse("a: 0x1f\n")) == "a: 0x1f\n"
 
 
-def test_strings_are_double_quoted_with_minimal_escapes():
-    assert emit(parse("a: 'x'\n")) == 'a: "x"\n'
-    assert emit(parse('a: "caf\u00e9"\n')) == 'a: "caf\u00e9"\n'   # not \uXXXX
-    assert emit(parse('a: "q\\"q"\n')) == 'a: "q\\"q"\n'
+@pytest.mark.parametrize("literal", [
+    "'x'", '"caf\u00e9"', '"q\\"q"', 'r"a\\nb"', '"\\x41"', "'''x'''",
+    'rb"\\d"', 'b"\\x89PNG"', 'b64"aGk="', "0x1f", "1_000", "3.10", "True",
+])
+def test_a_literal_is_written_as_the_author_wrote_it(literal):
+    # SPEC \u00a74.4 v0.3: "must write each literal's lexeme"
+    assert emit(parse(f"a: {literal}\n")) == f"a: {literal}\n"
 
 
-def test_a_raw_string_normalizes_to_an_escaped_one():
-    # Same value, canonical spelling: r"a\nb" holds a backslash and an 'n'.
-    assert emit(parse('a: r"a\\nb"\n')) == 'a: "a\\\\nb"\n'
+def _one(scalar):
+    from yapyon.parser import Mapping, Pair
+    return Mapping(1, 0, [Pair(1, 0, "a", scalar)])
 
 
-def test_the_block_form_is_used_exactly_when_there_is_a_newline():
-    assert emit(parse('a: "one"\n')) == 'a: "one"\n'
-    assert emit(parse('a: """one\n  two"""\n')) == 'a: """\n  one\n  two"""\n'
+@pytest.mark.parametrize("value,canonical", [
+    ("x", '"x"'), ("caf\u00e9", '"caf\u00e9"'), ('q"q', '"q\\"q"'),
+    ("a\\nb", '"a\\\\nb"'), ("tab\there", '"tab\\there"'),
+])
+def test_a_string_with_no_lexeme_is_canonical(value, canonical):
+    # a resolved y-string, a call's result: double quotes, minimal escapes
+    from yapyon.parser import Scalar
+    assert emit(_one(Scalar(1, 3, "str", value))) == f"a: {canonical}\n"
+
+
+def test_bytes_with_no_lexeme_are_b_spelled():
+    from yapyon.parser import Scalar
+    assert emit(_one(Scalar(1, 3, "bytes", b"\x89P"))) == 'a: b"\\x89P"\n'
+
+
+def test_the_block_form_is_canonical_exactly_when_there_is_a_newline():
+    from yapyon.parser import Scalar
+    assert emit(_one(Scalar(1, 3, "str", "one\ntwo"))) == \
+        'a: """\n  one\n  two"""\n'
+
+
+@pytest.mark.parametrize("doc,expected", [
+    # a block lexeme keeps its spelling and takes the writer's indentation
+    ('a: """one\n        two"""\n', 'a: """one\n  two"""\n'),
+    ('a:\n  b: """\n          x\n            y\n\n          """\n',
+     'a:\n  b: """\n    x\n      y\n\n    """\n'),
+    ('- """\n x\n """\n', '- """\n  x\n  """\n'),
+])
+def test_a_block_lexeme_is_reindented_as_a_whole(doc, expected):
+    out = emit(parse(doc))
+    assert out == expected
+    assert loads_record(out) == loads_record(doc)
 
 
 def test_bytes_keep_the_spelling_the_document_chose():

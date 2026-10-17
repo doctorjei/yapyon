@@ -128,8 +128,10 @@ def test_multimap_keys_fold():
     assert doc["v"] == "1"      # the fullwidth entry is in the `name` view
 
 
-def test_the_emitter_writes_the_folded_name():
-    assert emit(parse("ｎａｍｅ: 1\n")) == "name: 1\n"
+def test_the_emitter_writes_the_key_as_spelled():
+    # SPEC §7 / §4.4 v0.3 (operator, 2026-10-12, "lexemes everywhere"): the
+    # identity is folded, the spelling is kept
+    assert emit(parse("ｎａｍｅ: 1\n")) == "ｎａｍｅ: 1\n"
 
 
 # --------------------------------------------------------------------------- #

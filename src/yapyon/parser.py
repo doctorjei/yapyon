@@ -14,8 +14,8 @@ feedback channel back to the lexer.
 The AST keeps exactly what the resolver (SPEC §5) will need:
 
   * every node carries the line and column of its first character;
-  * numeric and keyword scalars carry their **source lexeme**, because
-    non-string scalars splice their lexeme, not their value (SPEC §5.4);
+  * every literal, and every key, carries its **source lexeme** (SPEC §3),
+    so a writer can reproduce what the author wrote;
   * bytes scalars carry the spelling that produced them ("b" / "rb" / "b64"),
     because the splice matrix (SPEC §5.5) admits b64-bytes into text and
     akans b-bytes there;
@@ -47,9 +47,10 @@ class Node:
 
 @dataclass
 class Scalar(Node):
-    """A literal.  `lexeme` is the source spelling of numbers and keywords —
-    what a y-string splices (SPEC §5.4).  `prefix` is the string/bytes
-    spelling as written, which the splice matrix (SPEC §5.5) cares about."""
+    """A literal.  `lexeme` is its source spelling, prefix, quotes and
+    escapes included (SPEC §3) — what a yapyon writer reproduces (§4.4).
+    Empty for a value with no source, such as a resolved y-string.
+    `prefix` is the string/bytes prefix as written."""
 
     type: str                 # str | bytes | int | float | bool | none
     value: object
@@ -91,10 +92,13 @@ class ResolvedTemplate(Node):
 
 @dataclass
 class Pair(Node):
-    """One `key: value`.  The position is the key's."""
+    """One `key: value`.  The position is the key's. `key` is the name's
+    identity (folded, SPEC §7); `lexeme` is the key as written, which a
+    yapyon writer reproduces (§4.4)."""
 
     key: str
     value: Node
+    lexeme: str = ""
 
 
 @dataclass
@@ -318,7 +322,7 @@ class Parser:
             self._expect("NEWLINE",
                          f"expected end of line after the value of {key!r}, "
                          f"found {_describe(self._peek())}")
-        return Pair(key_tok.line, key_tok.col, key, value)
+        return Pair(key_tok.line, key_tok.col, key, value, key_tok.lexeme)
 
     def _frame_body(self, marker: Token, parse_body, what: str) -> Node:
         """`MARKER INDENT [ NEWLINE ] body DEDENT` (GRAMMAR §G6).
@@ -406,10 +410,11 @@ class Parser:
         if tok.kind in ("YSTR", "YBSTR", "YTSTR"):
             return YString(tok.line, tok.col, tok.prefix, list(tok.parts))
         if tok.kind == "STRING":
-            return Scalar(tok.line, tok.col, "str", tok.value, prefix=tok.prefix)
+            return Scalar(tok.line, tok.col, "str", tok.value,
+                          lexeme=tok.lexeme, prefix=tok.prefix)
         if tok.kind == "BYTES":
             return Scalar(tok.line, tok.col, "bytes", tok.value,
-                          prefix=tok.prefix)
+                          lexeme=tok.lexeme, prefix=tok.prefix)
         if tok.kind in ("INT", "FLOAT"):
             return Scalar(tok.line, tok.col, tok.kind.lower(), tok.value,
                           lexeme=tok.lexeme)
@@ -444,7 +449,7 @@ class Parser:
                                   f"{key_tok.value!r}")
             key = self._check_key(key_tok, first_line)
             pairs.append(Pair(key_tok.line, key_tok.col, key,
-                              self._flow_value()))
+                              self._flow_value(), key_tok.lexeme))
             if self._at("COMMA"):
                 self._advance()                  # trailing comma is fine
             elif not self._at("RBRACE"):

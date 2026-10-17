@@ -6,4 +6,4 @@ cfg:
     + k: 1
     + k: 2
   who: "single"
-out: "v: 3.10\nraw: b\"hi\"\nunset: None\nmm:\n  + k: 1\n  + k: 2\nwho: \"single\"\n"
+out: "v: 3.10\nraw: b\"hi\"\nunset: None\nmm:\n  + k: 1\n  + k: 2\nwho: 'single'\n"

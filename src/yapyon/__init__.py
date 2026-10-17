@@ -48,9 +48,9 @@ __all__ = [
     "lookup",
     # the level a document needs to mean itself (python -m yapyon tier)
     "tier_of",
-    # a record AST back to canonical yapyon source (python -m yapyon.record)
+    # a record AST back to yapyon source (python -m yapyon record)
     "emit",
-    # a full document resolved down to a record (python -m yapyon.expand)
+    # a full document resolved down to a record (python -m yapyon expand)
     "expand_record",
     # diagnostics
     "AkanError", "Yakamashiwa",

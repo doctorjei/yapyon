@@ -1,39 +1,40 @@
 """Stage 5 (optional): the AST back to yapyon source — a **normalizer**.
 
 `emit(tree)` renders a *record* AST (SPEC §12) as yapyon text. It is a
-normalizer, not a round-tripper: the value survives exactly, the spelling is
-made canonical, and **comments do not survive** — comment-preserving
+normalizer, not a round-tripper: every value and every spelling survives,
+layout is the writer's, and **comments do not survive** — comment-preserving
 round-trip needs a design that does not exist yet.
 
 **It works from the AST, never from loaded values.** That is the whole reason
 this module can be correct: `version: 3.10` must come back as `3.10`, and by
 the time `loads_record` has returned a `float` the source spelling is gone
-(`3.10` and `3.1` are the same float). The parser keeps `Scalar.lexeme` for
-numbers and keywords precisely so §5.4 can splice source text, and this
-reuses it. Same for bytes, where `Scalar.prefix` says `b` or `b64` — a
-value-based emitter would have to guess an encoding and would silently
-respell every `b"..."` as base64.
+(`3.10` and `3.1` are the same float). Every literal and every key carries
+its lexeme (SPEC §3), and SPEC §4.4 says a writer **must write it** — so
+`'x'` stays `'x'`, `r"a\\nb"` stays raw, `0x1f` stays `0x1f`, and `ｎａｍｅ`
+stays as written although its identity is `name`.
 
-**Canonical spelling** (SPEC §4.4, normative since 2026-09-14):
+**Canonical form is for values with no lexeme** — a resolved y-string, a
+call's result (§4.4):
 
-* double quotes always; the `\"\"\"` block form only when the value contains a
-  newline (and only when that is safely expressible — see `_block_ok`)
+* strings in double quotes; the `\"\"\"` block form only when the value
+  contains a newline and that is safely expressible (`_block_ok`)
 * escape only what must be escaped — `\\`, `"`, and non-printables — leaving
   UTF-8 literal and readable
-* numbers and keywords: the source lexeme, verbatim
-* bytes: whichever of `b` / `b64` the document used
-* block containers, except that an empty one has no block form and so is
-  written flow (`[]`, `{}`)
+* numbers and keywords as their text under §5.4
+* bytes as `b"..."`
 
-Normalization therefore *loses spelling but never value*: `r"a\\nb"` comes
-back as `"a\\\\nb"` and `'x'` as `"x"`. The property that matters is
+A `\"\"\"` lexeme is **re-indented as a whole**: its continuation lines sit
+inside one token and dedent against their own first line (GRAMMAR §G4.4), so
+shifting them all by one amount changes no value. Layout is the writer's;
+the spelling is the author's.
+
+Block containers throughout, except that an empty one has no block form and
+so is written flow (`[]`, `{}`). The property that matters is
 `loads_record(emit(parse(s))) == loads_record(s)`, which the tests assert
-over the whole corpus.
+over the whole corpus, plus that a second emit changes nothing.
 """
 
 from __future__ import annotations
-
-import base64
 
 from .parser import (AkanError, Mapping, MultiMap, Node, Pair, Scalar,
                      Sequence, YString, Yakamashiwa)
@@ -131,16 +132,30 @@ def _block_lines(value: str, level: int) -> list[str]:
 
 
 def _scalar(node: Scalar) -> str:
+    """Canonical form (§4.4), for a scalar that has no lexeme."""
     if node.type in ("int", "float", "bool", "none"):
-        # §5.4's lexeme, verbatim: `3.10` is not `3.1`.
-        return node.lexeme or repr(node.value)
+        return repr(node.value)
     if node.type == "bytes":
-        if node.prefix == "b64":
-            return 'b64"' + base64.b64encode(node.value).decode("ascii") + '"'
         return 'b"' + _escape_bytes(node.value) + '"'
     if node.type == "str":
         return '"' + _escape_str(node.value) + '"'
     raise Yakamashiwa(f"cannot emit scalar of type {node.type!r}")
+
+
+def _lexeme_lines(lexeme: str, level: int) -> list[str]:
+    """The author's spelling, laid out at `level`. A multi-line lexeme is a
+    `\"\"\"` literal: its continuation lines shift together so their anchor
+    sits one level in, which keeps the value (GRAMMAR §G4.4 dedents against
+    the first content line). Whitespace-only lines are blank to the scanner,
+    and stay blank."""
+    first, *rest = lexeme.split("\n")
+    if not rest:
+        return [first]
+    widths = [len(line) - len(line.lstrip(" ")) for line in rest if line.strip()]
+    anchor = min(widths) if widths else 0
+    pad = INDENT * (level + 1)
+    return [first] + [pad + line[anchor:] if line.strip() else ""
+                      for line in rest]
 
 
 # --------------------------------------------------------------------------- #
@@ -161,6 +176,8 @@ def _inline(node: Node, level: int, source: str | None) -> list[str] | None:
             f"defers its value (load with yapyon.loads for the full form)",
             node.line, node.col, source)
     if isinstance(node, Scalar):
+        if node.lexeme:
+            return _lexeme_lines(node.lexeme, level)
         if node.type == "str" and _block_ok(node.value):
             return _block_lines(node.value, level)
         return [_scalar(node)]
@@ -191,7 +208,7 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
     out = []
     for pair in pairs:
         inline = _inline(pair.value, level, source)
-        head = f"{pad}{marker}{pair.key}:"
+        head = f"{pad}{marker}{pair.lexeme or pair.key}:"
         if inline is None:                       # a block of its own
             out.append(head)
             # A `+ ` marker pushes its key to marker column + 2 (GRAMMAR §G3 anchors

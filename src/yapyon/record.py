@@ -8,7 +8,8 @@ values already has `yapyon.loads_record`.
 Refuses a non-record at the offending prefix's line and column, per §12.5:
 the document is well-formed yapyon, it is simply not a record.
 
-Normalization loses spelling but never value, and **comments do not survive**
+Normalization keeps every value and every spelling (each literal's lexeme,
+SPEC §4.4) and loses only layout, and **comments do not survive**
 (`emitter` says why). The guarantee is
 `loads_record(output) == loads_record(input)`.
 """

@@ -284,7 +284,8 @@ def _looks_numeric(text: str) -> bool:
 # yapyon
 # --------------------------------------------------------------------------- #
 def to_yapyon(node) -> str:
-    """Canonical **record** text (SPEC §4.4, §12) for a resolved subtree.
+    """**Record** text (SPEC §4.4, §12) for a resolved subtree: each value's
+    lexeme, or its canonical form where it has none.
 
     This is `emitter.emit`, unchanged, and that is the point: the emitter
     already renders a record from the AST, and a second yapyon writer would

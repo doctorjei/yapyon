@@ -705,7 +705,10 @@ key** — by definition, not by reinterpretation — so:
   held in a value (`{d[p]}`), since a resolved key means what a written one
   means;
 - **the consumer receives the folded name.** `ｎａｍｅ: 1` loads as
-  `{"name": 1}`, and the emitter (§4.4) writes `name`.
+  `{"name": 1}`. A yapyon writer still writes the key as spelled — its
+  lexeme (§3, §4.4) — so `ｎａｍｅ` comes back as `ｎａｍｅ`; a key with no
+  lexeme, such as one in a function's result (§13.4), is written as its
+  folded name.
 
 Nothing warns about a folded spelling. A warning would say the author may have
 meant something else, and here there is nothing else to mean.

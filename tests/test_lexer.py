@@ -536,7 +536,22 @@ def test_keyword_lexeme_is_preserved():
 
 def test_string_prefix_and_lexeme_are_separate_fields():
     t = next(t for t in tokenize('a: b64"aGk="') if t.kind == "BYTES")
-    assert t.prefix == "b64" and t.lexeme == ""
+    assert t.prefix == "b64" and t.lexeme == 'b64"aGk="'
+
+
+@pytest.mark.parametrize("literal", [
+    "'x'", '"x"', 'r"a\\nb"', '"a\\x41"', 'rb"\\d"', 'b"\\x00"',
+    'y"{a}"', 'ry"{a}"', 'yb"{a}"', 'yt"{a}"', '"""\n    x\n    """',
+])
+def test_every_literal_keeps_its_lexeme(literal):
+    # GRAMMAR §G4: "the characters the author wrote, from the first to the last"
+    t = tokenize(f"a: {literal}\n")[2]
+    assert t.lexeme == literal
+
+
+def test_a_key_keeps_its_lexeme_and_folds_its_value():
+    t = tokenize("ｎａｍｅ: 1\n")[0]
+    assert t.value == "name" and t.lexeme == "ｎａｍｅ"
 
 
 def test_malformed_number_is_akan():
