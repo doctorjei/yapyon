@@ -50,10 +50,10 @@ class Hole:
       of PEP 750's `Interpolation.expression`, and likewise kept because the
       spelling is data: diagnostics and tooling want what the author typed.
     * `value`  — what it resolved to, typed. Any value a document can hold.
-    * `lexeme` — the document's spelling of that value, for numbers and
-      keywords; `""` for strings and containers, whose value *is* the content.
-      Without it `3.10` would reach a consumer as the float `3.1` and could
-      never be rendered back faithfully (§5.4).
+    * `lexeme` — the document's spelling of that value (SPEC §3, §6.2):
+      `3.10` for the float 3.1, `'x'` with its quotes, `b64"aGk="` with its
+      prefix; `""` where it has none (a container, a resolved y-string).
+      Carried for the consumer; the canonical join uses the value (§5.4).
     * `text`   — the §5.5 canonical rendering, or `None` where §5.5 refuses;
       `why` then says so. Precomputed by the resolver so that the matrix has
       one implementation rather than two.

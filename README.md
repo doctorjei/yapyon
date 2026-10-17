@@ -9,14 +9,14 @@ Python-style typed literals with YAML-like block structure. Quoted strings,
 
 ```yapyon
 name: "api-gateway"
-version: 3.10
+version: "3.10"
 port: 8080
 debug: False
 
 paths:
   root: "/srv/gateway"
   logs: y"{root}/logs"          # -> "/srv/gateway/logs"
-  banner: y"{name} v{version}"  # -> "api-gateway v3.10"   (lexeme, not 3.1)
+  banner: y"{name} v{version}"  # -> "api-gateway v3.10"
 
 changes:                        # multimap: keys may repeat, order is data
   + registry: {set: ["Bypass"]}
@@ -37,7 +37,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **927 tests** on the current tree; the number here tracks the tree,
+suite is **976 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 This is the **self-contained tier**: every document resolves from its own
@@ -106,9 +106,9 @@ author wrote and which came from the data, and nothing downstream can recover
 it; parts keep them apart until a consumer that knows the destination — shell,
 SQL, HTML, a registry — decides how each value is made safe.
 
-A hole carries `.value` (typed), `.lexeme` (the document's spelling, so `3.10`
-renders back as `3.10` rather than `3.1`) and `.ref` (the reference as
-written). Carrying is unconstrained — a hole may hold a list or raw bytes,
+A hole carries `.value` (typed), `.lexeme` (the document's spelling of that
+value, quotes and prefix included, where it has one) and `.ref` (the reference
+as written). Carrying is unconstrained — a hole may hold a list or raw bytes,
 because yapyon is not the one rendering. `render()` joins canonically and
 reproduces exactly what the equivalent `y` produces; it is an explicit call,
 never an implicit `str()`, because an easy implicit join would undo the point.

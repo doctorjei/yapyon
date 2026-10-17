@@ -143,12 +143,18 @@ def test_iterating_alternates_text_and_holes():
     assert [p if isinstance(p, str) else p.value for p in t] == ["a", "v", "b"]
 
 
-def test_a_hole_carries_the_lexeme_so_rendering_stays_faithful():
-    # §5.4: 3.10 is the float 3.1, and only the lexeme can render it back
-    t = loads('v: 3.10\nt: yt"v{v}"\n')["t"]
-    hole = t.holes[0]
+def test_a_hole_carries_the_lexeme_and_renders_the_value():
+    # §6.2: the lexeme is carried for the consumer; §5.4: the join uses the
+    # value, exactly as the equivalent y does
+    d = loads('v: 3.10\nt: yt"v{v}"\ny: y"v{v}"\n')
+    hole = d["t"].holes[0]
     assert hole.value == 3.1 and hole.lexeme == "3.10"
-    assert t.render() == "v3.10"
+    assert d["t"].render() == d["y"] == "v3.1"
+
+
+def test_a_string_hole_carries_its_quoted_lexeme():
+    hole = loads("s: 'a\\tb'\nt: yt\"{s}\"\n")["t"].holes[0]
+    assert hole.value == "a\tb" and hole.lexeme == "'a\\tb'"
 
 
 def test_a_hole_keeps_the_reference_as_written():
@@ -163,12 +169,12 @@ def test_carrying_is_unconstrained_where_rendering_is_not():
     assert t.values == (b"\x89PNG", [1, 2])
     with pytest.raises(AkanError) as e:
         t.render()
-    assert "b-spelled bytes have no text form" in str(e.value)
+    assert "cannot interpolate" in str(e.value)
 
 
-def test_b64_bytes_render_as_base64_exactly_as_in_a_y_string():
+def test_bytes_render_as_their_repr_exactly_as_in_a_y_string():
     d = loads('q: b64"aGk="\ny: y"x{q}y"\nt: yt"x{q}y"\n')
-    assert d["t"].render() == d["y"] == "xaGk=y"
+    assert d["t"].render() == d["y"] == "xb'hi'y"
 
 
 def test_an_unbound_hole_is_akan_at_parse_not_at_render():

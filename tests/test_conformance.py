@@ -10,6 +10,7 @@ opinions.
 """
 
 import ast
+import base64
 import warnings
 
 import pytest
@@ -29,8 +30,10 @@ def akan_of(text):
 # =========================================================================== #
 # SPEC §5.5 — the splice matrix
 #
-# | Hole in… | str | b-bytes | b64-bytes | int/float/bool/None | container |
-# |   yt value |
+# | Hole in… | str | bytes | int/float/bool/None | container | yt value |
+#
+# v0.3 (§5.4): a hole splices its *value* as Python's str() writes it, so
+# Python is the oracle -- the expected text of a literal is f"{literal}".
 # =========================================================================== #
 def splice(prefix, target, hole="{s}"):
     """Splice `target` (a top-level `s: ...` line) through a `prefix` hole."""
@@ -47,28 +50,41 @@ def test_row_y_str_splices_content(prefix):
     assert splice(prefix, 's: "AB"') == "AB"
 
 
-@pytest.mark.parametrize("prefix", ["y", "ry"])
-@pytest.mark.parametrize("target", ['s: b"AB"', r's: rb"\d"'])
-def test_row_y_b_bytes_is_akan(prefix, target):
-    assert "respell as b64" in splice_akan(prefix, target)
+BYTES_ROWS = ['s: b"AB"', r's: rb"\d"', 's: b64"QUI="', r's: b"it\'s"',
+              r's: b"\x00\n\xff"', r's: b"\\"']
+SCALAR_ROWS = ["s: 3.10", "s: 0xFF", "s: 1_000", "s: -5", "s: +5", "s: 1e3",
+               "s: 1e16", "s: 1e-5", "s: .5", "s: -0.0", "s: 0o17", "s: 0b101",
+               "s: True", "s: False", "s: None"]
+
+
+def python_says(target):
+    """§5.4's definition, executed: what Python's f-string makes of it."""
+    lexeme = target.split(": ", 1)[1]
+    if lexeme.startswith("b64"):
+        return f"{base64.b64decode(lexeme[4:-1])}"
+    return f"{ast.literal_eval(lexeme)}"
 
 
 @pytest.mark.parametrize("prefix", ["y", "ry"])
-def test_row_y_b64_bytes_splices_as_base64_text(prefix):
-    assert splice(prefix, 's: b64"QUI="') == "QUI="
+@pytest.mark.parametrize("target", BYTES_ROWS)
+def test_row_y_bytes_splice_as_their_repr(prefix, target):
+    # every spelling of one value splices alike: b"AB" and b64"QUI=" are b'AB'
+    assert splice(prefix, target) == python_says(target)
+
+
+def test_row_y_bytes_spellings_of_one_value_splice_alike():
+    assert splice("y", 's: b"AB"') == splice("y", 's: b64"QUI="') == "b'AB'"
 
 
 @pytest.mark.parametrize("prefix", ["y", "ry"])
-@pytest.mark.parametrize("target,expected", [
-    ("s: 3.10", "3.10"),            # the lexeme, not repr(3.1)
-    ("s: 0xFF", "0xFF"),
-    ("s: 1_000", "1_000"),
-    ("s: -5", "-5"),
-    ("s: True", "True"),
-    ("s: None", "None"),
-])
-def test_row_y_scalars_splice_their_lexeme(prefix, target, expected):
-    assert splice(prefix, target) == expected
+@pytest.mark.parametrize("target", SCALAR_ROWS)
+def test_row_y_scalars_splice_their_value(prefix, target):
+    assert splice(prefix, target) == python_says(target)
+
+
+def test_row_y_equal_values_splice_as_equal_text():
+    assert splice("y", "s: 0xFF") == splice("y", "s: 255") == "255"
+    assert splice("y", "s: 3.10") == "3.1"
 
 
 @pytest.mark.parametrize("prefix", ["y", "ry"])
@@ -94,14 +110,9 @@ def test_row_yb_bytes_splice_decoded(target):
     assert splice("yb", target) == b"AB"
 
 
-@pytest.mark.parametrize("target,expected", [
-    ("s: 3.10", b"3.10"),
-    ("s: 0xFF", b"0xFF"),
-    ("s: True", b"True"),
-    ("s: None", b"None"),
-])
-def test_row_yb_scalars_splice_their_ascii_lexeme(target, expected):
-    assert splice("yb", target) == expected
+@pytest.mark.parametrize("target", SCALAR_ROWS)
+def test_row_yb_scalars_splice_the_ascii_of_their_text(target):
+    assert splice("yb", target) == python_says(target).encode("ascii")
 
 
 @pytest.mark.parametrize("target", ["s: [1, 2]", "s: {a: 1}"])
@@ -120,24 +131,12 @@ def test_row_yb_templates_are_akan():
 # governs `render()` and the conformance claim is an *equality*: rendering a yt
 # reproduces the equivalent y, cell for cell. That is what "an unjoined
 # y-string" means, and it is the property that keeps the two from drifting.
-MATRIX_ROWS = [
-    's: "AB"', 's: b64"QUI="', "s: 3.10", "s: 0xFF", "s: 1_000", "s: -5",
-    "s: True", "s: None",
-]
+MATRIX_ROWS = ['s: "AB"'] + BYTES_ROWS + SCALAR_ROWS
 
 
 @pytest.mark.parametrize("target", MATRIX_ROWS)
 def test_row_yt_render_equals_the_equivalent_y(target):
     assert splice("yt", target).render() == splice("y", target)
-
-
-@pytest.mark.parametrize("target", ['s: b"AB"', r's: rb"\d"'])
-def test_row_yt_refuses_to_render_what_y_refuses_to_splice(target):
-    # carried, but not renderable: §5.5 governs the join, not the delivery
-    with pytest.raises(AkanError) as e:
-        splice("yt", target).render()
-    assert "respell as b64" in str(e.value)
-    assert "respell as b64" in splice_akan("y", target)
 
 
 @pytest.mark.parametrize("target", ["s: [1, 2]", "s: {a: 1}", 's:\n  + a: 1'])

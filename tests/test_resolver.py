@@ -252,14 +252,17 @@ def test_the_depth_shiran_does_not_depend_on_document_order():
 # --------------------------------------------------------------------------- #
 # SPEC §5.4 — the lexeme rule
 # --------------------------------------------------------------------------- #
-def test_float_splices_its_lexeme_not_its_value():
-    assert val('version: 3.10\nb: y"v{version}"\n', "b") == "v3.10"
+def test_a_float_splices_its_value_not_its_lexeme():
+    # §5.4 v0.3 (operator, 2026-10-12): Python's str(); a version that must
+    # keep "3.10" is a string
+    assert val('version: 3.10\nb: y"v{version}"\n', "b") == "v3.1"
+    assert val('version: "3.10"\nb: y"v{version}"\n', "b") == "v3.10"
 
 
-def test_int_spellings_splice_as_written():
+def test_int_spellings_splice_as_their_value():
     node = load('m: 0xFF\nk: 1_000\na: y"{m}"\nb: y"{k}"\n')
-    assert node.by_key["a"].value == "0xFF"
-    assert node.by_key["b"].value == "1_000"
+    assert node.by_key["a"].value == "255"
+    assert node.by_key["b"].value == "1000"
 
 
 def test_keywords_splice_as_themselves():
@@ -288,13 +291,11 @@ def test_y_takes_str_content():
     assert val('s: "S"\nu: y"{s}"\n', "u") == "S"
 
 
-def test_y_rejects_b_spelled_bytes_and_names_the_fix():
-    akan('p: b"\\x89"\nu: y"{p}"\n', "respell as b64")
-    akan('p: rb"\\d"\nu: y"{p}"\n', "respell as b64")
-
-
-def test_y_takes_b64_bytes_as_base64_text():
-    assert val('p: b64"aGVsbG8="\nu: y"{p}"\n', "u") == "aGVsbG8="
+def test_y_takes_bytes_as_their_repr_whatever_the_spelling():
+    # §5.4: the b'...' marks the crossing (ehmon 5); b, rb, and b64 alike
+    assert val('p: b"\\x89"\nu: y"{p}"\n', "u") == "b'\\x89'"
+    assert val('p: rb"\\d"\nu: y"{p}"\n', "u") == "b'\\\\d'"
+    assert val('p: b64"aGVsbG8="\nu: y"{p}"\n', "u") == "b'hello'"
 
 
 def test_y_rejects_containers():
@@ -343,9 +344,8 @@ def test_a_resolved_y_string_is_a_plain_str_scalar():
     assert isinstance(b, Scalar) and b.type == "str" and b.prefix == ""
 
 
-def test_a_resolved_yb_string_has_no_text_form():
-    # its result is b-spelled bytes, so splicing it into text still akans
-    akan('p: b"AB"\nq: yb"{p}"\nu: y"{q}"\n', "respell as b64")
+def test_a_resolved_yb_string_splices_into_text_as_bytes_do():
+    assert val('p: b"AB"\nq: yb"{p}"\nu: y"{q}"\n', "u") == "b'AB'"
 
 
 # --------------------------------------------------------------------------- #
@@ -358,7 +358,7 @@ def test_the_example_document_resolves():
     node = resolve(parse(src))
     paths = node.by_key["paths"]
     assert paths.by_key["logs"].value == "/srv/gateway/logs"
-    assert paths.by_key["banner"].value == "api-gateway v3.10"   # not 3.1
+    assert paths.by_key["banner"].value == "api-gateway v3.10"   # a string
     assert paths.by_key["pattern"].value == "^api-gateway-\\d+$"
     assert node.by_key["magic"].by_key["frame"].value == b"*8080\r\n"
     assert isinstance(node.by_key["changes"], MultiMap)

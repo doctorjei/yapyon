@@ -93,9 +93,11 @@ def test_an_unspliced_number_keeps_its_source_lexeme():
     assert loads_record(expand_record('version: 3.10\n'))["version"] == 3.1
 
 
-def test_a_spliced_number_splices_its_lexeme_not_its_repr():
+def test_a_spliced_number_splices_its_value_and_keeps_its_own_lexeme():
+    # §5.4: the splice is the value; §4.4: the untouched literal keeps 3.10
     out = expand_record('version: 3.10\nline: y"v{version}"\n')
-    assert loads_record(out)["line"] == "v3.10"
+    assert loads_record(out)["line"] == "v3.1"
+    assert "version: 3.10\n" in out
 
 
 def test_bytes_keep_their_spelling_across_the_bridge():

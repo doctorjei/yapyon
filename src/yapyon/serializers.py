@@ -28,8 +28,9 @@ pick a reading.
 **`__AS_YAPYON__()` is the exception on both counts.** It is the one encoding
 that carries everything the data model has — multimaps, bytes, `None` — and
 the one that reads the **AST** rather than plain values, because its output
-*is* yapyon source and §5.4's lexeme governs that: `3.10` must stay `3.10`,
-and `b"..."` must not come back respelled as base64. `READS_AST` says which.
+*is* yapyon source, and a yapyon writer keeps every lexeme (§4.4): `3.10`
+must stay `3.10`, and `b"..."` must not come back respelled as base64.
+`READS_AST` says which.
 """
 
 from __future__ import annotations

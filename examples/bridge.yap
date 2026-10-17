@@ -7,10 +7,10 @@
 # and gateway.yap, which carries a `yt` and so cannot cross.
 
 name: "gateway"
-version: 3.10
+version: "3.10"
 
 paths:
   root: "/srv/gateway"
   logs: y"{root}/logs"                 # nearest wins: sibling `root`
-  banner: y"{name} v{version}"         # outer scope; splices the *lexeme*,
-                                     # so 3.10 stays 3.10 and not 3.1
+  banner: y"{name} v{version}"         # outer scope; a hole splices the
+                                     # value -- "3.10" is a string here

@@ -1,7 +1,7 @@
-# yapyon example — every v0.1 feature that the lexer handles today.
+# yapyon example — most of the format in one document.
 
 name: "api-gateway"
-version: 3.10                  # splices as "3.10", not "3.1"
+version: "3.10"                # a string: a version is not a float
 port: 8080
 debug: False
 owner: None
@@ -15,7 +15,7 @@ allowed:
 paths:
   root: "/srv/gateway"
   logs: y"{root}/logs"                    # nearest wins: sibling `root`
-  banner: y"{name} v{version}"            # outer scope, lexeme splice
+  banner: y"{name} v{version}"            # outer scope; splices the value
   pattern: ry"^{name}-\d+$"               # raw: backslash literal, hole live
   greeting: yt"{name} v{version}"         # same holes as `banner`, NOT joined:
                                           # the consumer gets the parts and
@@ -24,7 +24,7 @@ paths:
 magic:
   png: b"\x89PNG\r\n\x1a\n"
   token: b64"aGVsbG8gd29ybGQ="
-  frame: yb"*{port}\r\n"                  # ASCII lexeme into a byte stream
+  frame: yb"*{port}\r\n"                  # the ASCII of 8080 into bytes
 
 # Ordered multimap: keys may repeat, and the order of entries is the data.
 changes:

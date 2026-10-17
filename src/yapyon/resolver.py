@@ -15,12 +15,12 @@ Three rules do all the work:
     not in the scope of the node being indexed. `{__ROOT__.x}` skips
     the search. Shadowing an outer candidate is **not** warned about — the
     search is total, so nothing is ambiguous (see `_search`).
-  * **Lexeme, not value** (§5.4). `version: 3.10` splices the characters
-    `3.10`, never `3.1`. Only the parser's preserved lexeme makes that
-    possible, which is why resolution happens here and not after loading.
-  * **The splice matrix** (§5.5). Nothing crosses a type boundary without
-    naming the encoding (law 5): b64-spelled bytes reach text as base64,
-    b-spelled bytes never do, and text never reaches bytes at all.
+  * **The value, as Python writes it** (§5.4). A hole splices `str()` of
+    its value, so `0xFF` and `255` splice alike and `3.10` splices as `3.1`
+    — the rule of every mainstream language's interpolation, and the only
+    one that covers values with no lexeme, such as a call's result.
+  * **The splice matrix** (§5.5). Bytes reach text as their repr, `b'…'`,
+    which marks the crossing (ehmon 5); text never reaches bytes at all.
 
 Resolution runs to a fixpoint over the completed tree, so chains and forward
 references work. A pass that makes no progress means a cycle, and that is an
@@ -39,7 +39,6 @@ hands the consumer the parts with their resolved values.
 
 from __future__ import annotations
 
-import base64
 from typing import NamedTuple
 
 from .lexer import (DOLLAR_HINT, AkanError, Ref, Yakamashiwa, fold_name,
@@ -344,7 +343,7 @@ class Resolver:
                        "no implicit encode (spell the bytes you want)", at)
         if target.type == "bytes":
             return target.value
-        return _lexeme(target).encode("ascii")
+        return _text(target).encode("ascii")
 
 
     def _lookup(self, ref: str, site: _Site) -> Node:
@@ -598,9 +597,9 @@ def _plain(node: Node):
     it must refuse rather than let an encoder improvise. A small walker over
     four node kinds, not a second loader.
 
-    Numbers arrive as values, so each format encodes them by **its own** rules
-    rather than §5.4's lexeme: inside JSON `3.10` and `3.1` are one number,
-    and the lexeme rule governs splicing yapyon source, which this is not.
+    Numbers arrive as values, so each format encodes them by **its own**
+    rules: inside JSON `3.10` and `3.1` are one number. Only a yapyon
+    writer keeps lexemes (§4.4), which is why `__AS_YAPYON__` reads the AST.
     """
     if isinstance(node, Mapping):
         return {pair.key: _plain(pair.value) for pair in node.pairs}
@@ -622,11 +621,20 @@ def _plain(node: Node):
     raise NotEncodable(f"a {type(node).__name__} cannot be serialized")
 
 
-def _lexeme(target: Scalar) -> str:
-    """§5.4: a non-string scalar splices what the author wrote."""
-    if not target.lexeme:
-        raise Yakamashiwa(f"{target.type} scalar carries no lexeme")
-    return target.lexeme
+def _text(target: Scalar) -> str:
+    """§5.4: a scalar splices its **value**, as Python's `str()` writes it.
+
+    Python's own rules are the definition, not an approximation of it: an
+    `int` in decimal, a `float` as its shortest round-tripping `repr`
+    (positional for exponents −4 … 15, else `1e+16`), `True`/`False`/
+    `None`, and bytes as their `repr`, `b'…'` — the marker of a crossing
+    (ehmon 5). Equal values splice as equal text, whatever their spelling:
+    `0xFF` and `255` both give `255`, `3.10` gives `3.1`."""
+    if target.type == "str":
+        return target.value
+    if target.type == "bytes":
+        return repr(target.value)
+    return str(target.value)
 
 
 def splice_text(target: Node) -> tuple[str | None, str]:
@@ -649,14 +657,7 @@ def splice_text(target: Node) -> tuple[str | None, str]:
     if not isinstance(target, Scalar):
         raise Yakamashiwa(f"unresolved {type(target).__name__} reached "
                           f"the splice step")
-    if target.type == "str":
-        return target.value, ""
-    if target.type == "bytes":
-        if target.prefix == "b64":
-            return base64.b64encode(target.value).decode("ascii"), ""
-        return None, ("b-spelled bytes have no text form; respell as b64 to "
-                      "splice into text")
-    return _lexeme(target), ""
+    return _text(target), ""
 
     # -- §5.2, the scope search ---------------------------------------------
 
