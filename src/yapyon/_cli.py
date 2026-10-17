@@ -22,7 +22,7 @@ from .lexer import AkanError
 
 def source_from(argv: list[str]) -> tuple[str, str | None]:
     """The file named on the command line, or stdin. The name is returned so
-    diagnostics can carry it — `f.ypy:3:9` rather than `line 3, col 9`."""
+    diagnostics can carry it — `f.yap:3:9` rather than `line 3, col 9`."""
     name = argv[1] if len(argv) > 1 else None
     text = open(name, encoding="utf-8").read() if name else sys.stdin.read()
     return text, name

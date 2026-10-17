@@ -30,13 +30,13 @@ def test_without_a_source_the_wording_is_unchanged():
 
 
 def test_a_source_switches_to_the_file_line_col_form():
-    e = akan_of("a: no\n", source="dialect.default.ypn")
-    assert str(e).startswith("akan: dialect.default.ypn:1:3: ")
-    assert e.source == "dialect.default.ypn"
+    e = akan_of("a: no\n", source="dialect.default.yap")
+    assert str(e).startswith("akan: dialect.default.yap:1:3: ")
+    assert e.source == "dialect.default.yap"
 
 
 def test_the_position_is_the_same_either_way():
-    bare, named = akan_of("a: no\n"), akan_of("a: no\n", source="x.ypn")
+    bare, named = akan_of("a: no\n"), akan_of("a: no\n", source="x.yap")
     assert (bare.line, bare.col) == (named.line, named.col) == (1, 3)
 
 
@@ -53,28 +53,28 @@ def test_every_stage_carries_the_source():
 def test_a_template_keeps_its_source_past_the_document():
     # render() can akan long after the document is gone (a carried container
     # or b-bytes), so the label has to travel on the Template itself
-    t = loads('xs: [1]\nt: yt"{xs}"\n', source="tpl.ypn")["t"]
+    t = loads('xs: [1]\nt: yt"{xs}"\n', source="tpl.yap")["t"]
     with pytest.raises(AkanError) as e:
         t.render()
-    assert str(e.value).startswith("akan: tpl.ypn:2:3: ")
+    assert str(e.value).startswith("akan: tpl.yap:2:3: ")
 
 
 def test_a_shiran_carries_the_source_too():
     # vehicle: the avoidable-bracket shiran (shadowing no longer warns)
     seen = []
     loads('a:\n  bar: "X"\nu: y"{a[\'bar\']}"\n', warn=seen.append,
-          source="sh.ypn")
-    assert seen[0].startswith("shiran: sh.ypn:3:5: ")
+          source="sh.yap")
+    assert seen[0].startswith("shiran: sh.yap:3:5: ")
 
 
 def test_is_record_names_the_source_when_the_text_will_not_lex():
     with pytest.raises(AkanError) as e:
-        is_record('a: f"x"\n', source="probe.ypn")
-    assert e.value.source == "probe.ypn"
+        is_record('a: f"x"\n', source="probe.yap")
+    assert e.value.source == "probe.yap"
 
 
 def test_load_defaults_the_source_to_the_file_name(tmp_path):
-    p = tmp_path / "gateway.ypy"
+    p = tmp_path / "gateway.yap"
     p.write_text("a: no\n")
     with p.open() as fp, pytest.raises(AkanError) as e:
         load(fp)
@@ -82,7 +82,7 @@ def test_load_defaults_the_source_to_the_file_name(tmp_path):
 
 
 def test_load_record_defaults_the_source_to_the_file_name(tmp_path):
-    p = tmp_path / "rec.ypy"
+    p = tmp_path / "rec.yap"
     p.write_text('a: y"x"\n')
     with p.open() as fp, pytest.raises(AkanError) as e:
         load_record(fp)
@@ -90,7 +90,7 @@ def test_load_record_defaults_the_source_to_the_file_name(tmp_path):
 
 
 def test_an_explicit_source_beats_the_file_name(tmp_path):
-    p = tmp_path / "on-disk.ypy"
+    p = tmp_path / "on-disk.yap"
     p.write_text("a: no\n")
     with p.open() as fp, pytest.raises(AkanError) as e:
         load(fp, source="what-the-caller-calls-it")
@@ -163,7 +163,7 @@ def test_merged_fragments_can_each_name_themselves():
     # the case the feature exists for: several fragments parsed separately,
     # where a bare line and column points into nothing identifiable
     from yapyon import parse
-    parse('a: "x"\n', source="base.ypn")
+    parse('a: "x"\n', source="base.yap")
     with pytest.raises(AkanError) as e:
-        parse("b: no\n", source="override.ypn")
-    assert str(e.value).startswith("akan: override.ypn:1:3: ")
+        parse("b: no\n", source="override.yap")
+    assert str(e.value).startswith("akan: override.yap:1:3: ")

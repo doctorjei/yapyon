@@ -126,8 +126,8 @@ def test_a_y_string_is_refused_at_its_own_position():
 
 def test_normalize_refuses_a_non_record_and_names_the_source():
     with pytest.raises(AkanError) as e:
-        normalize('a: "x"\nb: y"{a}"\n', source="f.ypn")
-    assert str(e.value).startswith("akan: f.ypn:2:3: ")
+        normalize('a: "x"\nb: y"{a}"\n', source="f.yap")
+    assert str(e.value).startswith("akan: f.yap:2:3: ")
 
 
 def test_normalize_is_the_whole_pipeline():
@@ -156,9 +156,9 @@ def test_the_cli_refuses_a_non_record_on_stderr():
 
 
 def test_the_worked_example_round_trips():
-    # examples/registry.ypy is a real record written for its own sake, not
+    # examples/registry.yap is a real record written for its own sake, not
     # as a fixture for this test -- which is what makes it worth asserting on.
-    path = Path(yapyon.__file__).parents[2] / "examples" / "registry.ypy"
+    path = Path(yapyon.__file__).parents[2] / "examples" / "registry.yap"
     if not path.exists():
         pytest.skip(f"{path} not present")
     source = path.read_text(encoding="utf-8")

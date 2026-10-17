@@ -11,7 +11,7 @@ import pytest
 from yapyon.lexer import AkanError
 from yapyon.parser import Mapping, MultiMap, Scalar, Sequence, YString, parse
 
-EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "gateway.ypy"
+EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "gateway.yap"
 
 
 def akan(text, needle=""):

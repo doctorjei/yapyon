@@ -144,7 +144,7 @@ why the spec asks every implementation to say which of the two it provides.
 A record also prints back out as yapyon, normalized:
 
 ```console
-$ python -m yapyon record examples/registry.ypy
+$ python -m yapyon record examples/registry.yap
 ```
 
 Spelling becomes canonical — double quotes, minimal escapes, block containers
@@ -190,10 +190,10 @@ From a checkout, the stages will also dump what they see:
 
 ```console
 $ pip install -e ".[dev]" && pytest -q
-$ python -m yapyon lexer  examples/gateway.ypy   # token dump
-$ python -m yapyon parser examples/gateway.ypy   # AST dump
-$ python -m yapyon tier   examples/gateway.ypy   # 2 — this one needs the resolver
-$ python -m yapyon expand examples/bridge.ypy    # level 2 in, a record out
+$ python -m yapyon lexer  examples/gateway.yap   # token dump
+$ python -m yapyon parser examples/gateway.yap   # AST dump
+$ python -m yapyon tier   examples/gateway.yap   # 2 — this one needs the resolver
+$ python -m yapyon expand examples/bridge.yap    # level 2 in, a record out
 ```
 
 Every stage writes its output to stdout and its diagnostics to stderr, and

@@ -46,7 +46,7 @@ __all__ = [
     "load_record", "loads_record", "is_record",
     # §5.2's scope search over a loaded tree, for consumers that assemble one
     "lookup",
-    # the level a document needs to mean itself (python -m yapyon.tier)
+    # the level a document needs to mean itself (python -m yapyon tier)
     "tier_of",
     # a record AST back to canonical yapyon source (python -m yapyon.record)
     "emit",

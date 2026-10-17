@@ -102,8 +102,8 @@ def test_text_that_lexes_but_does_not_parse_still_gets_a_level():
 
 def test_text_that_does_not_lex_raises_and_names_the_source():
     with pytest.raises(AkanError) as e:
-        tier_of('a: "unterminated\n', source="broken.ypn")
-    assert "broken.ypn" in str(e.value)
+        tier_of('a: "unterminated\n', source="broken.yap")
+    assert "broken.yap" in str(e.value)
 
 
 def test_tier_of_is_part_of_the_public_api():

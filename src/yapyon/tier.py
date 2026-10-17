@@ -1,9 +1,9 @@
-"""CLI: `python -m yapyon.tier FILE` — the level a document needs.
+"""CLI: `python -m yapyon tier FILE` — the level a document needs.
 
 Prints **1**, **2** or **3** on stdout and nothing else, so it composes in
 a shell test rather than needing to be parsed out of prose:
 
-    [ "$(python -m yapyon.tier cfg.ypn)" = 1 ] && echo "a minimal loader can read this"
+    [ "$(python -m yapyon tier cfg.yap)" = 1 ] && echo "a minimal loader can read this"
 
 The level is *computed from the bytes*, not read off a declaration the
 author wrote about the file. That is the whole point of it: a loader can

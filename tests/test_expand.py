@@ -197,11 +197,11 @@ def test_a_shiran_reaches_the_callers_warn_channel_as_it_happens():
 
 
 def test_the_bridged_example_is_the_one_the_readme_shows():
-    # The README shows `expand examples/bridge.ypy` as the demo, so the
-    # example has to actually cross. gateway.ypy carries a `yt` and cannot;
-    # registry.ypy starts as a record, so expanding it proves nothing.
+    # The README shows `expand examples/bridge.yap` as the demo, so the
+    # example has to actually cross. gateway.yap carries a `yt` and cannot;
+    # registry.yap starts as a record, so expanding it proves nothing.
     from pathlib import Path
-    example = Path(__file__).resolve().parent.parent / "examples" / "bridge.ypy"
+    example = Path(__file__).resolve().parent.parent / "examples" / "bridge.yap"
     src = example.read_text(encoding="utf-8")
     assert tier_of(src) == 2
     out = expand_record(src)

@@ -3,8 +3,8 @@
 #
 # `python -m yapyon expand` resolves them and emits a **record**: level 1,
 # loadable by an implementation that has no resolver at all. That crossing
-# is the point of this file. Compare registry.ypy, which starts as a record,
-# and gateway.ypy, which carries a `yt` and so cannot cross.
+# is the point of this file. Compare registry.yap, which starts as a record,
+# and gateway.yap, which carries a `yt` and so cannot cross.
 
 name: "gateway"
 version: 3.10

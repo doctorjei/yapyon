@@ -7,13 +7,13 @@ include CHANGELOG.md
 # specification travels for the same reason, and more so: the suite says
 # whether an implementation agrees, docs/ say what it is meant to agree with.
 recursive-include tests *.py
-recursive-include examples *.ypy
+recursive-include examples *.yap
 recursive-include docs *.md
-# The conformance cases are .ypy inputs and .json sidecars, not prose, and
+# The conformance cases are .yap inputs and .json sidecars, not prose, and
 # tests/test_conformance_corpus.py runs every one of them. `*.md` alone
 # shipped the corpus README without a single case. Caught 2026-10-12 before
 # 0.2.0 by listing a throwaway sdist.
-recursive-include docs/conformance *.ypy *.json
+recursive-include docs/conformance *.yap *.json
 
 # tools/ ships because tests/ depends on it: test_ref_grammar.py imports
 # check_ref_grammar to machine-check GRAMMAR §G5 against parse_ref. Without

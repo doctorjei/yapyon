@@ -354,7 +354,7 @@ def test_a_resolved_yb_string_has_no_text_form():
 def test_the_example_document_resolves():
     from pathlib import Path
     src = (Path(__file__).resolve().parent.parent
-           / "examples" / "gateway.ypy").read_text()
+           / "examples" / "gateway.yap").read_text()
     node = resolve(parse(src))
     paths = node.by_key["paths"]
     assert paths.by_key["logs"].value == "/srv/gateway/logs"

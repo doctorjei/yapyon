@@ -12,7 +12,7 @@ import pytest
 import yapyon
 from yapyon import AkanError, OrderedMultimap, Template, load, loads
 
-EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "gateway.ypy"
+EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "gateway.yap"
 
 
 def akan(text, needle=""):

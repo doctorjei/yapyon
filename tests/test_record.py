@@ -16,8 +16,8 @@ from yapyon import (AkanError, OrderedMultimap, Template, is_record,
 
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
-EXAMPLE_RECORD = EXAMPLES / "registry.ypy"
-EXAMPLE_FULL = EXAMPLES / "gateway.ypy"
+EXAMPLE_RECORD = EXAMPLES / "registry.yap"
+EXAMPLE_FULL = EXAMPLES / "gateway.yap"
 
 
 def akan(text, needle=""):
@@ -169,7 +169,7 @@ def test_the_example_record_is_one_and_both_forms_agree():
 
 
 def test_the_other_example_is_not_a_record():
-    # gateway.ypy splices, so it is the contrast the example exists against
+    # gateway.yap splices, so it is the contrast the example exists against
     assert not is_record(EXAMPLE_FULL.read_text())
 
 

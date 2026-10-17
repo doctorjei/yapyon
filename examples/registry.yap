@@ -2,7 +2,7 @@
 #
 # Nothing here is deferred — no y-strings, no templates — so `loads_record`
 # accepts it, and an implementation with no resolver at all can read it and
-# be genuinely conforming. Compare gateway.ypy, which splices and cannot.
+# be genuinely conforming. Compare gateway.yap, which splices and cannot.
 
 name: "kinemata"
 version: "0.4.2"

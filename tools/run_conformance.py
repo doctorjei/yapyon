@@ -11,7 +11,7 @@ implementation can run it against itself. This is yapyon's own runner.
 Exit status is 0 only when every case passes.
 
 **Why the expectations are hand-authored, and why they differ from their
-input.** The obvious way to produce a `.expected.ypy` is to run yapyon's
+input.** The obvious way to produce a `.expected.yap` is to run yapyon's
 own `expand` over the input and keep what comes out. That would make this
 corpus yapyon comparing itself to itself: a reader bug would be baked into
 the expectation and the case would pass forever while testing nothing. So
@@ -51,7 +51,7 @@ class Case:
 
     @property
     def name(self) -> str:
-        """`record/01-scalars.ypy` — relative to the `cases/` directory."""
+        """`record/01-scalars.yap` — relative to the `cases/` directory."""
         return self.input_path.relative_to(self.input_path.parents[1]).as_posix()
 
     def __repr__(self):
@@ -66,15 +66,15 @@ def discover(corpus_dir: Path) -> list[Case]:
         raise SystemExit(f"no corpus at {cases_dir}")
 
     for kind in ("record", "full"):
-        for input_path in sorted((cases_dir / kind).glob("*.ypy")):
-            if input_path.name.endswith(".expected.ypy"):
+        for input_path in sorted((cases_dir / kind).glob("*.yap")):
+            if input_path.name.endswith(".expected.yap"):
                 continue          # an expectation is not a case input
-            expected = input_path.with_name(input_path.stem + ".expected.ypy")
+            expected = input_path.with_name(input_path.stem + ".expected.yap")
             if not expected.exists():
                 raise SystemExit(f"{input_path}: no {expected.name} beside it")
             cases.append(Case(kind, input_path, expected))
 
-    for input_path in sorted((cases_dir / "error").glob("*.ypy")):
+    for input_path in sorted((cases_dir / "error").glob("*.yap")):
         meta_path = input_path.with_name(input_path.stem + ".meta.json")
         if not meta_path.exists():
             raise SystemExit(f"{input_path}: no {meta_path.name} beside it")

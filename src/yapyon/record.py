@@ -1,4 +1,4 @@
-"""CLI: `python -m yapyon.record FILE` — a record, normalized.
+"""CLI: `python -m yapyon record FILE` — a record, normalized.
 
 Prints the document back as **yapyon**, not as Python. A conformance tool
 whose output were a Python `repr` would be useless to the audience it exists

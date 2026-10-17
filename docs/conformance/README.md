@@ -20,11 +20,11 @@ needs an oracle.
 docs/conformance/
   README.md                 this file
   cases/
-    record/   <name>.ypy            input: a record (SPEC §12)
-              <name>.expected.ypy   the same data, as a record
-    full/     <name>.ypy            input: a full document
-              <name>.expected.ypy   what it resolves to, as a record
-    error/    <name>.ypy            input that must be refused
+    record/   <name>.yap            input: a record (SPEC §12)
+              <name>.expected.yap   the same data, as a record
+    full/     <name>.yap            input: a full document
+              <name>.expected.yap   what it resolves to, as a record
+    error/    <name>.yap            input that must be refused
               <name>.meta.json      which rule it refuses, and why
 ```
 
@@ -92,7 +92,7 @@ mapping passes `==` and fails here.
 
 ## How these cases were written, and why they differ from their input
 
-The obvious way to produce an `<name>.expected.ypy` is to run yapyon's own
+The obvious way to produce an `<name>.expected.yap` is to run yapyon's own
 `expand` over the input and keep what comes out. **That would make this
 corpus yapyon comparing itself to itself** — a reader bug would be baked
 into the expectation and the case would pass forever while testing nothing.
