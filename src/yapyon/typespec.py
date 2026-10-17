@@ -188,3 +188,109 @@ def _check_alt(node: Node, alt: Type) -> Mismatch | None:
         if miss is not None:
             return miss
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Which alternative, and how exactly (§13.3: "an exact match beats widening;
+# where several match, the first declared is taken")
+# --------------------------------------------------------------------------- #
+EXACT, WIDENED, NONE = 2, 1, 0
+
+
+def choose(node: Node, union: Union) -> tuple[Type | None, int]:
+    """The alternative a node matches — the first exact one, else the first
+    that matches by widening an `int` to a `float` — and how it matched."""
+    best, level = None, NONE
+    for alt in union:
+        here = _level(node, alt)
+        if here > level:
+            best, level = alt, here
+            if level == EXACT:
+                break
+    return best, level
+
+
+def _level(node: Node, alt: Type) -> int:
+    if isinstance(node, ResolvedTemplate):
+        return NONE
+    if alt.name == "Any":
+        return EXACT
+    found = kind_of(node)
+    if alt.item is None:
+        if found == alt.name:
+            return EXACT
+        return WIDENED if (alt.name == "float" and found == "int") else NONE
+    if found != alt.name:
+        return NONE
+    level = EXACT
+    for child in _node_children(node):
+        level = min(level, choose(child, alt.item)[1])
+        if level == NONE:
+            return NONE
+    return level
+
+
+def _node_children(node: Node) -> list:
+    if isinstance(node, Sequence):
+        return node.items
+    if isinstance(node, Mapping):
+        return [pair.value for pair in node.pairs]
+    if isinstance(node, MultiMap):
+        return [entry.value for entry in node.entries]
+    return []
+
+
+def value_kind(value) -> str:
+    """The §13.3 name of a host value a function returned."""
+    from .multimap import OrderedMultimap
+    if value is None:
+        return "None"
+    if isinstance(value, bool):
+        return "bool"
+    for py, name in ((int, "int"), (float, "float"), (str, "str"),
+                     (bytes, "bytes")):
+        if isinstance(value, py):
+            return name
+    if isinstance(value, OrderedMultimap):
+        return "multimap"
+    if isinstance(value, dict):
+        return "dict"
+    if isinstance(value, (list, tuple)):
+        return "list"
+    return type(value).__name__
+
+
+def choose_value(value, union: Union) -> tuple[Type | None, int]:
+    """`choose`, for a returned host value."""
+    best, level = None, NONE
+    for alt in union:
+        here = _value_level(value, alt)
+        if here > level:
+            best, level = alt, here
+            if level == EXACT:
+                break
+    return best, level
+
+
+def _value_level(value, alt: Type) -> int:
+    if alt.name == "Any":
+        return EXACT
+    found = value_kind(value)
+    if alt.item is None:
+        if found == alt.name:
+            return EXACT
+        return WIDENED if (alt.name == "float" and found == "int") else NONE
+    if found != alt.name:
+        return NONE
+    if found == "list":
+        children = list(value)
+    elif found == "dict":
+        children = list(value.values())
+    else:
+        children = [entry.value for entry in value]
+    level = EXACT
+    for child in children:
+        level = min(level, choose_value(child, alt.item)[1])
+        if level == NONE:
+            return NONE
+    return level

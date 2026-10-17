@@ -37,7 +37,7 @@ CFG = 'cfg:\n  name: "gw"\n  port: 8080\n'
                                   "lexemes"),
     ("cfg.__AS_JSON__(lexemes=True, lexemes=False)", "lexemes is repeated"),
     ("cfg.__AS_XML__()", "there is no built-in named __AS_XML__()"),
-    ("f(cfg)", "f() is not a built-in, and no contract declares it"),
+    ("f(cfg)", "f() is not a built-in, and no contract was given"),
 ])
 def test_a_call_s_shape_is_checked(hole, needle):
     akan(CFG + f'u: y"{{{hole}}}"\n', needle)

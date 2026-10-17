@@ -41,7 +41,9 @@ neither, since both are resolver limits.
 from __future__ import annotations
 
 from ._digits import REFUSE_DIGITS
-from .lexer import AkanError, Lexer, RefError, Yakamashiwa, fold_name
+from .contract import Functions
+from .lexer import (AkanError, Lexer, Ref, RefError, Yakamashiwa, fold_name,
+                    is_dunder, parse_ref)
 from .multimap import OrderedMultimap
 from .parser import (Mapping, MultiMap, Pair, Parser, ResolvedTemplate,
                      Scalar, Sequence, YString)
@@ -93,14 +95,17 @@ def _hole(part, source: str | None) -> Hole:
 
 def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
           max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
-          source: str | None = None):
+          contract=None, provide=None, source: str | None = None):
     """Load a document from text.
 
     `source` names the text for diagnostics — pass it when the caller knows
     where the bytes came from, and every akan reports `name:line:col`.
     `max_depth`, `max_size`, and `max_digits` are this implementation's
     refusal ceilings (SPEC §5.3, §3.1); past the spec's warn thresholds a
-    document draws shiran, past these it is akan.
+    document draws shiran, past these it is akan. `contract` (from
+    `loads_contract`) declares the functions the document may call, and
+    `provide` maps a `symbol` to the code for each declared without `from`
+    (SPEC §13.2).
     """
     lexer = Lexer(text, source=source, max_digits=max_digits)
     parser = Parser(lexer.tokenize(), lexer.warnings, source=source)
@@ -109,20 +114,31 @@ def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
         for message in parser.warnings:
             warn(message)
     return build(resolve(tree, warn=warn, max_depth=max_depth,
-                         max_size=max_size, source=source), source)
+                         max_size=max_size, max_digits=max_digits,
+                         functions=_functions(contract, provide),
+                         source=source), source)
+
+
+def _functions(contract, provide):
+    if contract is None:
+        if provide:
+            raise TypeError("provide= supplies code for a contract's "
+                            "functions; pass contract= too")
+        return None
+    return Functions(contract, provide)
 
 
 def load(fp, *, warn=None, max_depth: int = REFUSE_DEPTH,
          max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
-         source: str | None = None):
+         contract=None, provide=None, source: str | None = None):
     """Load a document from an open file (text mode, UTF-8).
 
     `source` defaults to the file's own name when it has one, so reading a
     file gets located diagnostics without the caller asking.
     """
     return loads(fp.read(), warn=warn, max_depth=max_depth,
-                 max_size=max_size, max_digits=max_digits,
-                 source=_name_of(fp, source))
+                 max_size=max_size, max_digits=max_digits, contract=contract,
+                 provide=provide, source=_name_of(fp, source))
 
 
 # --------------------------------------------------------------------------- #
@@ -188,13 +204,25 @@ def is_record(text: str, *, source: str | None = None) -> bool:
 _TIER3_KINDS: frozenset = frozenset()
 
 
+def _calls_declared(ref) -> bool:
+    """Does a parsed reference call anything that is not a built-in?"""
+    if ref.call is None:
+        return any(kind == "ref" and _calls_declared(step)
+                   for kind, step in ref.steps)
+    if not is_dunder(ref.call.name):
+        return True
+    args = list(ref.call.args) + [value for _, value in ref.call.kwargs]
+    return any(isinstance(arg, Ref) and _calls_declared(arg) for arg in args)
+
+
 def tier_of(text: str, *, source: str | None = None) -> int:
     """The lowest loader capability `text` needs in order to mean itself.
 
     **1** — a record. Every leaf is a literal, so no resolver is needed at
-    all (§12). **2** — self-contained. The document's own bytes decide its
-    meaning, with the resolver in hand (law 3). **3** — meaning needs
-    something outside the document; unreachable today, see `_TIER3_KINDS`.
+    all (§12). **2** — a template: the document's own bytes decide its
+    meaning, with the resolver in hand, built-in calls included. **3** — an
+    assembly: it calls a function a contract declares (§13.1), so its
+    meaning needs the contract and the code.
 
     The axis is **closure, not power**: what you must have in hand to know
     what the document means. It is *lexically* decidable, which is what
@@ -208,8 +236,12 @@ def tier_of(text: str, *, source: str | None = None) -> int:
     and the parse error surfaces when it is loaded. Text that does not lex
     raises, there being no document to answer about — hence `source`.
     """
-    kinds = {tok.kind for tok in Lexer(text, source=source).tokenize()}
-    if kinds & _TIER3_KINDS:
+    tokens = Lexer(text, source=source).tokenize()
+    kinds = {tok.kind for tok in tokens}
+    if kinds & _TIER3_KINDS or any(_calls_declared(parse_ref(ref))
+                                   for tok in tokens
+                                   for part, ref in tok.parts
+                                   if part == "hole"):
         return 3
     if kinds & _DEFERRED_KINDS:
         return 2
@@ -271,8 +303,8 @@ class _PathResolver(Resolver):
     anchors, serializers — is the parent class's, which is the point.
     """
 
-    def __init__(self, tree, where: str):
-        super().__init__(tree)
+    def __init__(self, tree, where: str, functions=None):
+        super().__init__(tree, functions=functions)
         self._where = where
 
     def _akan(self, msg: str, at):
@@ -291,7 +323,7 @@ class _PathResolver(Resolver):
         return super()._key_of(parsed, ref, site)
 
 
-def lookup(tree, current, ref: str):
+def lookup(tree, current, ref: str, *, contract=None, provide=None):
     """Resolve `ref` the way a hole written inside `current` would.
 
     `tree` is what `loads` returns — or several such trees a consumer has
@@ -334,7 +366,8 @@ def lookup(tree, current, ref: str):
     where = _where(path)
     probe = YString(0, 0, "y", [("hole", ref)])
     try:
-        found = _PathResolver(root, where)._lookup(
+        found = _PathResolver(root, where,
+                              _functions(contract, provide))._lookup(
             ref, _Site(probe, chain, None))
     except RefError as exc:
         raise _PathAkan(f"{{{ref}}}: {exc}", where) from None

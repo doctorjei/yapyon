@@ -41,7 +41,9 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from ._digits import decimal_text
+from ._digits import REFUSE_DIGITS, decimal_text
+from .contract import (BindError, Declared, Lender, ResultError,
+                       float_misfit, result_node)
 from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
@@ -161,8 +163,12 @@ def _dollar_hint_for(node, name: str) -> str:
 class Resolver:
     def __init__(self, tree: Node, *, max_depth: int = REFUSE_DEPTH,
                  max_size: int = REFUSE_SIZE, warn=None,
-                 source: str | None = None):
+                 source: str | None = None, functions=None,
+                 max_digits: int = REFUSE_DIGITS):
         self.root = tree
+        self.functions = functions           # a contract.Functions, or None
+        self.max_digits = max_digits         # §3.1, for function results
+        self._lender = Lender()              # one per load: borrows keep identity
         self.source = source                 # a name for diagnostics, if known
         self.max_depth = max_depth           # §5.3 refusal ceiling, not the
         self.max_size = max_size             # warn tier -- see the constants
@@ -432,7 +438,10 @@ class Resolver:
             kwargs[name] = node
         depth = max(map(self._deep_depth, args + list(kwargs.values())),
                     default=0)
-        result = self._builtin(builtin, call, args[0], kwargs, ref, site)
+        if isinstance(builtin, Declared):
+            result = self._declared(builtin, call, args, ref, site)
+        else:
+            result = self._builtin(builtin, call, args[0], kwargs, ref, site)
         self._depth[id(result)] = depth
         return result
 
@@ -446,8 +455,7 @@ class Resolver:
                            f"in {call.name}()", site.node)
             seen.add(name)
         if not is_dunder(call.name):
-            self._akan(f"{{{ref}}}: {call.name}() is not a built-in, and no "
-                       f"contract declares it (SPEC §13.2)", site.node)
+            return self._declared_shape(call, ref, site)
         builtin = SERIALIZERS.get(call.name)
         if builtin is None:
             self._akan(f"{{{ref}}}: there is no built-in named {call.name}(); "
@@ -463,6 +471,67 @@ class Resolver:
                 self._akan(f"{{{ref}}}: {call.name}() has no keyword "
                            f"argument {name}; {offer}", site.node)
         return builtin
+
+    def _declared_shape(self, call: Call, ref: str, site: _Site) -> Declared:
+        declared = None if self.functions is None else \
+            self.functions.get(call.name)
+        if declared is None:
+            where = ("no contract was given to the loader"
+                     if self.functions is None else "the contract does not "
+                     "declare it")
+            self._akan(f"{{{ref}}}: {call.name}() is not a built-in, and "
+                       f"{where} (SPEC §13.2)", site.node)
+        if call.kwargs:
+            self._akan(f"{{{ref}}}: keyword arguments belong to built-ins in "
+                       f"this version; pass {call.kwargs[0][0]} to "
+                       f"{call.name}() by position (SPEC §13.7)", site.node)
+        if len(call.args) != len(declared.params):
+            names = ", ".join(name for name, _ in declared.params)
+            self._akan(f"{{{ref}}}: {call.name}() takes "
+                       f"{len(declared.params)} argument"
+                       f"{'' if len(declared.params) == 1 else 's'} "
+                       f"({names}), not {len(call.args)}", site.node)
+        return declared
+
+    def _declared(self, declared: Declared, call: Call, args: list,
+                  ref: str, site: _Site) -> Node:
+        """A declared function (§13.2–§13.5): every argument checked deep
+        against its parameter, the code found and called with borrows, and
+        its result checked against `returns` and made fresh data. A failure
+        is akan naming the function — never a host traceback."""
+        values = []
+        for (pname, ptype), node in zip(declared.params, args):
+            template = _template_in(node)
+            miss = check(node, ptype)
+            if template is not None or miss is not None:
+                where = template if template is not None else miss.node
+                found = "a template" if template is not None else miss.found
+                inner = ("" if where is node or miss is None else
+                         f"; here it wants {show(miss.wanted)}")
+                self._akan(f"{{{ref}}}: {call.name}()'s parameter {pname} "
+                           f"takes {show(ptype)}{inner}, not {found}", where)
+            misfit = float_misfit(node, ptype)
+            if misfit is not None:
+                self._akan(f"{{{ref}}}: {call.name}()'s parameter {pname} "
+                           f"takes a float, and this int has none (it is "
+                           f"outside the float range)", misfit)
+            values.append(self._lender.value(node, ptype))
+        try:
+            code = self.functions.code(declared)
+        except BindError as exc:
+            self._akan(f"{{{ref}}}: {exc}", site.node)
+        try:
+            result = code(*values)
+        except Exception as exc:                 # §13.5: never a traceback
+            self._akan(f"{{{ref}}}: {call.name}() failed: "
+                       f"{type(exc).__name__}: {exc}", site.node)
+        try:
+            return result_node(result, declared.returns, site.node,
+                               max_digits=self.max_digits,
+                               warn=lambda m: self._shiran(
+                                   f"{{{ref}}}: {call.name}() {m}", site.node))
+        except ResultError as exc:
+            self._akan(f"{{{ref}}}: {call.name}() {exc}", site.node)
 
     def _argument(self, arg, call: Call, ref: str, site: _Site) -> Node:
         """One argument's value: a literal, a nested call's result, a key,
@@ -805,7 +874,8 @@ def splice_text(target: Node) -> tuple[str | None, str]:
 
 def resolve(tree: Node, *, max_depth: int = REFUSE_DEPTH,
             max_size: int = REFUSE_SIZE, warn=None,
-            source: str | None = None) -> Node:
+            source: str | None = None, functions=None,
+            max_digits: int = REFUSE_DIGITS) -> Node:
     """Resolve every y/ry/yb literal in `tree`, in place. Returns the tree
     (which may itself be replaced, if the whole document was a y-string).
 
@@ -813,4 +883,5 @@ def resolve(tree: Node, *, max_depth: int = REFUSE_DEPTH,
     tier: past them is an akan, past `MAX_DEPTH` / `MAX_SIZE` is a shiran.
     """
     return Resolver(tree, max_depth=max_depth, max_size=max_size,
-                    warn=warn, source=source).resolve()
+                    warn=warn, source=source, functions=functions,
+                    max_digits=max_digits).resolve()

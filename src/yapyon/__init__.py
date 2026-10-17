@@ -29,6 +29,7 @@ from .loader import (build, is_record, load, load_record, loads, loads_record,
                     lookup, tier_of)
 from .emitter import emit
 from .expand import expand_record
+from .contract import Contract, load_contract, loads_contract
 
 __version__ = "0.2.1"
 
@@ -46,6 +47,8 @@ __all__ = [
     "load_record", "loads_record", "is_record",
     # §5.2's scope search over a loaded tree, for consumers that assemble one
     "lookup",
+    # contracts: the functions a document may call (SPEC §13.2)
+    "load_contract", "loads_contract", "Contract",
     # the level a document needs to mean itself (python -m yapyon tier)
     "tier_of",
     # a record AST back to yapyon source (python -m yapyon record)
