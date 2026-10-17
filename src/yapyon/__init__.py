@@ -31,7 +31,7 @@ from .emitter import emit
 from .expand import expand_record
 from .contract import Contract, load_contract, loads_contract
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 #: GRAMMAR §G4.1 asks every implementation to document where its identifier
 #: tables come from. yapyon's are generated from this Unicode version by

@@ -9,7 +9,7 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## 0.3.0 — Unreleased
+## 0.3.0 — 2026-10-17
 
 The specification is **v0.3**, and this release builds it. Holes take
 **calls**: the serializers become built-in functions, and a document may
@@ -46,7 +46,9 @@ instead of refusing it. **Several changes are breaking** — see Changed.
   `__AS_YAPYON__()` write each literal's lexeme — `'x'` keeps its quotes,
   `r"..."` stays raw, a key stays as spelled before folding — and use the
   canonical form only for values with none; canonical bytes are `b"..."`.
-  A short flat list is written on one line.
+  A short flat list is written on one line. `Hole.lexeme` in a template
+  now carries a string's or bytes' lexeme too, quotes and prefix included
+  (§6.2), where it was empty for them.
 - **The file extension is `.yap`** (was `.ypy`) for the examples and the
   conformance corpus.
 - **Literals that were silently wrong are akan:** a float literal that
