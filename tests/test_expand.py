@@ -112,13 +112,13 @@ def test_bytes_keep_their_spelling_across_the_bridge():
 def test_a_yt_is_refused_because_a_record_has_no_template_form():
     with pytest.raises(AkanError) as e:
         expand_record('y: "z"\nt: yt"x {y}"\n')
-    assert "no record form" in str(e.value)
+    assert "yeeted yt" in str(e.value)
 
 
 def test_the_yt_refusal_names_the_fix():
     with pytest.raises(AkanError) as e:
         expand_record('y: "z"\nt: yt"x {y}"\n')
-    assert 'write y"..."' in str(e.value)
+    assert "Use a y-string to join them" in str(e.value)
 
 
 def test_the_yt_refusal_points_at_the_yt():
@@ -146,7 +146,7 @@ def test_the_yt_refusal_precedes_resolution():
     src = 'a: y"{b}"\nb: y"{a}"\nt: yt"{a}"\n'
     with pytest.raises(AkanError) as e:
         expand_record(src)
-    assert "no record form" in str(e.value)
+    assert "yeeted yt" in str(e.value)
 
 
 # --------------------------------------------------------------------------- #
@@ -239,7 +239,7 @@ def test_the_cli_shows_a_shiran_without_failing():
 def test_the_cli_refuses_a_yt_on_stderr():
     done = run(["expand"], 'y: "z"\nt: yt"x {y}"\n')
     assert done.stdout == ""
-    assert "no record form" in done.stderr
+    assert "yeeted yt" in done.stderr
     assert done.returncode == 1
 
 

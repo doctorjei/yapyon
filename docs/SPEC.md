@@ -377,9 +377,10 @@ call one from. The format defines:
 arguments belong to built-ins only in this version (§13.7).
 
 `{cfg.__AS_JSON__()}` is the receiver spelling of `{__AS_JSON__(cfg)}`;
-both are legal (§13.1). A result is a `str`, so chaining one
-serializer onto another (`{a.__AS_JSON__().__AS_YAML__()}`) is a type
-error at the second link. **A dunder call that names none of these is
+both are legal (§13.1). A result is a `str`, and a chain is checked like
+any call: `{a.__AS_JSON__().__AS_YAML__()}` writes the JSON text as a YAML
+string, while `{a.__AS_JSON__().__AS_TOML__()}` is a type error at the
+second link, since `__AS_TOML__` takes a table. **A dunder call that names none of these is
 akan** at the call, naming the serializers that exist: a dunder call names
 a built-in or nothing.
 

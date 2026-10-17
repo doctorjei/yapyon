@@ -37,7 +37,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1115 tests** on the current tree; the number here tracks the tree,
+suite is **1187 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 This is the **self-contained tier**: every document resolves from its own

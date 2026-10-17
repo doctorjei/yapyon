@@ -3,9 +3,11 @@
 `{cfg.__AS_JSON__()}` is the author naming a container's encoding, exactly as
 `b64"..."` names bytes→text. Law 5's bridge, for containers.
 
-**A serializer is an encoding, not a function.** No arguments, no composition,
-and this set belongs to the *format* — which is the boundary between these and
-consumer-registered functions. Naming an encoding is not computing a value.
+**Serializers are the format's built-in functions** (SPEC §5.1.2, §13.1):
+called like any function, type-checked against the signatures declared in
+`SERIALIZERS` below, and applied on the resolver's one call path. The set
+belongs to the *format*, which is what makes them dunders: a contract
+declares a consumer's functions, and no contract declares these.
 
 Stdlib only, by the same rule as the rest of the core. `tomllib` reads TOML and
 cannot write it, and there is no YAML in the stdlib at all, so the TOML and
@@ -37,6 +39,8 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
+from typing import Callable
 
 from ._digits import decimal_text
 from .emitter import emit
@@ -54,7 +58,7 @@ class NotEncodable(Exception):
 # --------------------------------------------------------------------------- #
 # JSON
 # --------------------------------------------------------------------------- #
-def to_json(value) -> str:
+def to_json(value, *, lexemes: bool = True) -> str:
     """Indented JSON, keys in document order.
 
     Indented rather than compact because the use these exist for is writing a
@@ -71,7 +75,7 @@ def to_json(value) -> str:
 _TOML_BARE = re.compile(r"[A-Za-z0-9_-]+")
 
 
-def to_toml(value) -> str:
+def to_toml(value, *, lexemes: bool = True) -> str:
     """TOML, nesting mappings into tables and lists of mappings into `[[tables]]`.
 
     A TOML document *is* a table, so the top level must be a mapping. `None`
@@ -315,17 +319,40 @@ def _refuse_bytes(value, fmt: str) -> None:
             _refuse_bytes(val, fmt)
 
 
+@dataclass(frozen=True)
+class Builtin:
+    """One built-in function (SPEC §5.1.2, §13.1): its writer, the §13.3
+    type of its one positional parameter, and its keyword parameters as
+    `name -> (type, default)`. `reads_ast` marks a writer handed the resolved
+    **AST** rather than plain values — only a writer whose output is yapyon
+    source, since everywhere else a number encodes by the target format's
+    own rules and the lexeme is moot."""
+    write: Callable[..., str]
+    takes: str
+    keywords: dict = field(default_factory=dict)
+    reads_ast: bool = False
+    #: said after a mismatch on the argument itself, where the signature
+    #: alone would not explain the refusal
+    note: str = ""
+
+
 SERIALIZERS = {
-    "__AS_JSON__": to_json,
-    "__AS_TOML__": to_toml,
-    "__AS_YAML__": to_yaml,
-    "__AS_YAPYON__": to_yapyon,
+    "__AS_JSON__": Builtin(to_json, "Any", {"lexemes": ("bool", True)}),
+    "__AS_TOML__": Builtin(to_toml, "dict[str, Any] | multimap[str, Any]",
+                           {"lexemes": ("bool", True)},
+                           note="a TOML document is a table, with no "
+                                "top-level form for a list or a single value"),
+    "__AS_YAML__": Builtin(to_yaml, "Any"),
+    "__AS_YAPYON__": Builtin(to_yapyon, "Any", reads_ast=True),
 }
 
-#: The writers handed the resolved **AST** rather than plain values. Only a
-#: writer whose output is yapyon source belongs here — everywhere else a
-#: number encodes by the target format's own rules, and the lexeme is moot.
-READS_AST = frozenset({"__AS_YAPYON__"})
+#: Derived, like `SERIALIZER_NAMES` below: the names whose writer reads the AST.
+READS_AST = frozenset(name for name, b in SERIALIZERS.items() if b.reads_ast)
+
+#: §5.1.2's one message for a `yt` reaching a record writer — every
+#: serializer and `expand_record` alike, so they cannot come to disagree.
+YEETED_YT = ("yeeted yt; a record cannot hold a template's unjoined parts. "
+             "Use a y-string to join them.")
 
 #: The names the grammar accepts (SPEC §5.1.2). **Derived** from `SERIALIZERS`
 #: rather than restated: the two used to be written out separately, so a fourth

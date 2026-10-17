@@ -42,11 +42,12 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from ._digits import decimal_text
-from .lexer import (DOLLAR_HINT, AkanError, Ref, Yakamashiwa, fold_name,
-                    is_dunder, parse_ref)
+from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
+                    fold_name, is_dunder, parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
-from .serializers import READS_AST, SERIALIZERS, NotEncodable
+from .serializers import SERIALIZERS, YEETED_YT, NotEncodable
+from .typespec import check, parse_type, show
 
 # §5.3 defines two tiers, and they are not the same number.
 #
@@ -405,48 +406,128 @@ class Resolver:
         return Scalar(site.node.line, site.node.col, "str", name)
 
     # -- §13.1 calls ----------------------------------------------------------
-    def _call(self, call, ref: str, site: _Site) -> Node:
-        """Apply a call. **Interim (build stage 1):** only the 0.2 shape —
-        one serializer applied to a path, no keywords — resolves; every
-        other call the grammar now admits akans until stage 6 builds §13.1."""
-        if is_dunder(call.name) and call.name not in SERIALIZERS:
+    def _call(self, call: Call, ref: str, site: _Site) -> Node:
+        """Apply a call (§13.1): its shape first, then its arguments
+        inside-out and left to right, then the function.
+
+        Returns the result node — or, where an argument is not resolved yet,
+        the `YString` it waits on. `_try` defers on that exactly as it does
+        on a hole whose target is unresolved, so a call waits **at every
+        level of nesting and every link of a chain**, and two calls waiting
+        on each other stall the fixpoint and are reported as §5.3's cycle.
+        A new path into the fixpoint must be able to reach every outcome it
+        defines, not only success (trap 9)."""
+        builtin = self._call_shape(call, ref, site)
+        args = []
+        for arg in call.args:
+            node = self._argument(arg, call, ref, site)
+            if isinstance(node, YString):
+                return node
+            args.append(node)
+        kwargs = {}
+        for name, arg in call.kwargs:
+            node = self._argument(arg, call, ref, site)
+            if isinstance(node, YString):
+                return node
+            kwargs[name] = node
+        depth = max(map(self._deep_depth, args + list(kwargs.values())),
+                    default=0)
+        result = self._builtin(builtin, call, args[0], kwargs, ref, site)
+        self._depth[id(result)] = depth
+        return result
+
+    def _call_shape(self, call: Call, ref: str, site: _Site):
+        """Name, arity, and keywords — fixed by the call as written, so
+        checked before any argument is (§13.5)."""
+        seen = set()
+        for name, _ in call.kwargs:
+            if name in seen:
+                self._akan(f"{{{ref}}}: keyword argument {name} is repeated "
+                           f"in {call.name}()", site.node)
+            seen.add(name)
+        if not is_dunder(call.name):
+            self._akan(f"{{{ref}}}: {call.name}() is not a built-in, and no "
+                       f"contract declares it (SPEC §13.2)", site.node)
+        builtin = SERIALIZERS.get(call.name)
+        if builtin is None:
             self._akan(f"{{{ref}}}: there is no built-in named {call.name}(); "
                        f"yapyon defines "
                        f"{', '.join(n + '()' for n in SERIALIZERS)}", site.node)
-        target = call.args[0] if len(call.args) == 1 else None
-        if (not is_dunder(call.name) or call.kwargs
-                or not isinstance(target, Ref) or target.call is not None
-                or target.key):
-            self._akan(f"{{{ref}}}: this call is well-formed, but calls other "
-                       f"than a serializer on a path are not built yet",
-                       site.node)
-        return self._serialize(call.name, target, ref, site)
+        if len(call.args) != 1:
+            self._akan(f"{{{ref}}}: {call.name}() takes one argument "
+                       f"({builtin.takes}), not {len(call.args)}", site.node)
+        for name, _ in call.kwargs:
+            if name not in builtin.keywords:
+                offer = (f"it takes {', '.join(builtin.keywords)}"
+                         if builtin.keywords else "it takes none")
+                self._akan(f"{{{ref}}}: {call.name}() has no keyword "
+                           f"argument {name}; {offer}", site.node)
+        return builtin
 
-    # -- §5.1.2 named serializers -------------------------------------------
-    def _serialize(self, serializer: str, parsed: Ref, ref: str,
-                   site: _Site) -> Node:
-        """`{cfg.__AS_JSON__()}` — the author naming a container's encoding.
+    def _argument(self, arg, call: Call, ref: str, site: _Site) -> Node:
+        """One argument's value: a literal, a nested call's result, a key,
+        or a **borrow** — the node a reference names, lent as it is (§13.1).
+        A borrow is ready only when nothing in its subtree is pending."""
+        if isinstance(arg, Literal):
+            return _literal_node(arg, site.node)
+        if arg.call is not None:
+            return self._call(arg.call, ref, site)
+        if arg.key:
+            return self._key_of(arg, ref, site)
+        node = self._lookup_parsed(arg, ref, site)
+        if _contains(node, site.node):
+            # §13.1: an argument may not contain the call site. For an anchor
+            # the grammar already refuses it; any other reference is checked
+            # here, when it resolves, and the akan still lands at parse.
+            self._akan(f"{{{ref}}}: {arg.text} contains this hole, so "
+                       f"{call.name}() would need the value it is computing; "
+                       f"name a block that does not contain it", site.node)
+        pending = _pending(node)
+        return pending if pending is not None else node
 
-        A serializer is a built-in function (§5.1.2); stage 6 of the 0.3.0
-        build moves this onto §13.1's one call path. Until then it is
-        reached only through `_call`'s interim shape."""
-        target = self._lookup_parsed(parsed, ref, site)
-        if not isinstance(target, (Mapping, Sequence, MultiMap)):
-            self._akan(f"{{{ref}}}: {serializer}() encodes a list or a "
-                       f"mapping; applying one to a single value is reserved",
-                       site.node)
+    def _builtin(self, builtin, call: Call, target: Node, kwargs: dict,
+                 ref: str, site: _Site) -> Node:
+        """A built-in (§5.1.2): type-check, then write. A `yt` anywhere in the
+        argument draws §5.1.2's one message, shared with `expand_record`."""
+        template = _template_in(target)
+        if template is not None:
+            self._akan(f"{{{ref}}}: {YEETED_YT}", template)
+        miss = check(target, _signature(builtin.takes))
+        if miss is not None:
+            note = (f" -- {builtin.note}"
+                    if builtin.note and miss.node is target else "")
+            self._akan(f"{{{ref}}}: {call.name}() takes {show(miss.wanted)}, "
+                       f"not {miss.found}{note}", miss.node)
+        options = {}
+        for name, node in kwargs.items():
+            wanted, _ = builtin.keywords[name]
+            miss = check(node, _signature(wanted))
+            if miss is not None:
+                self._akan(f"{{{ref}}}: {call.name}()'s {name} takes "
+                           f"{show(miss.wanted)}, not {miss.found}", miss.node)
+            options[name] = node.value
         try:
-            if serializer in READS_AST:
-                text = SERIALIZERS[serializer](_settled(target))
+            if builtin.reads_ast:
+                text = builtin.write(_settled(target), **options)
             else:
-                text = SERIALIZERS[serializer](_plain(target))
+                text = builtin.write(_plain(target), **options)
         except _NotYet as pending:
-            # Hand the unresolved node back: `_try` defers on a YString, so
-            # this rejoins the ordinary fixpoint instead of pre-empting it.
-            return pending.node
+            # Unreachable while `_argument` waits for the whole subtree, and
+            # kept so that a change there fails loudly rather than as the
+            # wrong diagnosis (trap 9).
+            raise Yakamashiwa(f"{call.name}() reached an unresolved node "
+                              f"after its argument was judged ready") from None
         except NotEncodable as exc:
             self._akan(f"{{{ref}}}: {exc}", site.node)
         return Scalar(site.node.line, site.node.col, "str", text)
+
+    def _deep_depth(self, node: Node) -> int:
+        """The longest dependency chain behind anything in `node` (§5.3):
+        an argument borrowed whole carries the chains of what it holds."""
+        best = self._depth.get(id(node), 0)
+        for child in _children(node):
+            best = max(best, self._deep_depth(child))
+        return best
 
     def _too_far(self, hops: int, site: _Site) -> str:
         depth = len(site.chain)
@@ -575,9 +656,7 @@ def _settled(node: Node) -> Node:
     if isinstance(node, YString):
         raise _NotYet(node)
     if isinstance(node, ResolvedTemplate):
-        raise NotEncodable("a `yt` delivers its parts unjoined (§6) and a "
-                           "record's leaves must all be literals, so there is "
-                           "no yapyon record form for a template")
+        raise NotEncodable(YEETED_YT)
     if isinstance(node, Mapping):
         for pair in node.pairs:
             _settled(pair.value)
@@ -588,6 +667,65 @@ def _settled(node: Node) -> Node:
         for item in node.items:
             _settled(item)
     return node
+
+
+def _children(node: Node) -> list:
+    if isinstance(node, Mapping):
+        return [pair.value for pair in node.pairs]
+    if isinstance(node, MultiMap):
+        return [entry.value for entry in node.entries]
+    if isinstance(node, Sequence):
+        return list(node.items)
+    return []
+
+
+def _pending(node: Node) -> YString | None:
+    """The first unresolved y-string in `node`'s subtree, or None."""
+    if isinstance(node, YString):
+        return node
+    for child in _children(node):
+        found = _pending(child)
+        if found is not None:
+            return found
+    return None
+
+
+def _contains(node: Node, target: Node) -> bool:
+    """Is `target` inside `node` — by identity, since a borrow is the node?"""
+    return any(child is target or _contains(child, target)
+               for child in _children(node))
+
+
+def _template_in(node: Node) -> ResolvedTemplate | None:
+    if isinstance(node, ResolvedTemplate):
+        return node
+    for child in _children(node):
+        found = _template_in(child)
+        if found is not None:
+            return found
+    return None
+
+
+_SIGNATURES: dict[str, tuple] = {}
+
+
+def _signature(text: str):
+    """A built-in's parameter type, parsed once."""
+    if text not in _SIGNATURES:
+        _SIGNATURES[text] = parse_type(text)
+    return _SIGNATURES[text]
+
+
+def _literal_node(literal: Literal, at: Node) -> Scalar:
+    """A literal argument as the node it would be as a value. It has no
+    position of its own inside the hole, so it takes the hole's."""
+    tok = literal.token
+    kind = {"STRING": "str", "BYTES": "bytes", "INT": "int",
+            "FLOAT": "float"}.get(tok.kind)
+    if kind is None:
+        kind = "bool" if isinstance(tok.value, bool) else "none"
+    return Scalar(at.line, at.col, kind, tok.value, lexeme=literal.lexeme,
+                  prefix=tok.prefix)
 
 
 def _plain(node: Node):

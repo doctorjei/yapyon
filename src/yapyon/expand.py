@@ -44,6 +44,7 @@ from ._digits import REFUSE_DIGITS
 from .lexer import AkanError, Lexer
 from .parser import Parser
 from .resolver import REFUSE_DEPTH, REFUSE_SIZE, resolve
+from .serializers import YEETED_YT
 
 
 def _refuse_template(tokens, source: str | None = None) -> None:
@@ -62,12 +63,7 @@ def _refuse_template(tokens, source: str | None = None) -> None:
     """
     for tok in tokens:
         if tok.kind == "YTSTR":
-            raise AkanError(
-                "a `yt` delivers its parts unjoined (§6) and a record's "
-                "leaves must all be literals, so there is no record form "
-                "for a template; write y\"...\" if the joined string is "
-                "what you meant, or keep the document in the full form",
-                tok.line, tok.col, source)
+            raise AkanError(YEETED_YT, tok.line, tok.col, source)
 
 
 def _expand(text: str, source: str | None = None, *,

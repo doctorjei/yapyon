@@ -98,7 +98,7 @@ def test_as_yapyon_refuses_a_template_in_its_target():
     # a record's leaves are literals; joining the parts would render what §6
     # leaves to the consumer, and make `yt` silently mean `y`
     akan('who: "x"\ncfg:\n  t: yt"hi {who}"\nout: y"{cfg.__AS_YAPYON__()}"\n',
-         "`yt`")
+         "yeeted yt; a record cannot hold a template's unjoined parts")
 
 
 def test_a_template_outside_the_target_is_untouched():
@@ -133,5 +133,6 @@ def test_as_yapyon_on_a_bare_anchor_is_circular(ref):
         loads(f'blk:\n  a: 1\n  me: y"{{{ref}}}"\n')
 
 
-def test_as_yapyon_of_a_single_value_is_reserved():
-    akan('n: 5\nu: y"{n.__AS_YAPYON__()}"\n', "is reserved")
+def test_as_yapyon_of_a_single_value_is_that_value_as_written():
+    # SPEC §5.1.2 v0.3: single values are accepted (operator, 2026-10-14)
+    assert loads('n: 0x05\nu: y"{n.__AS_YAPYON__()}"\n')["u"] == "0x05\n"

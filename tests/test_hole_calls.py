@@ -213,12 +213,7 @@ def test_an_unclosed_hole_does_not_swallow_the_document(doc, needle):
     assert needle in str(e.value)
 
 
-def test_a_call_in_a_document_is_well_formed_but_not_yet_built():
-    # interim, build stage 1: calls parse, and only a serializer on a path
-    # resolves; stage 6 replaces this test with §13.1's rules
-    with pytest.raises(AkanError) as e:
-        loads('a:\n  x: 1\nu: y"{f(a)}"\n')
-    assert "not built yet" in str(e.value)
+def test_the_receiver_form_and_the_call_form_resolve_alike():
     assert loads('a:\n  x: 1\nu: y"{__AS_JSON__(a)}"\n')["u"] == \
         loads('a:\n  x: 1\nu: y"{a.__AS_JSON__()}"\n')["u"]
 

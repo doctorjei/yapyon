@@ -394,7 +394,10 @@ def test_toml_has_no_null_so_none_is_akan():
 
 
 def test_a_toml_document_is_a_table():
-    akan('xs: [1, 2]\nu: y"{xs.__AS_TOML__()}"\n', "needs a mapping")
+    # SPEC §5.1.2: __AS_TOML__ refuses by signature
+    akan('xs: [1, 2]\nu: y"{xs.__AS_TOML__()}"\n',
+         "__AS_TOML__() takes dict[str, Any] | multimap[str, Any], not list")
+    akan('n: 5\nu: y"{n.__AS_TOML__()}"\n', "a TOML document is a table")
 
 
 # --------------------------------------------------------------------------- #
@@ -531,9 +534,11 @@ def test_yapyon_does_not_prune():
     assert '"blank": ""' in d["u"] and '"unset": null' in d["u"]
 
 
-def test_serializing_a_single_value_is_reserved():
-    # narrowing later would not be compatible; this leaves the door open
-    akan('n: 5\nu: y"{n.__AS_JSON__()}"\n', "is reserved")
+def test_serializing_a_single_value_writes_it_plain():
+    # SPEC §5.1.2 v0.3 (operator: "this is minimal code, isn't it? Why not
+    # just do it so our edge cases are fewer?") -- never wrapped
+    assert loads('n: 5\nu: y"{n.__AS_JSON__()}"\n')["u"] == "5"
+    assert loads('n: "x"\nu: y"{n.__AS_JSON__()}"\n')["u"] == '"x"'
 
 
 @pytest.mark.parametrize("ref", [
