@@ -59,6 +59,13 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
 `DEDENT` tokens, and a `NEWLINE` token at the end of each token-bearing line.
 
 - **Indentation is spaces only.** A tab in indentation is **akan**.
+- **The base column.** A document may be indented as a whole. The first
+  line holding a token sets the **base column**, the bottom of the indent
+  stack, and indentation is measured from it exactly as it would be from
+  column 0. A later token-bearing line that starts left of the base column
+  is **akan**. A line holding only spaces or a comment holds no token and is
+  not measured: it neither sets the base column nor can fall left of it —
+  as in Python, whose tokenizer ignores such lines.
 - **Dash frames.** A `-` at the start of a line's content, followed by a space
   or end of line, emits `DASH INDENT` and opens a frame **anchored at the
   dash's column + 2**. The frame closes (`DEDENT`) when a line's indentation

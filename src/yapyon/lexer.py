@@ -900,6 +900,7 @@ class Lexer:
         self.line = 1
         self.col = 0                          # 0-based column
         self.indents: list[int] = [0]         # indent anchors (incl. dash frames)
+        self.based = False                    # GRAMMAR §G3: base column set yet?
         self.depth = 0                        # bracket nesting depth
         self.tokens: list[Token] = []
         self.warnings: list[str] = []         # shiran: ...
@@ -984,6 +985,17 @@ class Lexer:
                 self._advance()
             return True
 
+        if not self.based:
+            # GRAMMAR §G3: the first token-bearing line sets the base column,
+            # the bottom of the stack. Blank and comment lines never reach
+            # here, so they neither set it nor fall left of it.
+            self.based = True
+            self.indents = [width]
+        elif width < self.indents[0]:
+            self._akan(f"this line starts at column {width}, left of the "
+                       f"document's base column {self.indents[0]}, which its "
+                       f"first line set; indent it to at least "
+                       f"{self.indents[0]}", col=width)
         top = self.indents[-1]
         if width > top:
             self.indents.append(width)

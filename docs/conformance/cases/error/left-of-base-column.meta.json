@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR \u00a7G3",
+  "why": "the first line sets the base column at 4; a later line at 2 is left of it"
+}

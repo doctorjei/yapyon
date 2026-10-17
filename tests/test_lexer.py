@@ -61,6 +61,53 @@ def test_indent_matching_no_open_block_is_akan():
 
 
 # --------------------------------------------------------------------------- #
+# GRAMMAR §G3 — the base column (operator, 2026-10-12: "any initial
+# indentation should be fine", as long as it is consistent)
+# --------------------------------------------------------------------------- #
+def shifted(text, n):
+    return "".join(" " * n + line if line.strip() else line
+                   for line in text.splitlines(keepends=True))
+
+
+DOC = 'a:\n  b: 1\n  c:\n    - 2\n    - + k: 3\nd: """\n  x\n    y\n  """\n'
+
+
+@pytest.mark.parametrize("n", [1, 2, 4, 9])
+def test_an_indented_document_means_the_same(n):
+    from yapyon import loads
+    assert loads(shifted(DOC, n)) == loads(DOC)
+
+
+def test_the_base_column_bottoms_the_stack():
+    assert kinds("    a: 1\n    b: 2\n") == kinds("a: 1\nb: 2\n")
+
+
+def test_a_line_left_of_the_base_column_is_akan():
+    akan("    a: 1\n  b: 2\n", "left of the document's base column 4")
+    akan("    a:\n      b: 1\nc: 2\n", "left of the document's base column 4")
+
+
+@pytest.mark.parametrize("text", [
+    "# header\n    a: 1\n    b: 2\n",          # a comment does not set it
+    "\n\n    a: 1\n    b: 2\n",                # nor do blank lines
+    "    a: 1\n# between\n    b: 2\n",         # nor fall left of it
+    "    a: 1\n  # between\n    b: 2\n",
+])
+def test_comment_and_blank_lines_are_not_measured(text):
+    assert kinds(text) == kinds("a: 1\nb: 2\n")
+
+
+def test_a_frame_may_set_the_base_column():
+    assert kinds("    - 1\n    - 2\n") == kinds("- 1\n- 2\n")
+
+
+def test_a_block_string_is_not_measured_against_the_base():
+    # its continuation lines are inside a token; §G4.4's dedent governs them
+    from yapyon import loads
+    assert loads('    a: """\n      x\n      """\n    b: 1\n') == {"a": "x\n", "b": 1}
+
+
+# --------------------------------------------------------------------------- #
 # GRAMMAR §G3 — dash frames
 # --------------------------------------------------------------------------- #
 def test_dash_frames_open_and_close():
