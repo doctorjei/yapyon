@@ -1,7 +1,7 @@
-"""Named serializers — SPEC §5.1.2.
+"""Named serializers — SPEC §5.1.2, the format's built-in functions.
 
 `{cfg.__AS_JSON__()}` is the author naming a container's encoding, exactly as
-`b64"..."` names bytes→text. Law 5's bridge, for containers.
+`b64"..."` names bytes→text: ehmon 5's bridge, for containers.
 
 **Serializers are the format's built-in functions** (SPEC §5.1.2, §13.1):
 called like any function, type-checked against the signatures declared in
@@ -9,293 +9,32 @@ called like any function, type-checked against the signatures declared in
 belongs to the *format*, which is what makes them dunders: a contract
 declares a consumer's functions, and no contract declares these.
 
-Stdlib only, by the same rule as the rest of the core. `tomllib` reads TOML and
-cannot write it, and there is no YAML in the stdlib at all, so the TOML and
-YAML writers here are ours. That is not a hardship: emitting a plain data tree
-is a small job, and it keeps yapyon dependency-free.
+This module is the **declaration**; the writers are `writers.py` (JSON,
+YAML, TOML, §14) and `emitter.py` (yapyon, §14.6). Every writer reads the
+resolved AST, because a lexeme decides what each format records beside a
+value — and every writer is stdlib-only, by the rule the core keeps.
 
-**yapyon does not prune.** persona-grata's engine — whose serializers this
-follows, GPL-3.0-or-later both sides — drops `None`, `""` and emptied
-containers on the way out, implementing its own schema's "not sent if unset"
-convention. That is a *consumer policy* and yapyon must not adopt it: dropping
-a key the document wrote is a silent reinterpretation (law 7), and "the same
-bytes mean the same data" has to survive the trip through a serializer. A
-consumer wanting that behavior prunes its own tree first.
-
-Where a format cannot carry a value **faithfully**, the encoding is akan
-rather than approximate — TOML has no null, JSON has no bytes, and JSON, TOML
-and YAML cannot hold a multimap's repeated keys. Law 1: refuse rather than
-pick a reading.
-
-**`__AS_YAPYON__()` is the exception on both counts.** It is the one encoding
-that carries everything the data model has — multimaps, bytes, `None` — and
-the one that reads the **AST** rather than plain values, because its output
-*is* yapyon source, and a yapyon writer keeps every lexeme (§4.4): `3.10`
-must stay `3.10`, and `b"..."` must not come back respelled as base64.
-`READS_AST` says which.
+**Approximate, never refuse** (§5.1.2): a multimap, bytes, a non-decimal
+integer, TOML's `None` — each is written as plain data the target format
+can carry, with what it cannot say recorded beside it by that format's own
+means. **yapyon does not prune**: dropping a key because its value is `None`
+or `""` would be a silent reinterpretation (ehmon 7), so a consumer wanting
+that prunes its own tree first. TOML's `None` is the one omission, and it is
+recorded.
 """
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass, field
 from typing import Callable
 
-from ._digits import decimal_text
 from .emitter import emit
-
-#: Serializers are declared once, at the foot of this module: `SERIALIZERS` maps
-#: each name to its writer, and `SERIALIZER_NAMES` is derived from it. Declared
-#: there rather than here because the values are the writers, which must exist
-#: first.
+from .writers import to_json, to_toml, to_yaml
 
 
-class NotEncodable(Exception):
-    """This value has no faithful encoding in that format, and why."""
-
-
-# --------------------------------------------------------------------------- #
-# JSON
-# --------------------------------------------------------------------------- #
-def to_json(value, *, lexemes: bool = True) -> str:
-    """Indented JSON, keys in document order.
-
-    Indented rather than compact because the use these exist for is writing a
-    config file that something else will read — and, often, that a person will
-    open. Key order is the document's and never sorted: order is data here.
-    """
-    _refuse_bytes(value, "JSON")
-    return json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False)
-
-
-# --------------------------------------------------------------------------- #
-# TOML
-# --------------------------------------------------------------------------- #
-_TOML_BARE = re.compile(r"[A-Za-z0-9_-]+")
-
-
-def to_toml(value, *, lexemes: bool = True) -> str:
-    """TOML, nesting mappings into tables and lists of mappings into `[[tables]]`.
-
-    A TOML document *is* a table, so the top level must be a mapping. `None`
-    is akan: TOML has no null, and persona-grata only avoids meeting one
-    because it prunes first.
-    """
-    if not isinstance(value, dict):
-        raise NotEncodable(f"a TOML document is a table, so __AS_TOML__() "
-                           f"needs a mapping, not a "
-                           f"{type(value).__name__}")
-    out: list[str] = []
-    _toml_table(value, [], out)
-    return "\n".join(out).strip() + "\n"
-
-
-def _is_table_array(value) -> bool:
-    """A non-empty list whose every element is a mapping: TOML's `[[array]]`.
-
-    The emptiness check is load-bearing, not tidiness. An empty list has no
-    element to give a header, and emitting no header at all would drop the key
-    rather than write it empty; `name = []` inline is how TOML says that.
-    """
-    return (isinstance(value, list) and bool(value)
-            and all(isinstance(item, dict) for item in value))
-
-
-def _needs_header(data: dict) -> bool:
-    """Does the table at this prefix need a header of its own?
-
-    A super-table holding nothing but sub-tables and arrays of tables is
-    implied by their headers — `[[a.b]]` already says `a` exists — so a
-    header here would name a second, redundant table. A table with key/value
-    pairs of its own must be named, and so must an empty one, or the key it
-    was written under would vanish entirely.
-    """
-    for val in data.values():
-        if not isinstance(val, dict) and not _is_table_array(val):
-            return True
-    return not data
-
-
-def _toml_table(data: dict, prefix: list, out: list) -> None:
-    """Emit `data` as the table at `prefix`, writing its own header if it needs one."""
-    if prefix and _needs_header(data):
-        out.append("[" + ".".join(_toml_key(k) for k in prefix) + "]")
-    _toml_body(data, prefix, out)
-
-
-def _toml_body(data: dict, prefix: list, out: list) -> None:
-    """Emit `data`'s contents beneath a header the caller has already written.
-
-    TOML puts every key/value pair of a table *before* that table's
-    sub-table headers, so the pairs go out first and the header-emitting
-    children follow. Among themselves the children keep document order —
-    order is data in yapyon, and nothing here needs to reorder it.
-    """
-    for key, val in data.items():
-        if isinstance(val, dict) or _is_table_array(val):
-            continue
-        out.append(f"{_toml_key(key)} = {_toml_value(val)}")
-    for key, val in data.items():
-        if _is_table_array(val):
-            # One header per element. A nested table under a later element
-            # attaches to *that* element, so each element must be written
-            # out in full before the next header opens.
-            header = "[[" + ".".join(_toml_key(k) for k in prefix + [key]) + "]]"
-            for element in val:
-                _toml_gap(out)
-                out.append(header)
-                _toml_body(element, prefix + [key], out)
-        elif isinstance(val, dict):
-            _toml_gap(out)
-            _toml_table(val, prefix + [key], out)
-
-
-def _toml_gap(out: list) -> None:
-    """Separate one table from the last, without ever doubling the blank."""
-    if out and out[-1] != "":
-        out.append("")
-
-
-def _toml_key(key: str) -> str:
-    return key if _TOML_BARE.fullmatch(key) else _toml_str(key)
-
-
-def _toml_str(text: str) -> str:
-    return '"' + str(text).replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _toml_value(value) -> str:
-    if value is None:
-        raise NotEncodable("TOML has no null, so None cannot be written "
-                           "faithfully; give the key a value or leave it out "
-                           "of the subtree you serialize")
-    if isinstance(value, bool):            # before int: bool subclasses int
-        return "true" if value else "false"
-    if isinstance(value, (bytes, bytearray)):
-        raise NotEncodable("TOML has no bytes and names no encoding for them "
-                           "(law 5); spell the text you want")
-    if isinstance(value, int):             # §3.1: never the host's limit
-        return decimal_text(value)
-    if isinstance(value, float):
-        return repr(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
-    if isinstance(value, dict):
-        # Reached only from inside a list: a mapping that is a table's direct
-        # child goes out as a header instead. A mixed list cannot use
-        # `[[name]]` headers at all — TOML gives a key either an array of
-        # tables or an array value, never both — so its mappings go out as
-        # inline tables, which are faithful and keep the non-mappings too.
-        if not value:
-            return "{}"
-        return "{ " + ", ".join(f"{_toml_key(k)} = {_toml_value(v)}"
-                               for k, v in value.items()) + " }"
-    return _toml_str(value)
-
-
-# --------------------------------------------------------------------------- #
-# YAML
-# --------------------------------------------------------------------------- #
-# A plain (unquoted) YAML scalar is only safe when nothing else could read it
-# as a different type. yapyon exists partly because YAML guesses here, so the
-# emitter is deliberately conservative: quote unless provably inert. Over-
-# quoting costs a reader nothing; under-quoting is the Norway problem.
-_YAML_PLAIN = re.compile(r"[A-Za-z_][A-Za-z0-9_.@/+:-]*")
-_YAML_RESERVED = {
-    "y", "n", "yes", "no", "true", "false", "on", "off", "null", "none",
-    "nan", "inf", "infinity", "~",
-}
-
-
-def to_yaml(value) -> str:
-    """Block-style YAML, keys in declaration order, scalars never wrapped.
-
-    Order is preserved rather than sorted so a rendered config reads in the
-    order its document declares it, and a long scalar stays on one line — a
-    folded URL is valid YAML but is no longer greppable in the file it lands
-    in.
-    """
-    lines: list[str] = []
-    _yaml_node(value, 0, lines)
-    return "\n".join(lines) + "\n"
-
-
-def _yaml_node(value, indent: int, lines: list) -> None:
-    pad = "  " * indent
-    if isinstance(value, dict):
-        if not value:
-            lines.append(pad + "{}")
-            return
-        for key, val in value.items():
-            if isinstance(val, (dict, list)) and val:
-                lines.append(f"{pad}{_yaml_key(key)}:")
-                _yaml_node(val, indent + 1, lines)
-            else:
-                lines.append(f"{pad}{_yaml_key(key)}: {_yaml_scalar(val)}")
-        return
-    if isinstance(value, list):
-        if not value:
-            lines.append(pad + "[]")
-            return
-        for item in value:
-            if isinstance(item, (dict, list)) and item:
-                lines.append(f"{pad}-")
-                _yaml_node(item, indent + 1, lines)
-            else:
-                lines.append(f"{pad}- {_yaml_scalar(item)}")
-        return
-    lines.append(pad + _yaml_scalar(value))
-
-
-def _yaml_key(key: str) -> str:
-    return _yaml_scalar(key)
-
-
-def _yaml_scalar(value) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, bool):            # before int: bool subclasses int
-        return "true" if value else "false"
-    if isinstance(value, (bytes, bytearray)):
-        raise NotEncodable("YAML has no bytes and names no encoding for them "
-                           "(law 5); spell the text you want")
-    if isinstance(value, int):             # §3.1: never the host's limit
-        return decimal_text(value)
-    if isinstance(value, float):
-        return repr(value)
-    if isinstance(value, (dict, list)):    # only reachable when empty
-        return "{}" if isinstance(value, dict) else "[]"
-    return _yaml_str(value)
-
-
-def _yaml_str(text: str) -> str:
-    # `:` is admitted inside a plain scalar but never before a space or at the
-    # end, where YAML reads it as the key separator. That is what keeps a URL
-    # unquoted -- and an unwrapped, unquoted endpoint is the whole point of
-    # emitting block style for a config file someone will grep.
-    if (_YAML_PLAIN.fullmatch(text)
-            and ": " not in text and not text.endswith(":")
-            and text.lower() not in _YAML_RESERVED
-            and not _looks_numeric(text)):
-        return text
-    return "'" + text.replace("'", "''") + "'"
-
-
-def _looks_numeric(text: str) -> bool:
-    try:
-        float(text)
-    except ValueError:
-        return False
-    return True
-
-
-# --------------------------------------------------------------------------- #
-# yapyon
-# --------------------------------------------------------------------------- #
-def to_yapyon(node) -> str:
-    """**Record** text (SPEC §4.4, §12) for a resolved subtree: each value's
-    lexeme, or its canonical form where it has none.
+def to_yapyon(node, *, warn=None) -> str:
+    """**Record** text (SPEC §14.6, §12) for a resolved subtree: each
+    value's lexeme, or its canonical form where it has none.
 
     This is `emitter.emit`, unchanged, and that is the point: the emitter
     already renders a record from the AST, and a second yapyon writer would
@@ -306,31 +45,15 @@ def to_yapyon(node) -> str:
     return emit(node)
 
 
-# --------------------------------------------------------------------------- #
-def _refuse_bytes(value, fmt: str) -> None:
-    if isinstance(value, (bytes, bytearray)):
-        raise NotEncodable(f"{fmt} has no bytes and names no encoding for "
-                           f"them (law 5); spell the text you want")
-    if isinstance(value, dict):
-        for val in value.values():
-            _refuse_bytes(val, fmt)
-    elif isinstance(value, list):
-        for val in value:
-            _refuse_bytes(val, fmt)
-
-
 @dataclass(frozen=True)
 class Builtin:
     """One built-in function (SPEC §5.1.2, §13.1): its writer, the §13.3
     type of its one positional parameter, and its keyword parameters as
-    `name -> (type, default)`. `reads_ast` marks a writer handed the resolved
-    **AST** rather than plain values — only a writer whose output is yapyon
-    source, since everywhere else a number encodes by the target format's
-    own rules and the lexeme is moot."""
+    `name -> (type, default)`. A writer takes the resolved node, a `warn`
+    callable for shiran, and the keywords."""
     write: Callable[..., str]
     takes: str
     keywords: dict = field(default_factory=dict)
-    reads_ast: bool = False
     #: said after a mismatch on the argument itself, where the signature
     #: alone would not explain the refusal
     note: str = ""
@@ -343,11 +66,8 @@ SERIALIZERS = {
                            note="a TOML document is a table, with no "
                                 "top-level form for a list or a single value"),
     "__AS_YAML__": Builtin(to_yaml, "Any"),
-    "__AS_YAPYON__": Builtin(to_yapyon, "Any", reads_ast=True),
+    "__AS_YAPYON__": Builtin(to_yapyon, "Any"),
 }
-
-#: Derived, like `SERIALIZER_NAMES` below: the names whose writer reads the AST.
-READS_AST = frozenset(name for name, b in SERIALIZERS.items() if b.reads_ast)
 
 #: §5.1.2's one message for a `yt` reaching a record writer — every
 #: serializer and `expand_record` alike, so they cannot come to disagree.
@@ -359,5 +79,5 @@ YEETED_YT = ("yeeted yt; a record cannot hold a template's unjoined parts. "
 #: serializer could be added to one and missed in the other, and the comment
 #: promising there was no second list sat directly above one. `lexer.parse_ref`
 #: imports this rather than keeping a further list, and
-#: `tools/check_ref_grammar.py` checks it against GRAMMAR §G5's production.
+#: `tools/check_ref_grammar.py` checks it against SPEC §5.1.2's table.
 SERIALIZER_NAMES = tuple(SERIALIZERS)

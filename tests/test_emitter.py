@@ -135,9 +135,25 @@ def test_an_empty_container_is_written_flow():
     assert emit(parse("a: []\nb: {}\n")) == "a: []\nb: {}\n"
 
 
-def test_a_populated_flow_container_normalizes_to_block():
-    assert emit(parse("a: [1, 2]\n")) == "a:\n  - 1\n  - 2\n"
+def test_layout_is_section_14_1_s():
+    # a sequence holding no mapping or multimap is one line if it fits;
+    # mappings are block whatever their source spelling
+    assert emit(parse("a:\n  - 1\n  - 2\n")) == "a: [1, 2]\n"
+    assert emit(parse("a: [[1], [], 'x']\n")) == "a: [[1], [], 'x']\n"
     assert emit(parse("a: {x: 1}\n")) == "a:\n  x: 1\n"
+    assert emit(parse("a: [{x: 1}]\n")) == "a:\n  - x: 1\n"
+
+
+def test_a_sequence_that_does_not_fit_is_block():
+    long = ", ".join(f'"item{i:02}"' for i in range(12))
+    out = emit(parse(f"a: [{long}]\n"))
+    assert out.startswith('a:\n  - "item00"\n')
+    assert emit(parse(f"a: [{long[:60]}]\n")).count("\n") == 1
+
+
+def test_a_multi_line_lexeme_keeps_its_list_in_block_form():
+    assert emit(parse('a:\n  - """\n    x\n    """\n')) == \
+        'a:\n  - """\n    x\n    """\n'
 
 
 def test_comments_do_not_survive():
@@ -163,7 +179,7 @@ def test_normalize_refuses_a_non_record_and_names_the_source():
 
 
 def test_normalize_is_the_whole_pipeline():
-    assert normalize("a: [1, 2]\n") == "a:\n  - 1\n  - 2\n"
+    assert normalize("a:\n  - 1\n  - 2\n") == "a: [1, 2]\n"
 
 
 # --------------------------------------------------------------------------- #
@@ -177,7 +193,7 @@ def _run(text):
 def test_the_cli_prints_yapyon_on_stdout():
     done = _run("a: [1, 2]\n")
     assert done.returncode == 0
-    assert done.stdout == "a:\n  - 1\n  - 2\n"
+    assert done.stdout == "a: [1, 2]\n"
 
 
 def test_the_cli_refuses_a_non_record_on_stderr():

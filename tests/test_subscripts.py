@@ -358,15 +358,14 @@ def test_a_container_crosses_into_text_when_the_author_names_the_encoding():
     # bridge, exactly as b64"..." is the named bridge for bytes
     d = loads('cfg:\n  name: "gw"\n  port: 8080\n'
               'u: y"{cfg.__AS_JSON__()}"\n')
-    assert d["u"] == '{\n  "name": "gw",\n  "port": 8080\n}'
+    assert d["u"] == '{"name": "gw", "port": 8080}'     # fits: one line (§14.1)
 
 
 def test_json_keeps_document_order_and_leaves_utf8_alone():
     # order is data in yapyon, so it is never sorted; and the output is UTF-8
     d = loads('cfg:\n  z: 1\n  a: "café"\n  t: True\n  n: None\n'
               'u: y"{cfg.__AS_JSON__()}"\n')
-    assert d["u"] == ('{\n  "z": 1,\n  "a": "café",\n  "t": true,\n'
-                      '  "n": null\n}')
+    assert d["u"] == '{"z": 1, "a": "café", "t": true, "n": null}'
 
 
 def test_toml_nests_mappings_into_tables():
@@ -387,10 +386,12 @@ def test_toml_value_types_and_quoting():
     assert 'xs = ["x", "y"]' in out
 
 
-def test_toml_has_no_null_so_none_is_akan():
-    # persona-grata never meets this because it prunes first; yapyon does not
-    # prune, so it must refuse rather than drop the key (law 7)
-    akan('s:\n  a: None\nu: y"{s.__AS_TOML__()}"\n', "TOML has no null")
+def test_toml_has_no_null_so_none_is_left_out_and_recorded():
+    # SPEC §14.5: the one omission the format makes, recorded so nothing is
+    # lost; in an array a stand-in keeps every later index where it was
+    d = loads('s:\n  a: None\n  b: 1\n  xs: [None, 2]\nu: y"{s.__AS_TOML__()}"\n')
+    assert d["u"] == ('b = 1\nxs = ["None", 2]\n'
+                      '"@_lexemes" = {a = "None", "xs/0" = "None"}\n')
 
 
 def test_a_toml_document_is_a_table():
@@ -450,7 +451,7 @@ def test_toml_writes_a_mixed_list_with_inline_tables():
     # have forced a choice.
     d = loads('s:\n  a:\n    - x: 1\n    - 2\n    - "s"\n'
               'u: y"{s.__AS_TOML__()}"\n')
-    assert d["u"] == 'a = [{ x = 1 }, 2, "s"]\n'
+    assert d["u"] == 'a = [{x = 1}, 2, "s"]\n'
 
 
 def test_toml_writes_an_empty_list_inline_rather_than_losing_the_key():
@@ -484,8 +485,8 @@ def test_yaml_quotes_anything_yaml_would_guess_at():
     d = loads('s:\n  a: "no"\n  b: "3"\n  c: "true"\n  d: "plain"\n'
               '  e: "with space"\n  f: ""\n'
               'u: y"{s.__AS_YAML__()}"\n')
-    assert d["u"] == ("a: 'no'\nb: '3'\nc: 'true'\nd: plain\n"
-                      "e: 'with space'\nf: ''\n")
+    assert d["u"] == ('a: "no"\nb: "3"\nc: "true"\nd: plain\n'
+                      'e: "with space"\nf: ""\n')
 
 
 def test_yaml_does_not_wrap_a_long_scalar():
@@ -498,31 +499,40 @@ def test_yaml_does_not_wrap_a_long_scalar():
 def test_yaml_nests_and_takes_lists():
     d = loads('s:\n  a:\n    b: 1\n  xs: ["p", "q"]\n'
               'u: y"{s.__AS_YAML__()}"\n')
-    assert d["u"] == "a:\n  b: 1\nxs:\n  - p\n  - q\n"
+    assert d["u"] == "a:\n  b: 1\nxs: [p, q]\n"      # a flat list that fits
 
 
 def test_a_serialized_container_may_be_carried_by_a_template():
     t = loads('cfg: {x: 1}\nt: yt"{cfg.__AS_JSON__()}"\n')["t"]
-    assert t.values == ('{\n  "x": 1\n}',)
+    assert t.values == ('{"x": 1}',)
 
 
 def test_a_serializer_follows_the_anchors_like_any_reference():
     d = loads('a:\n  cfg: {x: 1}\n  u: y"{__PARENT__.cfg.__AS_JSON__()}"\n')
-    assert d["a"]["u"] == '{\n  "x": 1\n}'
+    assert d["a"]["u"] == '{"x": 1}'
 
 
-@pytest.mark.parametrize("fmt", ["JSON", "TOML", "YAML"])
-def test_no_format_here_can_hold_a_multimap(fmt):
-    # law 1: repeated keys have no faithful form in any of them, so refuse
-    # rather than pick a reading
-    akan(f'm:\n  + k: 1\n  + k: 2\nu: y"{{m.__AS_{fmt}__()}}"\n',
-         "no faithful encoding")
+@pytest.mark.parametrize("fmt,expected", [
+    # SPEC §5.1.2 v0.3: approximate, never refuse -- each format's own
+    # mechanism, and no marker carries yapyon's name (§14.3-§14.5)
+    ("JSON", '{"@type": "multimap", "entries": {"@list": [{"k": 1}, {"k": 2}]}}'),
+    ("TOML", '"@type" = "multimap"\nentries = [{k = 1}, {k = 2}]\n'),
+    ("YAML", "%TAG !multimap! tag:yaml.org,2002:\n---\n!multimap!pairs\n"
+             "- k: 1\n- k: 2\n"),
+])
+def test_a_multimap_is_marked_in_every_format(fmt, expected):
+    assert loads(f'm:\n  + k: 1\n  + k: 2\nu: y"{{m.__AS_{fmt}__()}}"\n')["u"] \
+        == expected
 
 
-@pytest.mark.parametrize("fmt", ["JSON", "TOML", "YAML"])
-def test_bytes_have_no_named_encoding_in_any_of_them(fmt):
-    akan(f'c:\n  b: b64"aGk="\nu: y"{{c.__AS_{fmt}__()}}"\n',
-         "has no bytes")
+@pytest.mark.parametrize("fmt,expected", [
+    ("JSON", '{"b": "aGk=", "@_lexemes": {"b": "b64\'aGk=\'"}}'),
+    ("TOML", 'b = "aGk="\n"@_lexemes" = {b = "b64\'aGk=\'"}\n'),
+    ("YAML", 'b: !!binary "aGk="\n'),
+])
+def test_bytes_are_text_with_their_spelling_beside_them(fmt, expected):
+    assert loads(f"c:\n  b: b64'aGk='\nu: y\"{{c.__AS_{fmt}__()}}\"\n")["u"] \
+        == expected
 
 
 def test_yapyon_does_not_prune():
@@ -615,7 +625,7 @@ def test_the_circular_akan_lands_in_a_document_at_the_hole():
 def test_serializing_a_sibling_block_through_an_anchor_works():
     # the shape the bar leaves intact, end to end
     d = loads('blk:\n  a: 1\n  b: "two"\nout: y"j={__ROOT__.blk.__AS_JSON__()}"\n')
-    assert d["out"] == 'j={\n  "a": 1,\n  "b": "two"\n}'
+    assert d["out"] == 'j={"a": 1, "b": "two"}'
 
 
 # --------------------------------------------------------------------------- #
@@ -685,7 +695,7 @@ def test_serializer_defers_to_a_resolvable_inner_ystring():
     # the ordinary case: the inner y-string resolves first, then the encode
     d = loads('base: "x"\ncfg:\n  p: y"{base}/1"\n  q: 8080\n'
               'out: y"j={cfg.__AS_JSON__()}"\n')
-    assert d["out"] == 'j={\n  "p": "x/1",\n  "q": 8080\n}'
+    assert d["out"] == 'j={"p": "x/1", "q": 8080}'
 
 
 @pytest.mark.parametrize("src", [
@@ -706,9 +716,12 @@ def test_mutually_referencing_serializers_report_a_cycle(src):
 
 
 @pytest.mark.parametrize("src,needle", [
-    ('mm:\n  + k: 1\n  + k: 2\nout: y"{mm.__AS_JSON__()}"\n', "keys repeat"),
-    ('s:\n  v: b"\\x00"\nout: y"{s.__AS_JSON__()}"\n', "no bytes"),
+    ('xs: [y"{base}"]\nbase: "x"\nout: y"{xs.__AS_TOML__()}"\n',
+     "a TOML document is a table"),
+    ('base: "x"\ns:\n  p: y"{base}"\n  t: yt"{base}"\n'
+     'out: y"{s.__AS_JSON__()}"\n', "yeeted yt"),
 ])
-def test_permanent_refusals_are_still_immediate(src, needle):
-    # deferring must not swallow the refusals that can never become encodable
+def test_refusals_survive_deferral(src, needle):
+    # v0.3 serializers approximate rather than refuse, so the refusals left
+    # are a signature and a template; deferring must not swallow either
     akan(src, needle)

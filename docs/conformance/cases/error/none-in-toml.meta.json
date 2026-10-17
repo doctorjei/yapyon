@@ -1,5 +1,0 @@
-{
-  "expect": "akan",
-  "rule": "SPEC \u00a75.1.2",
-  "why": "TOML has no null, and yapyon does not prune"
-}

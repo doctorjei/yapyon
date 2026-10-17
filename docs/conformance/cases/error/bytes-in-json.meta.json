@@ -1,5 +1,0 @@
-{
-  "expect": "akan",
-  "rule": "SPEC \u00a75.1.2",
-  "why": "JSON names no encoding for bytes, so the bridge law has nothing to name"
-}

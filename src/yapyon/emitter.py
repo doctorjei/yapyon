@@ -37,10 +37,12 @@ over the whole corpus, plus that a second emit changes nothing.
 from __future__ import annotations
 
 from ._digits import decimal_text
+from ._width import text_width
 from .parser import (AkanError, Mapping, MultiMap, Node, Pair, Scalar,
                      Sequence, YString, Yakamashiwa)
 
 INDENT = "  "
+WIDTH = 100          # §14.1: a container fits if its line is this wide or less
 
 # Escapes that read better than \xNN, and that GRAMMAR §G4.5 defines.
 _SHORT = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
@@ -189,8 +191,43 @@ def _inline(node: Node, level: int, source: str | None) -> list[str] | None:
     return None
 
 
+def flat(node: Node) -> bool:
+    """Holds no mapping or multimap at any depth: §14.1's test for a
+    sequence that may take a one-line form in YAML and yapyon."""
+    if isinstance(node, (Mapping, MultiMap)):
+        return False
+    if isinstance(node, Sequence):
+        return all(map(flat, node.items))
+    return True
+
+
+def _flow(node: Node, source: str | None) -> str | None:
+    """A flat, non-empty sequence on one line, or None where it has no
+    one-line form (a multi-line lexeme, a mapping somewhere inside)."""
+    if not (isinstance(node, Sequence) and node.items and flat(node)):
+        return None
+    parts = []
+    for item in node.items:
+        if isinstance(item, Sequence):
+            text = "[]" if not item.items else _flow(item, source)
+        else:
+            lines = _inline(item, 0, source)
+            text = lines[0] if lines is not None and len(lines) == 1 else None
+        if text is None:
+            return None
+        parts.append(text)
+    return "[" + ", ".join(parts) + "]"
+
+
+def _fits(line: str) -> bool:
+    return text_width(line) <= WIDTH
+
+
 def _lines(node: Node, level: int, source: str | None) -> list[str]:
     pad = INDENT * level
+    flow = _flow(node, source)
+    if flow is not None and _fits(pad + flow):
+        return [pad + flow]
     if isinstance(node, Mapping):
         return _pairs(node.pairs, pad, level, source, marker="")
     if isinstance(node, MultiMap):
@@ -212,6 +249,9 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
     for pair in pairs:
         inline = _inline(pair.value, level, source)
         head = f"{pad}{marker}{pair.lexeme or pair.key}:"
+        flow = _flow(pair.value, source)
+        if flow is not None and _fits(f"{head} {flow}"):
+            inline = [flow]
         if inline is None:                       # a block of its own
             out.append(head)
             # A `+ ` marker pushes its key to marker column + 2 (GRAMMAR §G3 anchors
@@ -230,6 +270,9 @@ def _marked(item: Node, pad: str, level: int, source: str | None,
     """A `- ` item. A container opens on the marker line and its remaining
     lines align at marker column + 2, which is where GRAMMAR §G3 anchors the frame."""
     inline = _inline(item, level, source)
+    flow = _flow(item, source)
+    if flow is not None and _fits(f"{pad}{marker}{flow}"):
+        inline = [flow]
     if inline is not None:
         return [f"{pad}{marker}{inline[0]}"] + inline[1:]
     inner = _lines(item, level + 1, source)

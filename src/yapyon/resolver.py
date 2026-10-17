@@ -48,7 +48,7 @@ from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
-from .serializers import SERIALIZERS, YEETED_YT, NotEncodable
+from .serializers import SERIALIZERS, YEETED_YT
 from .typespec import check, parse_type, show
 
 # §5.3 defines two tiers, and they are not the same number.
@@ -575,19 +575,15 @@ class Resolver:
                 self._akan(f"{{{ref}}}: {call.name}()'s {name} takes "
                            f"{show(miss.wanted)}, not {miss.found}", miss.node)
             options[name] = node.value
-        try:
-            if builtin.reads_ast:
-                text = builtin.write(_settled(target), **options)
-            else:
-                text = builtin.write(_plain(target), **options)
-        except _NotYet as pending:
+        pending = _pending(target)
+        if pending is not None:
             # Unreachable while `_argument` waits for the whole subtree, and
             # kept so that a change there fails loudly rather than as the
             # wrong diagnosis (trap 9).
             raise Yakamashiwa(f"{call.name}() reached an unresolved node "
-                              f"after its argument was judged ready") from None
-        except NotEncodable as exc:
-            self._akan(f"{{{ref}}}: {exc}", site.node)
+                              f"after its argument was judged ready")
+        text = builtin.write(target, warn=lambda m: self._shiran(
+            f"{{{ref}}}: {m}", site.node), **options)
         return Scalar(site.node.line, site.node.col, "str", text)
 
     def _deep_depth(self, node: Node) -> int:
@@ -698,46 +694,6 @@ class Resolver:
         return mapping.by_key[name]
 
 
-class _NotYet(Exception):
-    """A serializer's target still holds an unresolved y-string.
-
-    Distinct from `NotEncodable`, which is permanent. This one means "ask me
-    again next pass", and carries the offending node so the caller can hand it
-    back to the fixpoint — which already knows how to defer on a `YString` and
-    how to call a stall a cycle.
-    """
-
-    def __init__(self, node: Node):
-        self.node = node
-
-
-def _settled(node: Node) -> Node:
-    """The subtree itself, once nothing in it is still waiting or deferred.
-
-    `_plain`'s twin for the writers that read the AST (`READS_AST`): the same
-    two outcomes, *not yet* and *never*, so a cycle through `__AS_YAPYON__()`
-    is still reported as the cycle it is (trap 9). The only thing this
-    encoding cannot carry is a `yt`, for the reason `expand_record` refuses
-    one: a record's leaves are literals, and a template delivered in parts is
-    not one. Joining it would make yapyon render what §6 leaves to the
-    consumer.
-    """
-    if isinstance(node, YString):
-        raise _NotYet(node)
-    if isinstance(node, ResolvedTemplate):
-        raise NotEncodable(YEETED_YT)
-    if isinstance(node, Mapping):
-        for pair in node.pairs:
-            _settled(pair.value)
-    elif isinstance(node, MultiMap):
-        for pair in node.entries:
-            _settled(pair.value)
-    elif isinstance(node, Sequence):
-        for item in node.items:
-            _settled(item)
-    return node
-
-
 def _children(node: Node) -> list:
     if isinstance(node, Mapping):
         return [pair.value for pair in node.pairs]
@@ -795,38 +751,6 @@ def _literal_node(literal: Literal, at: Node) -> Scalar:
         kind = "bool" if isinstance(tok.value, bool) else "none"
     return Scalar(at.line, at.col, kind, tok.value, lexeme=literal.lexeme,
                   prefix=tok.prefix)
-
-
-def _plain(node: Node):
-    """A resolved subtree as plain Python, for a serializer to encode.
-
-    Deliberately *not* `loader.build`: this refuses a multimap, which build
-    accepts, because none of the target formats can carry repeated keys — and
-    it must refuse rather than let an encoder improvise. A small walker over
-    four node kinds, not a second loader.
-
-    Numbers arrive as values, so each format encodes them by **its own**
-    rules: inside JSON `3.10` and `3.1` are one number. Only a yapyon
-    writer keeps lexemes (§4.4), which is why `__AS_YAPYON__` reads the AST.
-    """
-    if isinstance(node, Mapping):
-        return {pair.key: _plain(pair.value) for pair in node.pairs}
-    if isinstance(node, Sequence):
-        return [_plain(item) for item in node.items]
-    if isinstance(node, MultiMap):
-        raise NotEncodable("a multimap's keys repeat and none of these "
-                           "formats can hold that, so there is no faithful "
-                           "encoding; serialize the entries you mean")
-    if isinstance(node, Scalar):
-        return node.value
-    if isinstance(node, YString):
-        # *Not* unencodable — merely not resolved yet. Saying "cannot be
-        # serialized" here reports the wrong problem: the container may be
-        # perfectly encodable one pass later, and if it never is, the honest
-        # diagnosis is §5.3's cycle, naming every stuck reference. Two calls
-        # whose arguments hold each other are the case that needs this.
-        raise _NotYet(node)
-    raise NotEncodable(f"a {type(node).__name__} cannot be serialized")
 
 
 def _text(target: Scalar) -> str:

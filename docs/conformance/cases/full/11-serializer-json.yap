@@ -1,5 +1,5 @@
-# §5.1.2: the serializer is an encoding of the container, keys in
-# document order and never sorted.
+# §5.1.2, §14.3: keys in document order and never sorted; a container
+# that fits in 100 columns is written on one line (§14.1).
 cfg:
   name: "gw"
   port: 8080

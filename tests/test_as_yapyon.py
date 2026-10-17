@@ -52,7 +52,7 @@ def test_as_yapyon_keeps_the_number_lexeme():
     # this output is yapyon source, where §5.4 says the lexeme survives
     d = loads('cfg:\n  v: 3.10\nj: y"{cfg.__AS_JSON__()}"\n'
               'y: y"{cfg.__AS_YAPYON__()}"\n')
-    assert '3.1\n' in d["j"]
+    assert d["j"] == '{"v": 3.1}'
     assert d["y"] == "v: 3.10\n"
 
 
@@ -81,14 +81,14 @@ def test_as_yapyon_splices_into_text_like_any_serializer():
 
 def test_as_yapyon_encodes_a_list():
     out = loads('xs:\n  - 1\n  - 2\nout: y"{xs.__AS_YAPYON__()}"\n')["out"]
-    assert out == "- 1\n- 2\n"
+    assert out == "[1, 2]\n"
     assert loads_record(out) == [1, 2]
 
 
 def test_as_yapyon_carries_another_serializers_output():
     d = loads('inner:\n  a: 1\ncfg:\n  j: y"{__ROOT__.inner.__AS_JSON__()}"\n'
               'out: y"{cfg.__AS_YAPYON__()}"\n')
-    assert loads_record(d["out"]) == {"j": '{\n  "a": 1\n}'}
+    assert loads_record(d["out"]) == {"j": '{"a": 1}'}
 
 
 # --------------------------------------------------------------------------- #

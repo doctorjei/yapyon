@@ -113,7 +113,7 @@ def test_lookup_returns_containers_as_loaded():
 def test_lookup_runs_a_serializer():
     tree = loads(DOC)
     out = lookup(tree, tree["harness"], "xs.__AS_YAPYON__()")
-    assert out == '- "x0"\n- "x1"\n- "x2"\n'
+    assert out == '["x0", "x1", "x2"]\n'
 
 
 def test_current_may_sit_inside_a_multimap():

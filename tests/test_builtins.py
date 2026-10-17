@@ -159,8 +159,7 @@ def test_a_sibling_block_is_not_the_call_site():
 # --------------------------------------------------------------------------- #
 def test_a_single_value_is_written_plain_never_wrapped():
     assert loads('n: 5\nu: y"{n.__AS_JSON__()}"\n')["u"] == "5"
-    assert loads('xs: [1, 2]\nu: y"{xs.__AS_JSON__()}"\n')["u"] == \
-        json.dumps([1, 2], indent=2)
+    assert loads('xs: [1, 2]\nu: y"{xs.__AS_JSON__()}"\n')["u"] == "[1, 2]"
 
 
 @pytest.mark.parametrize("target,found", [("n: 5", "int"), ("xs: [1]", "list"),

@@ -37,7 +37,7 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 tested, including a conformance suite that turns the splice matrix and the
 Python divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1251 tests** on the current tree; the number here tracks the tree,
+suite is **1309 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 This is the **self-contained tier**: every document resolves from its own
@@ -266,18 +266,26 @@ model = "m1"
 host = "https://api.example.com/v1"
 ```
 
-`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()`, and `__AS_YAPYON__()`, all
-written without a runtime dependency. Keys stay in document order, nothing is
-pruned, and where a format cannot carry a value faithfully the encoding is an
-error rather than an approximation — `None` in TOML, bytes in JSON, TOML or
-YAML, a multimap's repeated keys. YAML scalars are quoted unless nothing could
-misread them, so `"no"` and `"3"` survive as strings.
+`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()`, and `__AS_YAPYON__()` are
+the format's built-in functions, all written without a runtime dependency, and
+their output is fixed exactly by SPEC §14 — layout included, so every
+implementation writes the same text. Keys stay in document order and nothing
+is pruned. Where a format cannot carry a value directly, the serializer
+**approximates** it by that format's own means rather than refusing: bytes
+become base64url text and a `0xff` its value, each with its yapyon spelling
+recorded beside it in an `@_lexemes` member; a multimap becomes a JSON-LD
+node, TOML dotted keys, or YAML `!!pairs` under a `%TAG` handle; TOML leaves
+out a `None` and records it. A reader that knows the conventions gets the
+yapyon value back; one that does not still gets correct plain data. YAML
+scalars are quoted unless every reader would read them as strings, so `"no"`
+and `"3"` survive as strings. `{cfg.__AS_JSON__(lexemes=False)}` writes the
+plain values alone.
 
 `__AS_YAPYON__()` writes the block as a yapyon **record**, every value as
-written, and it is
-the one serializer that carries everything: multimaps, bytes, and `None`, with
-`3.10` still spelled `3.10`. The only thing it refuses is a `yt`, which has no
-record form.
+written: `3.10` still spelled `3.10`, multimaps and bytes as themselves. The
+only thing any serializer refuses is a `yt`, which has no record form, and
+`__AS_TOML__()` refuses what is not a table, since TOML has no top-level form
+for anything else.
 
 A serializer names the value it encodes, so it cannot name a *bare* anchor:
 `{__PARENT__.__AS_JSON__()}` would have to encode the string it is computing,
