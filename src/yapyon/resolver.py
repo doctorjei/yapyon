@@ -43,7 +43,7 @@ import base64
 from typing import NamedTuple
 
 from .lexer import (DOLLAR_HINT, AkanError, Ref, Yakamashiwa, fold_name,
-                    parse_ref)
+                    is_dunder, parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
 from .serializers import READS_AST, SERIALIZERS, NotEncodable
@@ -356,8 +356,8 @@ class Resolver:
         parsed = parse_ref(ref)
         if parsed.key:                               # §5.1.1: names a position
             return self._key_of(parsed, ref, site)
-        if parsed.serializer:                        # §5.1.2: names an encoding
-            return self._serialize(parsed, ref, site)
+        if parsed.call is not None:                  # §13.1: a call
+            return self._call(parsed.call, ref, site)
         return self._lookup_parsed(parsed, ref, site)
 
     def _lookup_parsed(self, parsed: Ref, ref: str, site: _Site) -> Node:
@@ -404,28 +404,42 @@ class Resolver:
         name = site.chain[parsed.parents][1]
         return Scalar(site.node.line, site.node.col, "str", name)
 
+    # -- §13.1 calls ----------------------------------------------------------
+    def _call(self, call, ref: str, site: _Site) -> Node:
+        """Apply a call. **Interim (build stage 1):** only the 0.2 shape —
+        one serializer applied to a path, no keywords — resolves; every
+        other call the grammar now admits akans until stage 6 builds §13.1."""
+        if is_dunder(call.name) and call.name not in SERIALIZERS:
+            self._akan(f"{{{ref}}}: there is no built-in named {call.name}(); "
+                       f"yapyon defines "
+                       f"{', '.join(n + '()' for n in SERIALIZERS)}", site.node)
+        target = call.args[0] if len(call.args) == 1 else None
+        if (not is_dunder(call.name) or call.kwargs
+                or not isinstance(target, Ref) or target.call is not None
+                or target.key):
+            self._akan(f"{{{ref}}}: this call is well-formed, but calls other "
+                       f"than a serializer on a path are not built yet",
+                       site.node)
+        return self._serialize(call.name, target, ref, site)
+
     # -- §5.1.2 named serializers -------------------------------------------
-    def _serialize(self, parsed: Ref, ref: str, site: _Site) -> Node:
+    def _serialize(self, serializer: str, parsed: Ref, ref: str,
+                   site: _Site) -> Node:
         """`{cfg.__AS_JSON__()}` — the author naming a container's encoding.
 
-        This is the bridge law's reserved extension (law 1's list, §5.5's
-        container cell), not a function call: a serializer takes no arguments,
-        cannot be composed, and the set of them belongs to the *format*. That
-        is the line between this and the consumer-registered functions that
-        are still undesigned — naming an encoding is not computing a value,
-        exactly as `b64"..."` is not computation.
-        """
-        inner = Ref(parsed.root, parsed.steps, ref, parents=parsed.parents)
-        target = self._lookup_parsed(inner, ref, site)
+        A serializer is a built-in function (§5.1.2); stage 6 of the 0.3.0
+        build moves this onto §13.1's one call path. Until then it is
+        reached only through `_call`'s interim shape."""
+        target = self._lookup_parsed(parsed, ref, site)
         if not isinstance(target, (Mapping, Sequence, MultiMap)):
-            self._akan(f"{{{ref}}}: {parsed.serializer}() encodes a list or a "
+            self._akan(f"{{{ref}}}: {serializer}() encodes a list or a "
                        f"mapping; applying one to a single value is reserved",
                        site.node)
         try:
-            if parsed.serializer in READS_AST:
-                text = SERIALIZERS[parsed.serializer](_settled(target))
+            if serializer in READS_AST:
+                text = SERIALIZERS[serializer](_settled(target))
             else:
-                text = SERIALIZERS[parsed.serializer](_plain(target))
+                text = SERIALIZERS[serializer](_plain(target))
         except _NotYet as pending:
             # Hand the unresolved node back: `_try` defers on a YString, so
             # this rejoins the ordinary fixpoint instead of pre-empting it.

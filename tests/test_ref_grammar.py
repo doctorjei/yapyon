@@ -7,10 +7,11 @@ docstring for two releases because nothing executed it. Running it here makes it
 a catch.
 
 The two assertions answer different questions and neither subsumes the other.
-The corpus compares *shapes* — what each side accepts — so it can only test
-serializer names that appear in the corpus. `test_serializer_production_matches_code`
-compares the document's terminal list against `SERIALIZER_NAMES` directly, which
-is the one thing a shape comparison structurally cannot see.
+The corpus compares *shapes* — what each side accepts — and since v0.3 the
+grammar admits any dunder call, so no shape can tell which built-ins exist.
+`test_spec_builtins_match_code` compares SPEC §5.1.2's table against
+`SERIALIZER_NAMES` directly, which is the one thing a shape comparison
+structurally cannot see.
 """
 
 import sys
@@ -25,20 +26,27 @@ from yapyon.serializers import SERIALIZER_NAMES  # noqa: E402
 
 def test_document_and_implementation_agree_over_the_corpus():
     n, bad = crg.mismatches()
-    assert n == len(crg.heads) * len(crg.steps) * len(crg.tails)
+    assert n == len(list(crg.corpus())) > 5000
     assert bad == [], "\n".join(
         f"{c!r} impl={'Y' if impl else 'n'} grammar={'Y' if doc else 'n'}"
         for c, impl, doc in bad
     )
 
 
-def test_serializer_production_matches_code():
-    assert set(crg.serializers_from_grammar()) == set(SERIALIZER_NAMES)
+def test_the_corpus_has_both_answers():
+    """A corpus the grammar rejects wholesale would agree with a parser that
+    rejects everything; it must hold forms on both sides of the line."""
+    accepted = sum(map(crg.generates, crg.corpus()))
+    assert 1000 < accepted < len(list(crg.corpus())) - 1000
 
 
-def test_serializer_production_is_actually_read_from_the_document():
-    """A parser that silently found nothing would make the check above vacuous."""
-    assert set(crg.serializers_from_grammar()) == {
+def test_spec_builtins_match_code():
+    assert set(crg.builtins_from_spec()) == set(SERIALIZER_NAMES)
+
+
+def test_spec_builtins_are_actually_read_from_the_document():
+    """A reader that silently found nothing would make the check above vacuous."""
+    assert set(crg.builtins_from_spec()) == {
         "__AS_JSON__", "__AS_TOML__", "__AS_YAML__", "__AS_YAPYON__",
     }
 

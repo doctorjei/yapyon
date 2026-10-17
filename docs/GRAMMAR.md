@@ -405,9 +405,9 @@ receiver    ::= anchor step+
 
 suffix      ::= "." call
 
-call        ::= SEG    "(" [ args ] ")"
-              | DUNDER "(" [ args ] ")"
-              | DUNDER "(" [ args "," ] kwargs ")"
+call        ::= SEG    "(" [ args [ "," ] ] ")"
+              | DUNDER "(" [ args [ "," ] ] ")"
+              | DUNDER "(" [ args "," ] kwargs [ "," ] ")"
 
 args        ::= arg ( "," arg )*
 
@@ -460,7 +460,9 @@ What the production says, and why:
   dunder name calls a built-in and any other name a declared function; which
   ones exist, and how many arguments each takes, are the specification's
   business — a grammar cannot enumerate them. `{a.__AS_BOGUS__()}` is
-  well-formed here and akan when it is resolved.
+  well-formed here and akan when it is resolved. **A trailing comma is
+  allowed**, as in Python — `{f(a, x,)}` — but only after an argument:
+  `{f(,)}` and `{f(x,,)}` are not generated.
 - **Keyword arguments belong to built-ins** (`{cfg.__AS_JSON__(lexemes=False)}`),
   after any positional ones, and take anything a positional argument can —
   `{cfg.__AS_JSON__(lexemes=opts.keep)}` is as well-formed as a literal. A

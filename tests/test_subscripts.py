@@ -224,11 +224,10 @@ def test_template_holes_report_the_source_spelling():
 @pytest.mark.parametrize("ref,needle", [
     ("a[", "unclosed '['"),
     ("a[]", "empty subscript"),
-    ("a['x]", "unclosed '['"),
+    ("a['x]", "unterminated string"),
     ("a..b", "empty segment"),
     ("a.", "may not end with '.'"),
     (".a", "empty segment"),
-    ("a['x\\\\y']", "escapes in a quoted key are reserved"),
     ("8080", "not an identifier"),
 ])
 def test_malformed_references_are_akan(ref, needle):
@@ -242,10 +241,41 @@ def test_a_quoted_key_may_hold_a_brace():
     assert parse_ref('a["}"]').steps == [("key", "a"), ("key", "}")]
 
 
-def test_the_string_delimiter_still_ends_the_string():
-    # y"{a["b"]}" closes at the inner quote; use the other one, as in
-    # Python before PEP 701
-    akan('a:\n  b: 1\nu: y"{a["b"]}"\n', "unclosed hole")
+def test_a_quoted_key_takes_escapes():
+    # GRAMMAR §G5: a STRING in a hole takes §G4.5's escapes (operator,
+    # 2026-10-13; reserved until v0.3)
+    assert parse_ref("a['x\\'y']").steps == [("key", "a"), ("key", "x'y")]
+    assert parse_ref('a["b\\x2ec"]').steps == [("key", "a"), ("key", "b.c")]
+
+
+@pytest.mark.parametrize("doc,value", [
+    # GRAMMAR §G4.7, as in Python since PEP 701: a literal does not end
+    # inside a hole, even at its own quote mark
+    ('a:\n  b: 1\nu: y"{a["b"]}"\n', "1"),
+    ("a:\n  b: 1\nu: y'{a['b']}'\n", "1"),
+    ('a:\n  b: 1\nu: y"x{a["b"]}y{a[\'b\']}z"\n', "x1y1z"),
+    ('a:\n  b: 1\nu: ry"{a["b"]}\\d"\n', "1\\d"),
+    ('a:\n  b: 1\nu: y"""\n  {a["b"]}\n  """\n', "1\n"),
+    ('a:\n  b: 1\nu: y"{{"\nv: "}}"\n', "{"),
+])
+def test_a_literal_does_not_end_inside_a_hole(doc, value):
+    assert loads(doc)["u"] == value
+
+
+def test_a_brace_in_a_hole_string_is_content():
+    from yapyon.lexer import tokenize
+    tok = tokenize('u: y"<{a["}"]}>"\n')[2]
+    assert tok.parts == [("text", "<"), ("hole", 'a["}"]'), ("text", ">")]
+
+
+@pytest.mark.parametrize("doc,needle", [
+    ('a:\n  b: 1\nu: y"{a["b}"\n', "unclosed hole"),
+    ('a:\n  b: 1\nu: y"{a["b"]"\nv: "}"\n', "unclosed hole"),
+])
+def test_an_unclosed_hole_is_still_found_on_its_own_line(doc, needle):
+    # A single-line literal looks for a hole's `}` on its own line only, so
+    # a brace further down the document cannot swallow the rest of the line
+    akan(doc, needle)
 
 
 # --------------------------------------------------------------------------- #
@@ -506,18 +536,31 @@ def test_serializing_a_single_value_is_reserved():
     akan('n: 5\nu: y"{n.__AS_JSON__()}"\n', "is reserved")
 
 
-@pytest.mark.parametrize("ref,needle", [
-    ("cfg.__AS_XML__()", "there is no serializer named"),
-    ("cfg.foo()", "not a serializer"),
-    ("__AS_JSON__()", "needs a value to encode"),
-    ("__KEY__.__AS_JSON__()", "a key is already text"),
+@pytest.mark.parametrize("ref", [
+    "cfg.__AS_XML__()",     # an unknown built-in is akan when resolved
+    "cfg.foo()",            # a declared function (SPEC §13)
+    "__AS_JSON__()",        # arity is the specification's, not the grammar's
+    "__AS_JSON__(cfg)",     # the receiver form is sugar for this one
 ])
-def test_the_serializer_set_belongs_to_the_format(ref, needle):
-    # a closed, format-defined set is the line between these and the
-    # consumer-registered functions that remain undesigned
+def test_the_grammar_admits_any_call(ref):
+    # GRAMMAR §G5: "which ones exist, and how many arguments each takes, are
+    # the specification's business -- a grammar cannot enumerate them"
+    assert parse_ref(ref).call is not None
+
+
+def test_the_receiver_form_is_sugar():
+    assert parse_ref("cfg.__AS_JSON__()") == parse_ref("__AS_JSON__(cfg)")
+
+
+def test_an_unknown_built_in_is_akan_naming_those_that_exist():
+    akan('cfg:\n  a: 1\nu: y"{cfg.__AS_XML__()}"\n',
+         "there is no built-in named __AS_XML__()")
+
+
+def test_nothing_follows_a_key():
     with pytest.raises(RefError) as e:
-        parse_ref(ref)
-    assert needle in str(e.value)
+        parse_ref("__KEY__.__AS_JSON__()")
+    assert "a key is already text" in str(e.value)
 
 
 # --------------------------------------------------------------------------- #
@@ -556,7 +599,7 @@ def test_a_serializer_on_a_bare_anchor_is_circular(ref):
 ])
 def test_an_anchor_with_a_step_may_be_serialized(ref):
     # what the bar above does *not* cost: naming a block through an anchor
-    assert parse_ref(ref).serializer.startswith("__AS_")
+    assert parse_ref(ref).call.name.startswith("__AS_")
 
 
 def test_the_circular_akan_lands_in_a_document_at_the_hole():

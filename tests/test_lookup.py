@@ -134,7 +134,7 @@ def test_current_may_be_a_list():
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("ref,needle", [
     ("nope", "no value named 'nope'"),
-    ("a b", "not an identifier"),
+    ("a b", "names in a path are joined by '.'"),
     ("xs[9]", "past the end"),
     ("__KEY__", "you are at a node"),
 ])

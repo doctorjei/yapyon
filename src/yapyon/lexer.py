@@ -25,10 +25,12 @@ Design decisions implemented (from the design session):
     every lone "}" is akan. `a.b` is sugar for `a["b"]` — the bracket is
     the general form and its content yields a key (quoted literal, integer
     index, or a reference whose value is the key). The dunder namespace is
-    yapyon's: __ROOT__ and __PARENT__ lead a reference, __KEY__ and the three
-    __AS_X__() serializers end one, and every other dunder is akan.
-    `parse_ref` is the one implementation of that grammar (GRAMMAR §G5); the
-    lexer validates with it and the resolver and templates traverse with it.
+    yapyon's: __ROOT__ and __PARENT__ lead a reference, __KEY__ ends one, and
+    any other dunder names a built-in call. A hole may hold calls, chained
+    and nested, with literal arguments (SPEC §13.1), and a literal does not
+    end inside a hole (PEP 701). `parse_ref` is the one implementation of
+    that grammar (GRAMMAR §G5); the lexer validates with it and the resolver
+    and templates traverse with it.
   * Numbers: Python literals (0x/0o/0b, underscores, floats, exponents),
     optional leading sign. No inf/nan spellings.
   * Keywords: True / False / None. Any other bare word is a NAME token
@@ -158,6 +160,9 @@ class Ref:
     `tools/check_ref_grammar.py` keeps the document and this parser in step,
     and `tests/test_ref_grammar.py` runs it.
 
+    A reference is either a **path** — an anchor or a name, then steps — or
+    a **call**, in which case `call` is set and the path fields are empty.
+
     `a.b` is sugar for `a["b"]`: the bracket is the general form and its
     content yields a key. So `steps` is a flat list of what to do next, and
     a dotted segment and a quoted key produce the *same* step kind — the
@@ -173,80 +178,117 @@ class Ref:
     can show what the author actually wrote.
     """
 
-    __slots__ = ("root", "steps", "text", "shirans", "parents", "key",
-                 "serializer")
+    __slots__ = ("root", "steps", "text", "shirans", "parents", "key", "call")
 
     def __init__(self, root: bool, steps: list, text: str, shirans=(),
-                 parents: int = 0, key: bool = False, serializer: str = ""):
+                 parents: int = 0, key: bool = False, call: "Call | None" = None):
         self.root, self.steps, self.text = root, list(steps), text
         self.shirans: list[str] = list(shirans)   # legal, but worth a word
         self.parents = parents      # §5.1.1: how many __PARENT__ hops, 0 if none
         self.key = key              # §5.1.1: ends in __KEY__, naming a position
-        self.serializer = serializer   # §5.1.2: a SERIALIZER_NAMES member, or ""
+        self.call = call            # §13.1: a call, or None for a path
+
+    @property
+    def bare_anchor(self) -> bool:
+        """`__ROOT__` or `__PARENT__`… with no step: always an ancestor of
+        the hole, so never a receiver or an argument (GRAMMAR §G5)."""
+        return (self.call is None and not self.key and not self.steps
+                and (self.root or self.parents > 0))
 
     def __eq__(self, other):
         return (isinstance(other, Ref) and self.root == other.root
                 and self.steps == other.steps
-                and self.parents == other.parents and self.key == other.key)
+                and self.parents == other.parents and self.key == other.key
+                and self.call == other.call)
 
     def __hash__(self):
         return hash((self.root, self.parents, self.key,
-                     tuple(map(str, self.steps))))
+                     tuple(map(str, self.steps)), self.call))
 
     def __repr__(self):
         return f"Ref({self.text!r})"
 
 
-def _ref_int(token: str) -> int:
-    """A bracket index: decimal digits, optionally after `-`. A negative
-    index counts from the end, as in Python — `xs[-1]` is the last element,
-    and `xs[-0]` is `xs[0]` because `-0` is the integer 0."""
-    digits = token[1:] if token.startswith("-") else token
-    if not digits.isdigit() or not digits.isascii():
-        raise RefError(f"{token!r} is neither an identifier, a quoted key, "
-                       f"nor a number")
-    return int(token)
+class Call:
+    """A call in a hole (SPEC §13.1). **The receiver form is sugar**:
+    `{a.f(x)}` arrives as `Call("f", [a, x], receiver=True)`, the same call
+    as `{f(a, x)}`, so nothing downstream has two shapes to handle.
+    `receiver` only remembers the spelling, for messages.
+
+    `args` holds `Ref`s and `Literal`s; `kwargs` is `[(name, arg), ...]` in
+    the order written — keyword arguments belong to built-ins (GRAMMAR §G5).
+    """
+
+    __slots__ = ("name", "args", "kwargs", "receiver")
+
+    def __init__(self, name: str, args: list, kwargs: list,
+                 receiver: bool = False):
+        self.name, self.args, self.kwargs = name, list(args), list(kwargs)
+        self.receiver = receiver
+
+    def __eq__(self, other):
+        return (isinstance(other, Call) and self.name == other.name
+                and self.args == other.args and self.kwargs == other.kwargs)
+
+    def __hash__(self):
+        return hash((self.name, tuple(self.args), tuple(self.kwargs)))
+
+    def __repr__(self):
+        return f"Call({self.name!r}, {self.args!r}, {self.kwargs!r})"
 
 
-def _split_subscript(text: str, i: int) -> tuple[str, int]:
-    """The content of the bracket opening at `text[i]`, and the index past
-    its `]`. Tracks nesting and quotes, so `a[b[c]]` and `a["]"]` both close
-    where they should."""
-    depth, j, quote = 0, i, ""
-    while j < len(text):
-        ch = text[j]
-        if quote:
-            if ch == quote:
-                quote = ""
-        elif ch in "\"'":
-            quote = ch
-        elif ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                return text[i + 1:j], j + 1
-        j += 1
-    raise RefError("unclosed '[' in a hole reference")
+class Literal:
+    """A literal argument or bracket key: a `Token` from the document lexer,
+    so a literal in a hole means exactly what it means as a value — the
+    escapes, prefixes and number rules have one implementation. `lexeme` is
+    the spelling with any sign attached and inner whitespace dropped."""
+
+    __slots__ = ("token", "lexeme")
+
+    def __init__(self, token: Token, lexeme: str):
+        self.token, self.lexeme = token, lexeme
+
+    @property
+    def value(self):
+        return self.token.value
+
+    def __eq__(self, other):
+        return (isinstance(other, Literal) and self.token.kind == other.token.kind
+                and type(self.value) is type(other.value)
+                and self.value == other.value)
+
+    def __hash__(self):
+        return hash((self.token.kind, self.value))
+
+    def __repr__(self):
+        return f"Literal({self.lexeme})"
+
+
+_HOLE_SPACE = " \t\n"          # GRAMMAR §G5: between tokens, never inside one
 
 
 def _find_hole_end(s: str, start: int) -> int:
     """Index of the `}` that closes a hole opening before `start`, or -1.
 
-    Not `s.find("}")`: a quoted key may contain a brace, and a nested
-    subscript may contain brackets, so the scan has to track both.
+    Not `s.find("}")`: a string literal in the hole may hold a brace or a
+    quote of either kind — the enclosing literal's own included, as since
+    PEP 701 (GRAMMAR §G4.7) — and a backslash protects the character after
+    it, inside a string or out, exactly as `_scan_string_body` treats it.
     """
     depth, i, quote = 0, start, ""
     while i < len(s):
         ch = s[i]
+        if ch == "\\":
+            i += 2
+            continue
         if quote:
             if ch == quote:
                 quote = ""
         elif ch in "\"'":
             quote = ch
-        elif ch == "[":
+        elif ch in "[(":
             depth += 1
-        elif ch == "]":
+        elif ch in "])":
             depth -= 1
         elif ch == "}" and depth <= 0:
             return i
@@ -262,142 +304,422 @@ def parse_ref(text: str) -> Ref:
     Two rules that must agree drift when written twice, and this grammar is
     used in three places.
     """
-    source, text = text, text.strip()
-    if not text:
+    parser = _RefParser(text)
+    if not text.strip():
         raise RefError("empty hole '{}'")
-
-    root = False
-    if _leads(text, "__ROOT__"):
-        root, text = True, _strip_anchor(text, "__ROOT__")
-        if not text:
-            return Ref(True, [], source)
-
-    # §5.1.1's relative anchors. `__PARENT__` repeats, where `__ROOT__` may not:
-    # it moves one level, so a chain of them is the only way to move several.
-    parents = 0
-    while _leads(text, "__PARENT__"):
-        if root:
-            raise RefError("__ROOT__ already anchors this reference; "
-                           "__PARENT__ is relative and cannot follow it")
-        parents += 1
-        text = _strip_anchor(text, "__PARENT__")
-        if not text:
-            return Ref(False, [], source, parents=parents)
-
-    # §5.1.2's named serializers end a reference too: they name an *encoding*
-    # of the value reached, so nothing can follow one.
-    serializer = ""
-    if text.endswith(")"):
-        head, _, call = text.rpartition(".")
-        if call.endswith("()") and is_dunder(call[:-2]):
-            serializer = _check_serializer(call[:-2])
-            if not head:
-                # A bare anchor is barred for a different reason than a bare
-                # serializer, and saying so matters: an anchor is *always* an
-                # ancestor of the hole, so encoding it would need the value
-                # being encoded. Structural, so it lands here (law 7) rather
-                # than as a cycle the resolver reports later.
-                anchor = "__ROOT__" if root else "__PARENT__" if parents else ""
-                if anchor:
-                    raise RefError(
-                        f"{anchor} contains this hole, so {{{source.strip()}}} "
-                        f"would encode the value it is computing; name a block "
-                        f"that does not contain it, as {{{anchor}.blk.{call}}}")
-                raise RefError(f"{call} needs a value to encode; write "
-                               f"{{something.{call}}}")
-            text = head
-        elif call.endswith("()"):
-            raise RefError(f"{call[:-2]!r} is not a serializer; the named "
-                           f"ones are spelled __AS_X__()")
-
-    # `__KEY__` names a *position*, so it ends the reference and may follow
-    # only an anchor -- never data traversal. After `a.b` the key is the
-    # literal "b", which the author already wrote, so nothing is lost by
-    # barring it, and narrowing later would not be compatible.
-    if text == "__KEY__":
-        if serializer:
-            raise RefError("a key is already text; it needs no serializer")
-        if root:
-            raise RefError("the document root has no key, so "
-                           "{__ROOT__.__KEY__} can never name anything")
-        return Ref(False, [], source, parents=parents, key=True)
-
-    steps: list = []
-    shirans: list[str] = []
-    i, expect_name = 0, True
-    while i < len(text):
-        if text[i] == "[":
-            inner, i = _split_subscript(text, i)
-            step = _parse_subscript(inner, shirans)
-            steps.append(step)
-            if step[0] == "ref":
-                shirans.extend(step[1].shirans)
-            expect_name = False
-            continue
-        if text[i] == ".":
-            if expect_name:
-                raise RefError("empty segment in a hole reference "
-                               "(two dots, or a leading one)")
-            i, expect_name = i + 1, True
-            continue
-        j = i
-        while j < len(text) and text[j] not in ".[":
-            j += 1
-        seg = text[i:j]
-        _check_segment(seg)
-        steps.append(("key", fold_name(seg)))
-        i, expect_name = j, False
-    if expect_name:
-        raise RefError("a hole reference may not end with '.'")
-    return Ref(root, steps, source, shirans, parents=parents,
-               serializer=serializer)
+    ref = parser.ref(text)
+    parser.end()
+    return ref
 
 
-def _check_serializer(name: str) -> str:
-    """§5.1.2. The names come from `serializers` rather than a second list
-    here, so the grammar cannot come to disagree with what exists."""
-    from .serializers import SERIALIZER_NAMES
-    if name in SERIALIZER_NAMES:
+class _RefParser:
+    """Recursive descent over GRAMMAR §G5, one character at a time.
+
+    Context-free on purpose: every decision is one token of lookahead
+    (a name followed by `(` is a call, by `=` a keyword), so there is
+    nowhere for a second reading of the production to hide."""
+
+    def __init__(self, s: str):
+        self.s, self.i = s, 0
+
+    # -- characters ----------------------------------------------------------
+    def peek(self, n: int = 0) -> str:
+        """The next significant character; "" at the end (trap 1)."""
+        while self.i < len(self.s) and self.s[self.i] in _HOLE_SPACE:
+            self.i += 1
+        j = self.i + n
+        return self.s[j] if j < len(self.s) else ""
+
+    def eat(self, ch: str) -> bool:
+        if self.peek() == ch:
+            self.i += 1
+            return True
+        return False
+
+    def expect(self, ch: str, after: str):
+        if not self.eat(ch):
+            raise RefError(f"expected {ch!r} {after}, found "
+                           f"{self._what_is_next()}")
+
+    def end(self):
+        if self.peek():
+            raise RefError(self._stray())
+
+    def _what_is_next(self) -> str:
+        ch = self.peek()
+        return "the end of the hole" if not ch else repr(ch)
+
+    def _stray(self) -> str:
+        ch = self.peek()
+        if ch == "#":
+            return ("a hole has no comments; '#' is content only inside a "
+                    "string literal")
+        if ch in ":!":
+            return ("format specs and conversions are reserved; a hole "
+                    "names a value and does nothing else")
+        if ch == "(":
+            return "only a name can be called"
+        if id_start(ch):
+            return (f"unexpected {self._rest_word()!r} after a complete "
+                    f"reference; names in a path are joined by '.'")
+        return f"unexpected {ch!r} in a hole reference"
+
+    # -- names ---------------------------------------------------------------
+    def name(self) -> str:
+        """A NAME as written (GRAMMAR §G4.1), or a RefError that says why
+        the characters here are not one."""
+        self.peek()
+        start = self.i
+        if not id_start(self.s[start:start + 1]):
+            j = start
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}":
+                j += 1
+            seg = self.s[start:j]
+            if not seg:
+                raise RefError(
+                    "empty segment in a hole reference (two dots, or a "
+                    "leading one)" if self.s[start:start + 1] == "." else
+                    f"expected a name, found {self._what_is_next()}")
+            _check_segment(seg)                # raises, with the best message
+            raise Yakamashiwa(f"_check_segment accepted {seg!r}, which "
+                              f"does not start a name")
+        self.i += 1
+        while _id_continue(self.s[self.i:self.i + 1]):
+            self.i += 1
+        name = self.s[start:self.i]
+        glued = self.s[self.i:self.i + 1]
+        if glued and glued not in _HOLE_SPACE + ".[](),=}:!#'\"":
+            # Something that is not a name character, written as part of
+            # one: judge the whole run as the name it was meant to be, so
+            # the message can say *why* (invisible, too new, a `$`).
+            j = self.i
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}":
+                j += 1
+            _check_segment(self.s[start:j])
+        reserved = reserved_fold(name)
+        if reserved is not None:
+            raise RefError(f"{name!r} is another spelling of {reserved!r}; "
+                           f"reserved names are written exactly one way")
         return name
-    raise RefError(f"there is no serializer named {name}(); yapyon defines "
-                   f"{', '.join(n + '()' for n in SERIALIZER_NAMES)}")
+
+    def _key_ends(self):
+        if self._calls_next():
+            raise RefError("__KEY__ is a position, not a function")
+        if self.peek() in (".", "["):
+            raise RefError("__KEY__ ends a reference; a key is already "
+                           "text, so nothing can follow it")
+
+    def _calls_next(self) -> bool:
+        return self.peek() == "("
+
+    # -- ref ::= key_ref | value_ref -----------------------------------------
+    def ref(self, source: str, argument: bool = False) -> Ref:
+        """A reference: a path, `__KEY__`, or a call with its chain.
+
+        `argument` is set where §G5 has `receiver | applied` rather than
+        `path`: a bare anchor is then refused, because it contains the
+        hole that would be computing with it."""
+        name = self.name()
+        if name == "__KEY__":
+            self._key_ends()
+            return Ref(False, [], source, key=True)
+        if name == "__ROOT__" or name == "__PARENT__":
+            return self._anchored(name, source, argument)
+        if is_dunder(name) or (name not in KEYWORDS and self._calls_next()):
+            if not self._calls_next():
+                _check_segment(name)
+            return self._chain(self._call(name, []), source)
+        _check_segment(name)
+        return self._path(Ref(False, [("key", fold_name(name))], source),
+                          source)
+
+    def _anchored(self, name: str, source: str, argument: bool) -> Ref:
+        root, parents = name == "__ROOT__", int(name == "__PARENT__")
+        # `__PARENT__` repeats, where `__ROOT__` may not: it moves one level,
+        # so a chain of them is the only way to move several.
+        while self.peek() == ".":
+            save = self.i
+            self.i += 1
+            nxt = self.name()
+            if nxt == "__PARENT__":
+                if root:
+                    raise RefError("__ROOT__ already anchors this reference; "
+                                   "__PARENT__ is relative and cannot follow it")
+                parents += 1
+                continue
+            if nxt == "__KEY__":
+                # `__KEY__` names a *position*, so it ends the reference and
+                # may follow only `__PARENT__` -- never data traversal.
+                if root:
+                    raise RefError("the document root has no key, so "
+                                   "{__ROOT__.__KEY__} can never name anything")
+                self._key_ends()
+                return Ref(False, [], source, parents=parents, key=True)
+            self.i = save
+            break
+        ref = Ref(root, [], source, parents=parents)
+        if self.peek() == "." and self._dot_calls():
+            anchor = "__ROOT__" if root else "__PARENT__"
+            raise RefError(
+                f"{anchor} contains this hole, so calling a function on it "
+                f"would need the value being computed; name a block that "
+                f"does not contain it, as {{{anchor}.blk.f()}}")
+        ref = self._path(ref, source)
+        if argument and ref.bare_anchor:
+            anchor = "__ROOT__" if root else "__PARENT__"
+            raise RefError(
+                f"{anchor} contains this hole, so passing it to a function "
+                f"would need the value being computed; name a block that "
+                f"does not contain it, as {anchor}.blk")
+        return ref
+
+    def _dot_calls(self) -> bool:
+        """At a `.`: is it `.name(` — a call suffix rather than a step?"""
+        save = self.i
+        try:
+            self.i += 1
+            self.peek()
+            if not id_start(self.s[self.i:self.i + 1]):
+                return False
+            self.name()
+            return self._calls_next()
+        finally:
+            self.i = save
+
+    # -- path ::= (anchor | SEG) step*, then any call suffixes ----------------
+    def _path(self, ref: Ref, source: str) -> Ref:
+        while True:
+            ch = self.peek()
+            if ch == "[":
+                self.i += 1
+                step = self._subscript()
+                if step[0] == "ref":
+                    ref.shirans.extend(step[1].shirans)
+                elif step[0] == "shiran":
+                    ref.shirans.append(step[2])
+                    step = ("key", step[1])
+                ref.steps.append(step)
+                self.expect("]", "to close the subscript")
+            elif ch == ".":
+                if self._dot_calls():
+                    self.i += 1
+                    name = self.name()
+                    call = self._call(name, [ref], receiver=True)
+                    return self._chain(call, source, ref.shirans)
+                self.i += 1
+                if not self.peek():
+                    raise RefError("a hole reference may not end with '.'")
+                seg = self.name()
+                _check_segment(seg)
+                ref.steps.append(("key", fold_name(seg)))
+            else:
+                return ref
+
+    # -- applied ::= ... call suffix* ------------------------------------------
+    def _chain(self, call: Call, source: str, shirans=()) -> Ref:
+        """After a call, nothing but another call: `suffix ::= "." call`."""
+        found = list(shirans)            # the receiver's, passed separately
+        found.extend(_arg_shirans(call, skip_first=call.receiver))
+        while self.peek() == ".":
+            if not self._dot_calls():
+                raise RefError("nothing follows a call but another call, as "
+                               ".name(); a call's result cannot be indexed "
+                               "or traversed")
+            self.i += 1
+            name = self.name()
+            call = self._call(name, [Ref(False, [], source, call=call)],
+                              receiver=True)
+            found.extend(_arg_shirans(call, skip_first=True))
+        if self.peek() == "[":
+            raise RefError("nothing follows a call but another call, as "
+                           ".name(); a call's result cannot be indexed "
+                           "or traversed")
+        return Ref(False, [], source, found, call=call)
+
+    # -- call ::= name "(" [args] ")" ------------------------------------------
+    def _call(self, name: str, args: list, receiver: bool = False) -> Call:
+        dunder = is_dunder(name)
+        if name in KEYWORDS:
+            raise RefError(f"{name!r} cannot be called")
+        if name in ("__ROOT__", "__PARENT__", "__KEY__"):
+            raise RefError(f"{name} is an anchor or a position, not a "
+                           f"function")
+        if not dunder:
+            _check_segment(name)
+        self.expect("(", f"after {name}")
+        kwargs: list = []
+        if self.eat(")"):
+            return Call(fold_name(name), args, kwargs, receiver)
+        while True:
+            if self._at_keyword():
+                key = self.name()
+                if not dunder:
+                    raise RefError(f"keyword arguments belong to built-ins in "
+                                   f"this version; {name}() is a declared "
+                                   f"function, so pass {key} by position")
+                _check_segment(key)
+                self.expect("=", f"after the keyword {key}")
+                kwargs.append((fold_name(key), self.arg()))
+            elif kwargs:
+                raise RefError("a positional argument cannot follow a "
+                               "keyword argument")
+            else:
+                args.append(self.arg())
+            if self.eat(")"):
+                return Call(fold_name(name), args, kwargs, receiver)
+            self.expect(",", "between arguments")
+            if self.eat(")"):                  # a trailing comma, as in Python
+                return Call(fold_name(name), args, kwargs, receiver)
+            if self.peek() == ",":
+                raise RefError("two commas in a row; a comma follows an "
+                               "argument")
+
+    def _at_keyword(self) -> bool:
+        """`name =`, and not `name ==` — one token of lookahead past a name."""
+        save = self.i
+        try:
+            self.peek()
+            if not id_start(self.s[self.i:self.i + 1]):
+                return False
+            while _id_continue(self.s[self.i + 1:self.i + 2]):
+                self.i += 1
+            self.i += 1
+            return self.peek() == "=" and self.peek(1) != "="
+        finally:
+            self.i = save
+
+    # -- arg ::= key_ref | receiver | applied | LITERAL ------------------------
+    def arg(self):
+        ch = self.peek()
+        if ch in "\"'+-." or _digit(ch) or self._prefixed_string() \
+                or self._keyword_literal():
+            return self._literal()
+        start = self.i
+        ref = self.ref("", argument=True)
+        ref.text = self.s[start:self.i].strip()
+        return ref
+
+    def _prefixed_string(self) -> bool:
+        j = self.i
+        while _id_continue(self.s[j:j + 1]):
+            j += 1
+        return j > self.i and self.s[j:j + 1] in ("'", '"')
+
+    def _keyword_literal(self) -> bool:
+        j = self.i
+        while _id_continue(self.s[j:j + 1]):
+            j += 1
+        return self.s[self.i:j] in KEYWORDS
+
+    # -- LITERAL ::= STRING | BYTES | ["+" | "-"] (INT | FLOAT) | keyword -------
+    def _literal(self) -> Literal:
+        sign = ""
+        if self.peek() in "+-":
+            sign = self.s[self.i]
+            self.i += 1
+            ch = self.peek()
+            if not (_digit(ch) or (ch == "." and _digit(self.peek(1)))):
+                raise RefError(f"a sign applies only to a number literal, "
+                               f"and once: {sign}{self._rest_word()} is not "
+                               f"a Python literal")
+        token, lexeme = self._token()
+        if sign:
+            if token.kind not in ("INT", "FLOAT"):
+                raise Yakamashiwa("a signed literal lexed as a non-number")
+            if sign == "-":
+                token.value = -token.value
+            lexeme = sign + lexeme
+        if token.kind not in ("STRING", "BYTES", "INT", "FLOAT", "KEYWORD"):
+            raise RefError(f"a {token.prefix}-string is not a literal; an "
+                           f"argument is a reference, a call, or a literal")
+        return Literal(token, lexeme)
+
+    def _rest_word(self) -> str:
+        j = self.i
+        while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ",)]}":
+            j += 1
+        return self.s[self.i:j]
+
+    def _token(self) -> tuple[Token, str]:
+        """One literal token, lexed by the document lexer itself."""
+        self.peek()
+        start = self.i
+        j = start
+        while _id_continue(self.s[j:j + 1]):
+            j += 1
+        if self.s[j:j + 3] in ('"""', "'''"):
+            raise RefError("a string in a hole is single-line; write it "
+                           "with one quote mark")
+        sub = Lexer(self.s)
+        sub.pos = start
+        try:
+            sub._lex_token()
+        except AkanError as exc:
+            raise RefError(exc.msg) from None
+        if not sub.tokens:
+            raise Yakamashiwa("the lexer consumed a literal but emitted nothing")
+        self.i = sub.pos
+        return sub.tokens[-1], self.s[start:self.i]
+
+    # -- sub ::= STRING | INDEX | ref ---------------------------------------
+    def _subscript(self):
+        """`["k"]`, `[0]`, or `[ref]` — the three things a bracket may hold.
+        A quoted key that a dot could have reached comes back as
+        `("shiran", key, message)`: legal, equivalent, and the long way."""
+        ch = self.peek()
+        if not ch:
+            raise RefError("unclosed '[' in a hole reference")
+        if ch == "]":
+            raise RefError("empty subscript '[]'")
+        if ch in "\"'" or self._prefixed_string():
+            literal = self._literal()
+            if literal.token.kind != "STRING":
+                raise RefError(f"a bracket key is a string, an index, or a "
+                               f"reference; {literal.lexeme} is "
+                               f"{literal.token.kind.lower()}")
+            key = literal.value
+            if is_identifier(key) and not is_dunder(key) \
+                    and key not in KEYWORDS and reserved_fold(key) is None:
+                # Legal, and equivalent — but there is one canonical spelling.
+                # The register's middle rung: did you mean the plainer one?
+                q = literal.lexeme[-1]
+                return ("shiran", fold_name(key),
+                        f"[{q}{key}{q}] is the long way to write .{key}; both "
+                        f"name the same key")
+            return ("key", fold_name(key))
+        if ch == "+":
+            raise RefError("'+' is not an index sign; a position is written "
+                           "without one, as [1]")
+        if ch == "-" or _digit(ch):
+            return ("index", self._index())
+        start = self.i
+        inner = self.ref("")
+        inner.text = self.s[start:self.i].strip()
+        return ("ref", inner)
+
+    def _index(self) -> int:
+        """INDEX ::= ["-"] DIGITS. A negative index counts from the end, as
+        in Python — `xs[-1]` is the last element, and `xs[-0]` is `xs[0]`."""
+        negative = self.eat("-")
+        self.peek()
+        start = self.i
+        while _digit(self.s[self.i:self.i + 1]):
+            self.i += 1
+        digits = self.s[start:self.i]
+        if not digits or self.peek() not in ("]", ""):
+            raise RefError(f"{('-' if negative else '')}{digits}"
+                           f"{self._rest_word()} is neither an identifier, a "
+                           f"quoted key, nor a decimal index")
+        return -int(digits) if negative else int(digits)
 
 
-def _leads(text: str, anchor: str) -> bool:
-    """`anchor` alone, or followed by `.` or `[` — an anchor may be
-    subscripted directly, so `{__PARENT__[p]}` addresses the enclosing
-    mapping by a key held in `p`."""
-    rest = text[len(anchor):]
-    return text.startswith(anchor) and (rest == "" or rest[0] in ".[")
-
-
-def _strip_anchor(text: str, anchor: str) -> str:
-    rest = text[len(anchor):]
-    return rest[1:] if rest[:1] == "." else rest
-
-
-def _parse_subscript(inner: str, shirans: list):
-    """`["k"]`, `[0]`, or `[ref]` — the three things a bracket may hold."""
-    inner = inner.strip()
-    if not inner:
-        raise RefError("empty subscript '[]'")
-    if inner[0] in "\"'":
-        if len(inner) < 2 or inner[-1] != inner[0]:
-            raise RefError(f"unterminated quoted key {inner!r}")
-        key = inner[1:-1]
-        if "\\" in key:
-            raise RefError("escapes in a quoted key are reserved; write the "
-                           "characters directly")
-        if is_identifier(key) and not is_dunder(key) \
-                and reserved_fold(key) is None:
-            # Legal, and equivalent — but there is one canonical spelling.
-            # The register's middle rung: did you mean the plainer one?
-            shirans.append(f"[{inner[0]}{key}{inner[0]}] is the long way to "
-                           f"write .{key}; both name the same key")
-        return ("key", fold_name(key))
-    if inner[0].isdigit() or inner[0] == "-":
-        return ("index", _ref_int(inner))
-    return ("ref", parse_ref(inner))
+def _arg_shirans(call: Call, skip_first: bool = False) -> list:
+    out = []
+    args = call.args[1:] if skip_first else call.args
+    for arg in list(args) + [v for _, v in call.kwargs]:
+        if isinstance(arg, Ref):
+            out.extend(arg.shirans)
+    return out
 
 
 def _check_segment(seg: str) -> None:
@@ -414,7 +736,7 @@ def _check_segment(seg: str) -> None:
                        "__PARENT__; after a key the name is already known")
     if is_dunder(seg):                        # the specific message wins
         raise RefError(f"reserved name {seg!r} in hole (defined: __ROOT__, "
-                       f"__PARENT__, __KEY__)")
+                       f"__PARENT__, __KEY__, and built-in calls)")
     if ":" in seg or "!" in seg:              # GRAMMAR §G5.2, reserved in §9
         raise RefError("format specs and conversions are reserved; a hole "
                        "names a value and does nothing else")
@@ -816,7 +1138,8 @@ class Lexer:
         # y"""...""" aligns with its block just as """...""" does.
         triple = self._peek(1) == quote and self._peek(2) == quote
         self._advance(3 if triple else 1)
-        raw_chars, raw_pos = self._scan_string_body(quote, triple, line, col)
+        raw_chars, raw_pos = self._scan_string_body(
+            quote, triple, line, col, holes=prefix in Y_PREFIXES)
 
         is_raw = prefix in RAW_PREFIXES
         is_bytes = prefix in BYTES_PREFIXES
@@ -858,7 +1181,7 @@ class Lexer:
         self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
                    prefix=prefix)
 
-    def _scan_string_body(self, quote, triple, line, col):
+    def _scan_string_body(self, quote, triple, line, col, holes=False):
         """Scan a string body, dedenting block strings (SPEC 4.1).
 
         The dedent anchor is the indentation of the first non-blank
@@ -866,6 +1189,13 @@ class Lexer:
         opening both behave as they look.  A newline immediately after the opening
         delimiter is dropped.  Blank lines are exempt and set no anchor.
         Single pass, no lookahead: consume the leading spaces, then decide.
+
+        With `holes` (the y-family), **a literal does not end inside a hole**
+        (GRAMMAR §G4.7, PEP 701): a hole is scanned to its closing `}` first,
+        so `y"{a["b"]}"` is one literal. The hole's extent is
+        `_find_hole_end`'s, the same function `_scan_holes` splits with, so
+        the two cannot disagree about where a hole stops. A single-line
+        literal looks for that `}` on its own line only.
 
         Returns the body and a parallel list of source (line, col) positions,
         one per character, so that a later akan can point at the character
@@ -875,10 +1205,22 @@ class Lexer:
         closer = quote * (3 if triple else 1)
         anchor = None          # discovered at the first content continuation line
         pristine = True        # nothing emitted yet -> a newline here is dropped
+        hole_end = -1          # source index of the open hole's `}`, if any
         while True:
             if self.pos >= len(self.text):
                 self._akan("unterminated string", line, col)
-            if self.text.startswith(closer, self.pos):
+            if holes and self.pos > hole_end and self._peek() == "{":
+                if self._peek(1) == "{":          # a literal brace, not a hole
+                    for _ in range(2):
+                        pos.append((self.line, self.col))
+                        out.append(self._advance())
+                    pristine = False
+                    continue
+                limit = -1 if triple else self.text.find("\n", self.pos)
+                if limit < 0:
+                    limit = len(self.text)
+                hole_end = _find_hole_end(self.text[:limit], self.pos + 1)
+            if self.pos > hole_end and self.text.startswith(closer, self.pos):
                 if triple and anchor is not None and self.col < anchor:
                     self._akan(f"closing delimiter outdents past the string's "
                                f"indentation (col {self.col} < {anchor})")

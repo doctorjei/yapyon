@@ -12,10 +12,12 @@ WHY THIS EXISTS
     `{cfg.__AS_JSON__()}` at all.
 
 WHAT IT DOES
-    Transcribes GRAMMAR §G5's EBNF into a recursive-descent recognizer --
-    literally, production by production, so the transcription can be eyeballed
-    against the document -- then runs both over a combinatorial corpus of
-    heads x steps x tails and reports every disagreement.
+    Transcribes GRAMMAR §G5's EBNF into a recognizer -- literally, production
+    by production, so the transcription can be eyeballed against the
+    document -- then runs both over a combinatorial corpus and reports every
+    disagreement. Each production here returns *every* position it can end
+    at, so alternatives that overlap in the EBNF (`path` and `receiver` both
+    start with a name) need no lookahead the document does not have.
 
     A mismatch means one of three things, and it is worth deciding which
     before changing anything:
@@ -23,241 +25,274 @@ WHAT IT DOES
       impl=n grammar=Y  the document is too wide, OR the implementation is
       ...and either document or code may be the one that is wrong.
 
-    It also checks the one thing the corpus cannot: that the document's
-    `serializer` production lists exactly the names `SERIALIZER_NAMES` holds.
-    The corpus compares *shapes*, so a serializer present in the code and
-    absent from the document would simply never be generated and never be
-    tested. That check is a direct document-against-code comparison.
+    It also checks the one thing the corpus cannot: that SPEC §5.1.2's table
+    of built-ins lists exactly the names `SERIALIZER_NAMES` holds. Since v0.3
+    the grammar admits any dunder call and leaves which exist to the spec,
+    so the spec's table is the document side of that comparison.
 
 WHY THE TRANSCRIPTION DOES NOT IMPORT THE IMPLEMENTATION
-    The recognizer below deliberately re-states the document's rules --
-    `is_dunder`, the SEG constraint, the shape of each production -- instead
-    of importing `yapyon.lexer`'s versions. Importing them would compare the
-    implementation against itself and the whole check would pass vacuously.
-    The terminals of the `serializer` production are read from GRAMMAR.md for
-    the same reason: this recognizer speaks for the *document*, and the
-    document is the thing on trial.
+    The recognizer below deliberately re-states the document's rules -- its
+    own tokens, the dunder test, the SEG constraint, the shape of each
+    production -- instead of importing `yapyon.lexer`'s versions. Importing
+    them would compare the implementation against itself and the whole check
+    would pass vacuously (trap 10). The built-in names are read from SPEC.md
+    for the same reason: this recognizer speaks for the *documents*.
+
+WHAT THE CORPUS LEAVES OUT, FOR NOW
+    Stream-literal prefixes (`bin dna oct hex c32`) and the `0q`/`0z` radixes
+    are in the grammar but not yet in the lexer (build stage 4); the token
+    rules below transcribe them, and the corpus adds them when they exist.
 
 WHEN TO RUN IT
     After any change to lexer.parse_ref, and after any edit to GRAMMAR §G5.
     `tests/test_ref_grammar.py` also runs it, so the suite covers it.
 """
 import itertools, re, sys
+from functools import lru_cache
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_ROOT / "src"))
-from yapyon.lexer import parse_ref, RefError
+from yapyon.lexer import parse_ref
 from yapyon.serializers import SERIALIZER_NAMES
 
-GRAMMAR = _ROOT / "docs" / "GRAMMAR.md"
+SPEC = _ROOT / "docs" / "SPEC.md"
 
 
-def serializers_from_grammar(path=GRAMMAR):
-    """The names GRAMMAR §G5's `serializer` production actually lists.
+def builtins_from_spec(path=SPEC):
+    """The names SPEC §5.1.2's table of built-ins actually lists.
 
-    Read from the document rather than hardcoded, so this recognizer cannot
-    quietly disagree with the text it claims to transcribe.
-    """
-    names, started = [], False
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not started:
-            m = re.match(r"^serializer\s*::=\s*(.*)$", line)
-            if not m:
-                continue
-            started, rest = True, m.group(1)
-        elif line.startswith("|"):
-            rest = line[1:]
-        else:
-            break
-        names.extend(re.findall(r'"(__[A-Za-z0-9_]+__)"', rest))
-    if not started:
-        raise SystemExit(f"no `serializer ::=` production found in {path}")
+    Read from the document rather than hardcoded, so this check cannot
+    quietly disagree with the text it claims to speak for."""
+    names, inside = [], False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#"):
+            inside = line.startswith("### 5.1.2 ")
+            continue
+        if inside:
+            m = re.match(r"^\|\s*`(__[A-Za-z0-9_]+__)`\s*\|", line)
+            if m:
+                names.append(m.group(1))
+    if not names:
+        raise SystemExit(f"no built-in table found in §5.1.2 of {path}")
     return tuple(names)
 
 
-SERIALIZERS = serializers_from_grammar()
+# --------------------------------------------------------------------------- #
+# Tokens: §G4 as GRAMMAR §G5 uses them inside a hole
+# --------------------------------------------------------------------------- #
 KEYWORDS = ("True", "False", "None")
-TOK = re.compile(r'''\s*(?:(?P<str>"[^"]*"|'[^']*')|(?P<int>[+-]?\d+)|(?P<name>[^\s.\[\]()]+)|(?P<p>[.\[\]()]))''')
+STRING_PREFIXES = ("", "r")                                  # §G4.6
+BYTES_PREFIXES = ("b", "bin", "dna", "oct", "hex", "c32", "b64", "rb")
+_STR = r'''(?P<pre>[A-Za-z0-9_]*)(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)'''
+_NUM = (r"0[xXoObBqQzZ]_?[0-9A-Za-z]+(?:_[0-9A-Za-z]+)*"     # §G4.3, no sign
+        r"|(?:\d+(?:_\d+)*(?:\.(?:\d+(?:_\d+)*)?)?|\.\d+(?:_\d+)*)"
+        r"(?:[eE][+-]?\d+(?:_\d+)*)?")
+TOK = re.compile(rf"[ \t\n]*(?:(?P<str>{_STR})|(?P<num>{_NUM})(?![A-Za-z0-9_])"
+                 rf"|(?P<name>[^\W\d]\w*)|(?P<p>[.\[\](),=+-]))")
+
 
 def lex(s):
+    """Tokens as (kind, text), or None if the text is not tokens at all.
+    Whitespace between tokens only; no comment token, so `#` fails."""
     out, i = [], 0
-    while i < len(s):
+    while s[i:].strip(" \t\n"):
         m = TOK.match(s, i)
-        if not m or m.end() == i: return None
+        if not m or m.end() == i:
+            return None
         i = m.end()
-        for k in ("str", "int", "name", "p"):
-            if m.group(k) is not None:
-                out.append((k, m.group(k))); break
+        if m.group("str") is not None:
+            pre = m.group("pre")
+            kind = ("STRING" if pre in STRING_PREFIXES else
+                    "BYTES" if pre in BYTES_PREFIXES else "OTHERSTR")
+            out.append((kind, m.group("str")))
+        elif m.group("num") is not None:
+            text = m.group("num")
+            if re.fullmatch(r"\d+", text):
+                kind = "DIGITS"                 # an INT that is also an INDEX
+            elif re.fullmatch(r"0[xXoObBqQzZ].*|[\d_]+", text):
+                kind = "INT"
+            else:
+                kind = "FLOAT"
+            out.append((kind, text))
+        elif m.group("name") is not None:
+            name = m.group("name")
+            out.append(("KEYWORD" if name in KEYWORDS else "NAME", name))
+        else:
+            out.append(("p", m.group("p")))
     return out
 
-def is_dunder(n): return n.startswith("__") and n.endswith("__") and len(n) >= 2
-def is_name(n): return n.isidentifier() and n not in KEYWORDS
-def is_seg(n): return is_name(n) and not is_dunder(n)
 
-class P:
-    def __init__(self, toks): self.t, self.i = toks, 0
-    def peek(self, k=0): return self.t[self.i+k] if self.i+k < len(self.t) else (None, None)
-    def take(self): v = self.peek(); self.i += 1; return v
-    def at(self, kind, val=None):
-        k, v = self.peek()
-        return k == kind and (val is None or v == val)
+def is_dunder(n): return n.startswith("__") and n.endswith("__")       # §G4.2
 
-    # ref ::= key_ref | value_ref
-    def ref(self):
-        save = self.i
-        if self.key_ref() and self.i == len(self.t): return True
-        self.i = save
-        return self.value_ref()
 
-    # key_ref ::= parents "." "__KEY__" | "__KEY__"
-    def key_ref(self):
-        if self.at("name", "__KEY__"): self.take(); return True
-        if not self.parents(): return False
-        if not self.at("p", "."): return False
-        self.take()
-        if not self.at("name", "__KEY__"): return False
-        self.take(); return True
+# --------------------------------------------------------------------------- #
+# Combinators: each parser maps (tokens, i) to the set of positions it can
+# end at. An empty set is "does not match here".
+# --------------------------------------------------------------------------- #
+def tok(pred):
+    def p(t, i):
+        return {i + 1} if i < len(t) and pred(t[i]) else set()
+    return p
 
-    # parents ::= "__PARENT__" ("." "__PARENT__")*
-    def parents(self):
-        if not self.at("name", "__PARENT__"): return False
-        self.take()
-        while self.at("p", ".") and self.peek(1) == ("name", "__PARENT__"):
-            self.take(); self.take()
-        return True
+def lit(text): return tok(lambda k: k[1] == text and k[0] in ("p", "NAME", "KEYWORD"))
+def kind(*ks): return tok(lambda k: k[0] in ks)
 
-    # anchor ::= "__ROOT__" | parents
-    def anchor(self):
-        if self.at("name", "__ROOT__"): self.take(); return True
-        return self.parents()
+def seq(*ps):
+    def p(t, i):
+        ends = {i}
+        for q in ps:
+            ends = {e for s in ends for e in q(t, s)}
+        return ends
+    return p
 
-    # step ::= "." SEG | subscript
-    def step(self):
-        if self.at("p", ".") and self.peek(1)[0] == "name" and is_seg(self.peek(1)[1]):
-            self.take(); self.take(); return True
-        return self.subscript()
+def alt(*ps):
+    return lambda t, i: set().union(*(q(t, i) for q in ps))
 
-    def subscript(self):
-        if not self.at("p", "["): return False
-        self.take()
-        if not self.sub(): return False
-        if not self.at("p", "]"): return False
-        self.take(); return True
+def opt(q): return alt(q, lambda t, i: {i})
 
-    # sub ::= STRING | INDEX | ref
-    def sub(self):
-        if self.at("str"): self.take(); return True
-        if self.at("int"):
-            v = self.peek()[1]
-            if v.startswith("+"): return False        # INDEX takes "-", never "+"
-            self.take(); return True
-        depth, j = 0, self.i
-        while j < len(self.t):
-            k, v = self.t[j]
-            if k == "p" and v == "[": depth += 1
-            elif k == "p" and v == "]":
-                if depth == 0: break
-                depth -= 1
-            j += 1
-        inner = P(self.t[self.i:j])
-        if inner.ref() and inner.i == len(inner.t):
-            self.i = j; return True
-        return False
+def star(q):
+    def p(t, i):
+        seen, todo = {i}, [i]
+        while todo:
+            for e in q(t, todo.pop()):
+                if e not in seen:
+                    seen.add(e); todo.append(e)
+        return seen
+    return p
 
-    def serializer(self):
-        k, v = self.peek()
-        if k != "name" or v not in SERIALIZERS: return False
-        if self.peek(1) != ("p", "(") or self.peek(2) != ("p", ")"): return False
-        self.take(); self.take(); self.take(); return True
+def plus(q): return seq(q, star(q))
 
-    # value_ref ::= path | serialized
-    def value_ref(self):
-        save = self.i
-        if self.serialized() and self.i == len(self.t): return True
-        self.i = save
-        return self.path() and self.i == len(self.t)
+class Rule:
+    """A named non-terminal, so productions can refer to one another
+    before they are defined -- the order below is the document's."""
+    def __init__(self): self.p = None
+    def __call__(self, t, i): return self.p(t, i)
 
-    # path ::= (anchor | SEG) step*
-    def path(self):
-        if not self.head(): return False
-        while self.step(): pass
-        return True
 
-    def head(self):
-        save = self.i
-        if self.anchor(): return True
-        self.i = save
-        if self.peek()[0] == "name" and is_seg(self.peek()[1]):
-            self.take(); return True
-        return False
+# --------------------------------------------------------------------------- #
+# GRAMMAR §G5, production by production
+# --------------------------------------------------------------------------- #
+ref, key_ref, value_ref, path, applied, receiver, suffix, call, args, arg, \
+    kwargs, kwarg, anchor, parents, step, subscript, sub = (Rule() for _ in range(17))
 
-    # serialized ::= anchor step+ "." serializer | SEG step* "." serializer
-    def serialized(self):
-        save = self.i
-        if self.anchor():
-            if not self.step(): self.i = save
-            else:
-                while self.step(): pass
-                return self.dot_ser()
-        self.i = save
-        if self.peek()[0] == "name" and is_seg(self.peek()[1]):
-            self.take()
-            while self.step(): pass
-            return self.dot_ser()
-        return False
+# SEG    ::= NAME, excluding every dunder name (§G4.2)
+# DUNDER ::= NAME that is a dunder name, other than __ROOT__, __PARENT__, __KEY__
+SEG = tok(lambda k: k[0] == "NAME" and not is_dunder(k[1]))
+DUNDER = tok(lambda k: k[0] == "NAME" and is_dunder(k[1])
+             and k[1] not in ("__ROOT__", "__PARENT__", "__KEY__"))
+# INDEX  ::= [ "-" ] DIGITS
+INDEX = seq(opt(lit("-")), kind("DIGITS"))
+# LITERAL ::= STRING | BYTES | [ "+" | "-" ] ( INT | FLOAT ) | "True" | "False" | "None"
+LITERAL = alt(kind("STRING"), kind("BYTES"),
+              seq(opt(alt(lit("+"), lit("-"))), kind("INT", "FLOAT", "DIGITS")),
+              lit("True"), lit("False"), lit("None"))
 
-    def dot_ser(self):
-        if not self.at("p", "."): return False
-        self.take()
-        return self.serializer()
+ref.p       = alt(key_ref, value_ref)
+key_ref.p   = alt(seq(parents, lit("."), lit("__KEY__")), lit("__KEY__"))
+value_ref.p = alt(path, applied)
+path.p      = seq(alt(anchor, SEG), star(step))
+applied.p   = alt(seq(receiver, plus(suffix)), seq(call, star(suffix)))
+receiver.p  = alt(seq(anchor, plus(step)), seq(SEG, star(step)))
+suffix.p    = seq(lit("."), call)
+call.p      = alt(seq(SEG, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
+                  seq(DUNDER, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
+                  seq(DUNDER, lit("("), opt(seq(args, lit(","))), kwargs,
+                      opt(lit(",")), lit(")")))
+args.p      = seq(arg, star(seq(lit(","), arg)))
+arg.p       = alt(key_ref, receiver, applied, LITERAL)
+kwargs.p    = seq(kwarg, star(seq(lit(","), kwarg)))
+kwarg.p     = seq(SEG, lit("="), arg)
+anchor.p    = alt(lit("__ROOT__"), parents)
+parents.p   = seq(lit("__PARENT__"), star(seq(lit("."), lit("__PARENT__"))))
+step.p      = alt(seq(lit("."), SEG), subscript)
+subscript.p = seq(lit("["), sub, lit("]"))
+sub.p       = alt(kind("STRING"), INDEX, ref)
+
 
 def generates(s):
+    """Does GRAMMAR §G5 generate `s` as a hole's interior?"""
     toks = lex(s)
-    if toks is None or not toks: return False
-    p = P(toks)
-    return p.ref() and p.i == len(p.t)
+    if not toks:
+        return False
+    return len(toks) in ref(tuple(toks), 0)
 
+
+# --------------------------------------------------------------------------- #
+# The corpus
+# --------------------------------------------------------------------------- #
 heads = ["a", "__ROOT__", "__PARENT__", "__PARENT__.__PARENT__", "__foo__",
          "True", "0", "__", "___", "_a", "a1"]
 steps = ["", ".b", "[0]", "[-1]", "[-0]", "[+1]", '["b.c"]', "[p]", ".b[0]", "[p].c",
-         ".__KEY__", ".__PARENT__", "[a[b]]", "..b", ".0", ".True", "[__KEY__]"]
+         ".__KEY__", ".__PARENT__", "[a[b]]", "..b", ".0", ".True", "[__KEY__]",
+         "[ - 1 ]", " . b", "[f(x)]", "['b\\'c']", '[b"x"]', "[1.5]", "[0x1]",
+         "[01]", "[__ROOT__]", "[a.f()]", "[]"]
 # Derived from the code, not listed by hand: a serializer the implementation
-# gains must be exercised here without anyone remembering to add it. The two
-# negatives stay fixed -- an unknown name, and a call on no name at all.
-tails = [""] + [f".{n}()" for n in SERIALIZER_NAMES] + [".__AS_BOGUS__()", ".__KEY__", "()"]
+# gains must be exercised here without anyone remembering to add it.
+tails = ([""] + [f".{n}()" for n in SERIALIZER_NAMES]
+         + [".__AS_BOGUS__()", ".__KEY__", "()", ".f()", ".f(x).g()",
+            ".f()[0]", ".f().b", "(x)", ".f(lexemes=False)",
+            ".__AS_JSON__(lexemes=False)"])
+
+_S = SERIALIZER_NAMES[0]      # any built-in will do: the corpus tests shapes
+callees = ["f", _S, "__AS_BOGUS__", "__ROOT__", "__KEY__", "True",
+           "a.f", "__ROOT__.x.f", "__PARENT__.f", "__PARENT__.__PARENT__.x.__AS_JSON__",
+           "a[0].__AS_YAML__", "f()."]
+arglists = ["", "x", "x, y", "x,", ",x", ",", "x,,", "x, y ,", "lexemes=False,",
+            "x, lexemes=False ,", "x y", "1", "-1", "- 1", "+1.5", "--1",
+            "-True", "-x", "True", "None", '"s"', "'s'", 'b"s"', 'b64"aGk="',
+            'y"s"', 'r"\\d"', '"""s"""', '"#x"', "#x", "lexemes=False",
+            "x, lexemes=False", "lexemes=False, x", "lexemes=opts.keep",
+            "k=v=1", "k == 1", "__ROOT__", "__PARENT__", "__PARENT__.x",
+            "__ROOT__.x", "__KEY__", "__PARENT__.__KEY__", "g(x)", "x.g()",
+            "__AS_JSON__(x)", "[0]", "x[0]", "x[0].g(1)", "1.5e3", "0x1F",
+            "1_000", "x.0", "f(g(h(1)))"]
+calltails = ["", ".g()", "[0]", ".b", ".g(y)", " . g ( y ) "]
+
+loose = [" a . b ", "f( a , b )", "f (a)", "xs[ - 1 ]", "a .f()", "a. f()",
+         "a\n.b", "a\t.b", "a #c", 'f("#x")', "a:b", "a!r", "x:>3", "{a}",
+         "", " ", "a b", "a[b c]", _S, f"{_S} ()",
+         "__AS_JSON__(lexemes = False)", "a.__AS_JSON__(lexemes=False, x)",
+         "a.__AS_JSON__(x=1, x=2)", "8080", '"x"', '"x".f()', "f(x)(y)",
+         "$HOME", "a.$b", "a-b", "-1", "f(-)", "f(1,,2)"]
+
+
+def corpus():
+    yield from (h + s + t for h, s, t in itertools.product(heads, steps, tails))
+    yield from (f"{c}({a}){t}" for c, a, t in
+                itertools.product(callees, arglists, calltails))
+    yield from loose
 
 
 def mismatches():
     """Every corpus form the document and the implementation disagree about."""
-    out = []
-    for h, s, t in itertools.product(heads, steps, tails):
-        c = h + s + t
+    out, n = [], 0
+    for c in corpus():
+        n += 1
         try:
             parse_ref(c); impl = True
         except Exception: impl = False
         try: doc = generates(c)
-        except Exception: doc = False
+        except RecursionError: doc = False
         if impl != doc:
             out.append((c, impl, doc))
-    return len(heads) * len(steps) * len(tails), out
+    return n, out
 
 
 def main():
-    doc, code = set(SERIALIZERS), set(SERIALIZER_NAMES)
+    doc, code = set(builtins_from_spec()), set(SERIALIZER_NAMES)
     if doc != code:
-        print(f"  SERIALIZER MISMATCH  {GRAMMAR.name} lists {sorted(doc)}, "
+        print(f"  BUILT-IN MISMATCH  {SPEC.name} §5.1.2 lists {sorted(doc)}, "
               f"SERIALIZER_NAMES holds {sorted(code)}")
         if doc - code: print(f"    only in the document: {sorted(doc - code)}")
         if code - doc: print(f"    only in the code:     {sorted(code - doc)}")
         return 1
     n, bad = mismatches()
-    for c, impl, d in bad[:15]:
-        print(f"  MISMATCH {c!r:44} impl={'Y' if impl else 'n'} grammar={'Y' if d else 'n'}")
+    for c, impl, d in bad[:40]:
+        print(f"  MISMATCH {c!r:52} impl={'Y' if impl else 'n'} grammar={'Y' if d else 'n'}")
     print(f"\n{n} forms checked, {len(bad)} mismatches; "
-          f"serializer production agrees with SERIALIZER_NAMES ({len(code)} names)")
+          f"SPEC §5.1.2's built-ins agree with SERIALIZER_NAMES ({len(code)} names)")
     return 1 if bad else 0
 
 
