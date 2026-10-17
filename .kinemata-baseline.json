@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "until": "2026-11-17",
+  "by": "Jei",
+  "note": "Temporary baseline: kinemata reads the hex data example badf00d0 in SPEC \u00a73 as a commit; reported to kinemata 2026-10-17, remove once fixed.",
+  "findings": [
+    {
+      "registry": "claims",
+      "entry": "claim:commit",
+      "antipattern": "badf00d0",
+      "path": "docs/SPEC.md",
+      "text": "`badf00d0`, the bytes `ba df 00 d0`; `bin'0101'` is `0x50`; `dna'GAC'` is"
+    }
+  ]
+}
