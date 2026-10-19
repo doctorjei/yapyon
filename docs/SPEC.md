@@ -1,4 +1,4 @@
-# yapyon — draft specification v0.3
+# yapyon — draft specification v0.4
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -26,7 +26,7 @@ cites `GRAMMAR §Gn` and moves on. Sections below that consist only of such a
 citation are kept at their original numbers on purpose, so that existing
 references to them still land in the right place.
 
-Sections marked *(reserved)* name syntax deliberately akan in v0.3 but held
+Sections marked *(reserved)* name syntax deliberately akan in v0.4 but held
 for future versions.
 
 A yapyon document is one of **three tiers** (ehmon 2): a **record**, in
@@ -257,7 +257,7 @@ only layout and comments**. The property an implementation must satisfy is
 that **reloading its output yields data equal to reloading its input.**
 
 **Comments do not survive**, and a conforming emitter is not required to
-preserve them: comment-preserving round-trip is not specified in v0.3. An
+preserve them: comment-preserving round-trip is not specified in v0.4. An
 emitter is a normalizer, not a round-tripper. *(Reserved: comment retention —
 see §9.)*
 
@@ -373,8 +373,9 @@ call one from. The format defines:
 | `__AS_YAPYON__` | `(Any) -> str` |
 
 `__AS_JSON__` and `__AS_TOML__` take one keyword argument, `lexemes`
-(default `True`); `lexemes=False` writes no `@_lexemes` (§14.2). Keyword
-arguments belong to built-ins only in this version (§13.7).
+(default `True`); `lexemes=False` writes no `@_lexemes` (§14.2). A
+built-in's keyword arguments are its own and are listed here; it takes its
+positional argument by position only.
 
 `{cfg.__AS_JSON__()}` is the receiver spelling of `{__AS_JSON__(cfg)}`;
 both are legal (§13.1). A result is a `str`, and a chain is checked like
@@ -767,16 +768,16 @@ partition is exact and has no other members.
 
 ## 9. Reserved for future versions
 
-Syntax that is akan in v0.3 with the door explicitly open: `yb64` and `ytb`
+Syntax that is akan in v0.4 with the door explicitly open: `yb64` and `ytb`
 prefixes; **quoted keys** (the key side of the grammar's `a["b.c"]`, whose
 reference side is built); a flow spelling for multimaps with entries (`{+ a: 1}`; the empty `{+}`
 is built, §7.1); format
-specs and conversions in holes; list interpolation; **keyword arguments to
-declared functions** (§13.7); positional access to a multimap's entries
+specs and conversions in holes; list interpolation; **default and variadic
+parameters** for declared functions (§13.7); positional access to a multimap's entries
 (`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
-round-tripper needs a design v0.3 does not have).
+round-tripper needs a design v0.4 does not have).
 
 **A reservation is a promise, not a plan.** Items arrive on this list by being
 argued individually; nothing should be built from it because it appears here,
@@ -788,7 +789,8 @@ the four serializers (§5.1.2), which now take a single value as well as a
 container; escapes in a hole's string literals (`GRAMMAR §G5.1`); quoted hole segments (`{a."b.c"}` → `{a["b.c"]}`)
 and interior addressing of lists and multimaps (`{xs.0}` → `{xs[0]}`,
 `{mm.key}` → a list view), both subsumed by the subscript rather than added
-beside it; negative indices, which take Python's meaning (§5.1). `self` was withdrawn rather than built — it named a consumer's own
+beside it; negative indices, which take Python's meaning (§5.1); keyword
+arguments to declared functions (§13.1). `self` was withdrawn rather than built — it named a consumer's own
 key convention, not anything the format needed.*
 
 ---
@@ -808,7 +810,7 @@ it in the message ("write `{{` for a literal brace"; "use rb").
 where it is unusual, and shiran whose suggested fix would change what a
 document means is not a warning but a trap.
 
-v0.3 specifies **five**, and none of their fixes changes what a document
+v0.4 specifies **five**, and none of their fixes changes what a document
 means. The avoidable bracket is about spelling alone. §5.3's two warn
 thresholds and §3.1's long decimal assert nothing about what the author
 intended — they report that a document is costly and may be refused
@@ -940,8 +942,8 @@ fixpoint, no template machinery, and no evaluator, which is the point: the safe
 subset is declared first rather than carved out afterwards.
 
 Of §9's reserved syntax, the items that concern holes — `yb64` and `ytb`,
-format specs and conversions, list interpolation, keyword arguments to
-declared functions, positional multimap access — are **template and above**,
+format specs and conversions, list interpolation, default and variadic
+parameters, positional multimap access — are **template and above**,
 since a record has no holes at all. §5.1.1's relative references are
 template and above for the same reason. The rest — quoted
 keys, a flow spelling for multimaps, `---` streams, timestamp prefixes — would
@@ -977,9 +979,19 @@ literal rendering of it, and not ownership of it.
   names a function the contract declares. A name neither defines is akan at
   the call site.
 - **The receiver form is sugar.** `{a.f(x)}` is `{f(a, x)}`.
-- **Keyword arguments are for built-ins only** in this version:
-  `{cfg.__AS_JSON__(lexemes=False)}`. A keyword argument to a declared
-  function, or a keyword a built-in does not define, is akan at the call.
+- **Keyword arguments name a parameter.** A keyword takes anything a
+  positional argument can, and follows every positional argument, as in
+  Python. For a **declared** function the keywords are its parameter names
+  (§13.2), compared as identifiers (§7): positional arguments, the receiver
+  first, fill the parameters in declared order, and keywords fill the rest
+  by name — `{f(a, y=b)}` and `{f(y=b, x=a)}` are one call to
+  `f(x, y)`. **Every parameter is filled exactly once**: a parameter left
+  empty, one filled twice, and a keyword naming no parameter are akan at
+  the call, naming the parameters. The function receives its arguments in
+  declared order however the call spelled them, so a binding's own
+  parameter names never matter. A **built-in**'s keywords are its own
+  (§5.1.2): `{cfg.__AS_JSON__(lexemes=False)}`. A keyword a built-in does
+  not define is akan at the call.
 - **Tier.** A document that calls a declared function is an **assembly**;
   calls to built-ins alone leave it a **template**. A record holds no calls
   (§12).
@@ -1028,7 +1040,8 @@ match_first:
   never a dunder: a dunder key is akan in every record. Dunders are the
   format's alone.
 - `params` — **required**; an ordered mapping from parameter name to type
-  (§13.3). Its order is the argument order. An empty mapping `{}` declares
+  (§13.3). Its order is the positional argument order, and its names are
+  the keyword argument names (§13.1). An empty mapping `{}` declares
   no parameters.
 - `returns` — **required**; a type.
 - `impl` — **required**; maps a **language** to where that language finds
@@ -1115,7 +1128,8 @@ result has no lexemes; a yapyon writer gives it canonical form (§4.4).
 
 All at the call site, in the existing register: an unknown name; the wrong
 number of arguments, which is checked at parse against the contract; an
-unknown or misplaced keyword; an argument or result of the wrong type; an
+unknown, repeated, or misplaced keyword; a parameter filled twice or left
+empty; an argument or result of the wrong type; an
 argument containing the call site; and **a function that fails** — reported
 as akan naming the function and its message, never as a host-language
 traceback.
@@ -1132,8 +1146,7 @@ and never discovered.
 ### 13.7 Not in this version
 
 Bare calls as values; returning a node; a key or index after a call
-(`{f(x)[0]}`); keyword arguments to declared functions (planned); default
-or variadic arguments; a template in a signature; contracts a document can
+(`{f(x)[0]}`); default or variadic parameters; a template in a signature; contracts a document can
 name.
 
 ---

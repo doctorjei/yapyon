@@ -277,7 +277,7 @@ class Call:
     `receiver` only remembers the spelling, for messages.
 
     `args` holds `Ref`s and `Literal`s; `kwargs` is `[(name, arg), ...]` in
-    the order written — keyword arguments belong to built-ins (GRAMMAR §G5).
+    the order written (GRAMMAR §G5).
     """
 
     __slots__ = ("name", "args", "kwargs", "receiver")
@@ -614,10 +614,6 @@ class _RefParser:
         while True:
             if self._at_keyword():
                 key = self.name()
-                if not dunder:
-                    raise RefError(f"keyword arguments belong to built-ins in "
-                                   f"this version; {name}() is a declared "
-                                   f"function, so pass {key} by position")
                 _check_segment(key)
                 self.expect("=", f"after the keyword {key}")
                 kwargs.append((fold_name(key), self.arg()))

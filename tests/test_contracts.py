@@ -151,10 +151,93 @@ def test_the_wrong_number_of_arguments():
          "match_first() takes 2 arguments (keys, items), not 1")
 
 
-def test_keyword_arguments_are_for_built_ins_only():
-    akan(lambda: load(DOC.replace("match_first(supported, mind.dialects)",
-                                  "match_first(supported, items=mind.dialects)")),
-         "keyword arguments belong to built-ins")
+# --------------------------------------------------------------------------- #
+# Keyword arguments name parameters (§13.1, v0.4)
+# --------------------------------------------------------------------------- #
+def with_call(spelling):
+    return DOC.replace("match_first(supported, mind.dialects)", spelling)
+
+
+@pytest.mark.parametrize("spelling", [
+    "match_first(supported, items=mind.dialects)",
+    "match_first(keys=supported, items=mind.dialects)",
+    "match_first(items=mind.dialects, keys=supported)",
+    "supported.match_first(items=mind.dialects)",
+    "match_first(supported, items=mind.dialects,)",
+    "match_first(ｋｅｙｓ=supported, items=mind.dialects)",
+])
+def test_keywords_fill_parameters_by_name(spelling):
+    assert load(with_call(spelling))["protocol"] == "responses"
+
+
+def test_the_function_receives_declared_order_whatever_the_spelling():
+    seen = []
+
+    def spy(keys, items):
+        seen.append((list(keys), list(items)))
+        return "chat"
+    load(with_call("match_first(items=mind.dialects, keys=supported)"),
+         match_first=spy)
+    assert seen == [(["responses", "chat"], ["chat", "responses"])]
+
+
+def test_a_binding_s_own_parameter_names_do_not_matter():
+    # the contract's names are the keywords; the code receives positions
+    d = load(with_call("match_first(items=mind.dialects, keys=supported)"),
+             match_first=lambda a, b: match_first(a, b))
+    assert d["protocol"] == "responses"
+
+
+@pytest.mark.parametrize("spelling,needle", [
+    ("match_first(supported, bogus=mind.dialects)",
+     "match_first() has no parameter bogus; it takes keys, items"),
+    ("match_first(supported, keys=supported)",
+     "match_first()'s parameter keys is given by position and again by "
+     "keyword"),
+    ("match_first(supported)",
+     "match_first() takes 2 arguments (keys, items), not 1"),
+    ("match_first(items=mind.dialects)",
+     "match_first() is missing parameter keys (it takes keys, items)"),
+    ("match_first(supported, mind.dialects, items=mind.dialects)",
+     "match_first()'s parameter items is given by position and again by "
+     "keyword"),
+    ("match_first(supported, mind.dialects, supported, items=mind.dialects)",
+     "match_first() takes 2 arguments (keys, items), not 3 by position"),
+    ("match_first(keys=supported, keys=supported)",
+     "keyword argument keys is repeated"),
+])
+def test_a_keyword_that_fills_nothing_or_too_much_is_akan(spelling, needle):
+    e = akan(lambda: load(with_call(spelling)), needle)
+    assert (e.line, e.col) == (9, 10)
+
+
+def test_a_keyword_argument_is_type_checked_where_it_is_written():
+    doc = with_call("match_first(supported, items=mind.dialects)").replace(
+        '      api_uri: "https://x/chat"', "      api_uri: 5")
+    e = akan(lambda: load(doc), "match_first()'s parameter items takes")
+    assert (e.line, e.col) == (6, 15)
+
+
+def test_a_keyword_argument_waits_like_any_argument():
+    doc = with_call("match_first(supported, items=later)") + \
+        'later: {chat: {api_uri: y"{mind.dialects.chat.api_uri}"}}\n'
+    assert load(doc)["protocol"] == "chat"
+
+
+def test_two_calls_waiting_through_keywords_are_a_cycle():
+    contract = MATCH + '''
+echo:
+  params:
+    text: "str"
+  returns: "str"
+  impl:
+    python: {symbol: "echo"}
+'''
+    doc = 'a: y"{echo(text=b)}"\nb: y"{echo(text=a)}"\n'
+    akan(lambda: loads(doc, contract=loads_contract(contract),
+                       provide={"echo": lambda t: t,
+                                "match_first": match_first}),
+         "they form a cycle")
 
 
 def test_provide_without_contract_is_a_mistake():

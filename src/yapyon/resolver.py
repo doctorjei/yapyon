@@ -445,7 +445,11 @@ class Resolver:
         depth = max(map(self._deep_depth, args + list(kwargs.values())),
                     default=0)
         if isinstance(builtin, Declared):
-            result = self._declared(builtin, call, args, ref, site)
+            # §13.1: keywords fill parameters by name, and the function
+            # receives every argument in declared order.
+            ordered = args + [kwargs[name] for name, _ in
+                              builtin.params[len(args):]]
+            result = self._declared(builtin, call, ordered, ref, site)
         else:
             result = self._builtin(builtin, call, args[0], kwargs, ref, site)
         self._depth[id(result)] = depth
@@ -487,16 +491,30 @@ class Resolver:
                      "declare it")
             self._akan(f"{{{ref}}}: {call.name}() is not a built-in, and "
                        f"{where} (SPEC §13.2)", site.node)
-        if call.kwargs:
-            self._akan(f"{{{ref}}}: keyword arguments belong to built-ins in "
-                       f"this version; pass {call.kwargs[0][0]} to "
-                       f"{call.name}() by position (SPEC §13.7)", site.node)
-        if len(call.args) != len(declared.params):
-            names = ", ".join(name for name, _ in declared.params)
-            self._akan(f"{{{ref}}}: {call.name}() takes "
-                       f"{len(declared.params)} argument"
-                       f"{'' if len(declared.params) == 1 else 's'} "
-                       f"({names}), not {len(call.args)}", site.node)
+        params = [name for name, _ in declared.params]
+        names = ", ".join(params)
+        count = len(params)
+        if len(call.args) > count or (not call.kwargs
+                                      and len(call.args) != count):
+            by = " by position" if call.kwargs else ""
+            self._akan(f"{{{ref}}}: {call.name}() takes {count} argument"
+                       f"{'' if count == 1 else 's'} ({names}), not "
+                       f"{len(call.args)}{by}", site.node)
+        positional = set(params[:len(call.args)])
+        for name, _ in call.kwargs:
+            if name not in params:
+                self._akan(f"{{{ref}}}: {call.name}() has no parameter "
+                           f"{name}; it takes {names}", site.node)
+            if name in positional:
+                self._akan(f"{{{ref}}}: {call.name}()'s parameter {name} is "
+                           f"given by position and again by keyword",
+                           site.node)
+        given = positional | {name for name, _ in call.kwargs}
+        missing = [name for name in params if name not in given]
+        if missing:
+            self._akan(f"{{{ref}}}: {call.name}() is missing "
+                       f"{'parameter' if len(missing) == 1 else 'parameters'} "
+                       f"{', '.join(missing)} (it takes {names})", site.node)
         return declared
 
     def _declared(self, declared: Declared, call: Call, args: list,

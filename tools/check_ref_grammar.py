@@ -200,7 +200,8 @@ class Rule:
 # GRAMMAR §G5, production by production
 # --------------------------------------------------------------------------- #
 ref, key_ref, value_ref, path, applied, receiver, suffix, call, args, arg, \
-    kwargs, kwarg, anchor, parents, step, subscript, sub = (Rule() for _ in range(17))
+    kwargs, kwarg, anchor, parents, step, subscript, sub, callee = \
+    (Rule() for _ in range(18))
 
 # SEG    ::= NAME, excluding every dunder name (§G4.2)
 # DUNDER ::= NAME that is a dunder name, other than __ROOT__, __PARENT__, __KEY__
@@ -221,10 +222,10 @@ path.p      = seq(alt(anchor, SEG), star(step))
 applied.p   = alt(seq(receiver, plus(suffix)), seq(call, star(suffix)))
 receiver.p  = alt(seq(anchor, plus(step)), seq(SEG, star(step)))
 suffix.p    = seq(lit("."), call)
-call.p      = alt(seq(SEG, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
-                  seq(DUNDER, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
-                  seq(DUNDER, lit("("), opt(seq(args, lit(","))), kwargs,
+call.p      = alt(seq(callee, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
+                  seq(callee, lit("("), opt(seq(args, lit(","))), kwargs,
                       opt(lit(",")), lit(")")))
+callee.p    = alt(SEG, DUNDER)
 args.p      = seq(arg, star(seq(lit(","), arg)))
 arg.p       = alt(key_ref, receiver, applied, LITERAL)
 kwargs.p    = seq(kwarg, star(seq(lit(","), kwarg)))

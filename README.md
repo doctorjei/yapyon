@@ -38,7 +38,7 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1421 tests** on the current tree; the number here tracks the tree,
+suite is **1438 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 A document is one of three kinds, and `yapyon.tier_of` says which (§12.5):
@@ -324,6 +324,8 @@ with open("persona.yap") as fp:
 ```
 
 Without `from`, the loader supplies the code: `provide={"match_first": fn}`.
+Arguments may be named, as in Python — `{match_first(supported,
+items=mind.dialects)}` — by the contract's parameter names.
 Arguments are checked against the declared types before the call — deep,
 and reported where the offending value is written — and a container
 argument arrives as a read-only, ordered **borrow** of the document's node.

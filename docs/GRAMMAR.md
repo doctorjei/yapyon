@@ -1,4 +1,4 @@
-# yapyon — grammar v0.3
+# yapyon — grammar v0.4
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -413,9 +413,10 @@ receiver    ::= anchor step+
 
 suffix      ::= "." call
 
-call        ::= SEG    "(" [ args [ "," ] ] ")"
-              | DUNDER "(" [ args [ "," ] ] ")"
-              | DUNDER "(" [ args "," ] kwargs [ "," ] ")"
+call        ::= callee "(" [ args [ "," ] ] ")"
+              | callee "(" [ args "," ] kwargs [ "," ] ")"
+
+callee      ::= SEG | DUNDER
 
 args        ::= arg ( "," arg )*
 
@@ -471,10 +472,11 @@ What the production says, and why:
   well-formed here and akan when it is resolved. **A trailing comma is
   allowed**, as in Python — `{f(a, x,)}` — but only after an argument:
   `{f(,)}` and `{f(x,,)}` are not generated.
-- **Keyword arguments belong to built-ins** (`{cfg.__AS_JSON__(lexemes=False)}`),
-  after any positional ones, and take anything a positional argument can —
-  `{cfg.__AS_JSON__(lexemes=opts.keep)}` is as well-formed as a literal. A
-  keyword argument in a call to a non-dunder name is not generated.
+- **Keyword arguments follow any positional ones**, in a call to any name
+  (`{cfg.__AS_JSON__(lexemes=False)}`, `{f(a, y=b)}`), and take anything a
+  positional argument can — `{cfg.__AS_JSON__(lexemes=opts.keep)}` is as
+  well-formed as a literal. Which keywords a function takes is the
+  specification's business, as its arity is.
 - **Nothing follows a call but another call.** `suffix ::= "." call`, so
   `{f(x).g()}` chains, but `{f(x)[0]}` and `{f(x).name}` are not generated.
 - **A literal appears only as an argument** (positional or keyword), or a

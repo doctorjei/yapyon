@@ -11,7 +11,22 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+The specification and grammar are now **v0.4** (drafts): declared
+functions take keyword arguments.
+
 ### Added
+
+- **§13.1: keyword arguments for declared functions**, as Python takes
+  them: positional arguments (the receiver first) fill the parameters in
+  the contract's order, and keywords fill the rest by name, so
+  `{f(a, y=b)}` and `{f(y=b, x=a)}` are one call. Every parameter is filled
+  exactly once — one left empty, one filled twice, or a keyword naming no
+  parameter is akan at the call, naming the parameters. The function
+  receives its arguments in the contract's order however the call spelled
+  them, so a binding's own parameter names never matter. GRAMMAR §G5 now
+  generates keyword arguments in a call to any name. A call that akaned in
+  0.3.0 now loads; nothing that loaded changes meaning. Default and
+  variadic parameters stay reserved (§9).
 
 - **`docs/TUTORIAL.md`**, a walk through the format from first values to
   contracts. It teaches and does not define — the spec and grammar stay

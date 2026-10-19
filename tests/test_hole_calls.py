@@ -55,12 +55,19 @@ def test_a_keyword_takes_anything_an_argument_can():
     assert key == "lexemes" and value.steps == [("key", "opts"), ("key", "keep")]
 
 
+def test_a_declared_name_takes_keywords_too():
+    # §13.1 (v0.4): keyword arguments are no longer built-ins' alone
+    c = call("f(x, v=z)")
+    assert [a.steps for a in c.args] == [[("key", "x")]]
+    assert [(k, v.steps) for k, v in c.kwargs] == [("v", [("key", "z")])]
+    assert call("f(ｖ=z)").kwargs[0][0] == "v"
+
+
 def test_names_are_folded_like_any_name():
     assert call("ｆ(x)").name == "f"
 
 
 @pytest.mark.parametrize("ref,needle", [
-    ("f(lexemes=False)", "keyword arguments belong to built-ins"),
     ("__AS_JSON__(lexemes=False, x)", "positional argument cannot follow"),
     ("f(x,,)", "two commas in a row"),
     ("f(,)", "expected a name"),

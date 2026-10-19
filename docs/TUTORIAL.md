@@ -484,7 +484,16 @@ slug:
 {'title': 'Hello World', 'path': '/posts/hello-world', 'same': '/posts/hello-world'}
 ```
 
-`{title.slug()}` is the receiver form of `{slug(title)}`. The contract's
+`{title.slug()}` is the receiver form of `{slug(title)}`. An argument may
+also be passed by name — the names are the contract's parameter names, and
+the function still receives its arguments in the contract's order:
+
+```pycon
+>>> yapyon.loads('title: "Hello World"\npath: y"/posts/{slug(text=title)}"\n', contract=contract, provide={"slug": slug})
+{'title': 'Hello World', 'path': '/posts/hello-world'}
+```
+
+The contract's
 `impl` says where the code lives: with `from` (a module path), the loader
 imports it; without it, as here, the program passes it in `provide=`.
 
