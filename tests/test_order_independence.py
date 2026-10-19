@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from yapyon import AkanError, loads, loads_record
+from yapyon import AkanError, loads, loads_contract, loads_record
 
 ROOT = Path(__file__).resolve().parent.parent
 CORPUS = ROOT / "docs" / "conformance" / "cases"
@@ -194,3 +194,66 @@ def test_key_order_does_not_change_meaning(name, text, how):
     base = outcome(name, text)
     moved = outcome(name, reorder(text, how))
     assert moved == base, f"{name}: {base} became {moved}"
+
+
+# --------------------------------------------------------------------------- #
+# Assemblies: calls defer through §5.3 like any hole (§13.1), at every level
+# --------------------------------------------------------------------------- #
+CONTRACT = loads_contract('''
+join:
+  params:
+    parts: "list[str]"
+    sep: "str"
+  returns: "str"
+  impl:
+    python: {symbol: "join"}
+pick:
+  params:
+    keys: "list[str]"
+    items: "dict[str, Any]"
+  returns: "str"
+  impl:
+    python: {symbol: "pick"}
+size:
+  params:
+    m: "dict[str, Any] | multimap[str, Any] | list[Any]"
+  returns: "int"
+  impl:
+    python: {symbol: "size"}
+''')
+PROVIDE = {"join": lambda parts, sep: sep.join(parts),
+           "pick": lambda keys, items: next(k for k in keys if k in items),
+           "size": len}
+DENSE_CALLS = ['''line: y"{join(parts, sep=dash)}"
+parts: [y"{a}", y"{b}", "c"]
+dash: y"{d0}"
+d0: "-"
+a: y"{pick(order, table)}"
+b: y"{table[a].name}"
+order: ["zeta", y"{fav}"]
+fav: y"{f0}"
+f0: "eta"
+table:
+  eta: {name: y"{nm}"}
+  theta: {name: "T"}
+nm: y"{join(more, sep=dash)}"
+more: ["n", y"{size(order)}"]
+''','''count: y"{size(mm)} {size(mm.k)} {size(cfg)}"
+mm:
+  + k: y"{v1}"
+  + j: 2
+  + k: y"{cfg.x}"
+v1: y"{cfg.y}"
+cfg:
+  x: y"{y}"
+  y: "Y"
+  z: y"{__PARENT__.__KEY__}"
+''']
+
+
+@pytest.mark.parametrize("how", [reverse, rotate], ids=["reverse", "rotate"])
+@pytest.mark.parametrize("text", DENSE_CALLS, ids=["calls/0", "calls/1"])
+def test_key_order_does_not_change_what_calls_return(text, how):
+    def load(t):
+        return loads(t, contract=CONTRACT, provide=PROVIDE)
+    assert load(reorder(text, how)) == load(text)

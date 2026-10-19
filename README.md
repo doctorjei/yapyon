@@ -38,7 +38,7 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1584 tests** on the current tree; the number here tracks the tree,
+suite is **1588 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 A document is one of three kinds, and `yapyon.tier_of` says which (§12.5):
