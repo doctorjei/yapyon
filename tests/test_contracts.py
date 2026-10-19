@@ -314,6 +314,40 @@ def test_an_int_outside_the_float_range_is_akan():
          "outside the float range")
 
 
+def test_an_int_past_2_to_the_53_takes_the_nearest_float_ties_to_even():
+    # §13.3: "2**53 + 1 → 9007199254740992.0", as Python converts
+    contract = 'f:\n  params: {x: "float"}\n  returns: "str"\n' \
+               '  impl: {python: {symbol: "f"}}\n'
+    got = []
+    for n in (2 ** 53 + 1, 2 ** 53 + 3):
+        loads(f'u: y"{{f({n})}}"\n', contract=loads_contract(contract),
+              provide={"f": lambda x: got.append(x) or ""})
+    assert got == [9007199254740992.0, 9007199254740996.0]
+
+
+def test_a_value_received_as_any_is_checked_again_where_narrower():
+    # §13.3: Any accepts everything, and a later call declaring a narrower
+    # type checks the value again
+    contract = '''
+loose:
+  params: {x: "Any"}
+  returns: "Any"
+  impl:
+    python: {symbol: "loose"}
+strict:
+  params: {n: "int"}
+  returns: "str"
+  impl:
+    python: {symbol: "strict"}
+'''
+    provide = {"loose": lambda x: x, "strict": lambda n: str(n)}
+    run = (lambda doc: loads(doc, contract=loads_contract(contract),
+                             provide=provide)["u"])
+    assert run('v: 5\nu: y"{strict(loose(v))}"\n') == "5"
+    akan(lambda: run('v: "five"\nu: y"{strict(loose(v))}"\n'),
+         "strict()'s parameter n takes int, not str")
+
+
 # --------------------------------------------------------------------------- #
 # Borrows: read-only, downward, identity kept (§13.1)
 # --------------------------------------------------------------------------- #
@@ -396,6 +430,13 @@ def make(returns, value):
 ])
 def test_a_result_splices_by_value(returns, value, spliced):
     assert make(returns, value)()["u"] == spliced
+
+
+def test_a_result_has_no_lexeme_so_a_yapyon_writer_uses_canonical_form():
+    # §13.4, §4.4: 3.10 from a function is the float 3.1, with no spelling
+    run = make("dict[str, Any]", {"ｖ": 3.10, "n": 0xff, "s": 'say "hi"'})
+    assert run('u: y"{__AS_YAPYON__(f())}"\n')["u"] == \
+        'v: 3.1\nn: 255\ns: "say \\"hi\\""\n'
 
 
 def test_a_container_result_reaches_a_serializer():
