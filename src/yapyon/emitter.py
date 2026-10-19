@@ -228,6 +228,11 @@ def _lines(node: Node, level: int, source: str | None) -> list[str]:
     flow = _flow(node, source)
     if flow is not None and _fits(pad + flow):
         return [pad + flow]
+    if isinstance(node, (Mapping, Sequence)) and _is_empty(node):
+        # An empty container has no block spelling (§4.4), at the root as
+        # anywhere else: with no lines at all, `{}` came back as an empty
+        # document, which is akan.
+        return [pad + ("[]" if isinstance(node, Sequence) else "{}")]
     if isinstance(node, Mapping):
         return _pairs(node.pairs, pad, level, source, marker="")
     if isinstance(node, MultiMap):

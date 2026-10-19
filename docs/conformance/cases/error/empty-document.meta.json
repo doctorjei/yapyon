@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR \u00a7G6",
+  "why": "document ::= block_value EOF, so a file with no value is not a document"
+}

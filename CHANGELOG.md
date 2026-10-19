@@ -89,7 +89,7 @@ instead of refusing it. **Several changes are breaking** — see Changed.
   the base column; blank and comment lines are not measured.
 - **The pinned display-width table** (`tools/gen_wcwidth_table.py`,
   Unicode 14.0.0) that §14.1's layout measures with.
-- Conformance corpus: 61 cases (was 48).
+- Conformance corpus: 64 cases (was 48).
 
 ### Fixed
 
@@ -99,6 +99,11 @@ instead of refusing it. **Several changes are breaking** — see Changed.
   `my-model:` said "unexpected character '-'", and `1a:` was read as the
   number 1 and a stray word. The message now names the key and a legal
   spelling. Messages no longer say "v0.1".
+- **A document that is just `{}` or `[]` was written back as nothing** by
+  `record`, `expand_record`, and `__AS_YAPYON__()` — output that reloads as an
+  empty document, which is akan. An empty container is written flow at the
+  root as anywhere else (§4.4). *Any value is a valid document* (GRAMMAR §G6)
+  is now pinned by tests and corpus cases; nothing executed it before.
 - YAML strings holding a newline were single-quoted, where YAML folds a
   line break into a space; quoted strings are now double-quoted with
   escapes.
