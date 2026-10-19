@@ -57,7 +57,8 @@ from unicodedata import decomposition as _decomposition
 from unicodedata import normalize as _normalize
 
 from ._digits import REFUSE_DIGITS, WARN_DIGITS, int_from_decimal
-from ._xid import UNICODE_VERSION, XID_CONTINUE, XID_IGNORED, XID_START
+from ._xid import (UNASSIGNED, UNICODE_VERSION, XID_CONTINUE, XID_IGNORED,
+                   XID_START)
 from unicodedata import category as _category, name as _uname
 
 
@@ -882,25 +883,31 @@ def _id_continue(ch: str) -> bool:
 
 
 _IGNORED_LOWS = tuple(lo for lo, _ in XID_IGNORED)
+_UNASSIGNED_LOWS = tuple(lo for lo, _ in UNASSIGNED)
 
 
 def why_not_in_name(ch: str) -> str:
     """Why `ch` is refused in a name, when the reason is not obvious: it is
-    invisible, or it is newer than the pinned table. Empty otherwise.
+    invisible, or it is newer than the pinned version. Empty otherwise.
 
     Invisible is judged by our table *or* general category Cf, so ZWJ reads
     as invisible on every host — Unicode 14 did not make it an identifier
     character at all, and later versions did."""
     if not ch or id_start(ch) or _id_continue(ch):
         return ""
+    if _in_table(_UNASSIGNED_LOWS, UNASSIGNED, ch):
+        # Judged by the pinned table, never the host's Unicode (trap 12):
+        # a 3.11 host has never heard of a Unicode 15 character, a 3.13 host
+        # has, and the message must not depend on which one runs. No name,
+        # for the same reason -- the host may not know it.
+        return (f"U+{ord(ch):04X} is not in Unicode {UNICODE_VERSION}, "
+                f"which yapyon's names are pinned to (GRAMMAR §G4.1)")
+    # Assigned in the pinned version, so its name and category are the same
+    # on every host that can run yapyon (names never change once assigned).
     label = f"U+{ord(ch):04X} {_uname(ch, 'unnamed')}"
     if _in_table(_IGNORED_LOWS, XID_IGNORED, ch) or _category(ch) == "Cf":
         return (f"{label} is invisible, and names may not contain invisible "
                 f"characters (GRAMMAR §G4.1)")
-    if ("a" + ch).isidentifier():
-        return (f"{label} is not an identifier character in Unicode "
-                f"{UNICODE_VERSION}, which yapyon's names are pinned to "
-                f"(GRAMMAR §G4.1)")
     return ""
 
 

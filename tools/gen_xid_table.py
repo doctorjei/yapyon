@@ -1,12 +1,16 @@
 """Generate src/yapyon/_xid.py, the pinned identifier table (GRAMMAR §G4.1).
 
 Usage:
-    .venv/bin/python tools/gen_xid_table.py [DerivedCoreProperties.txt]
+    .venv/bin/python tools/gen_xid_table.py [DerivedCoreProperties.txt
+                                             DerivedGeneralCategory.txt]
 
-With no argument, fetches the file for the pinned version from unicode.org.
+With no arguments, fetches both files for the pinned version from unicode.org.
 The table is XID_Start and XID_Continue, each minus Default_Ignorable_Code_Point,
 as sorted inclusive ranges, plus the default-ignorables that were removed from
-them (so a diagnostic can say "invisible" rather than "unexpected").
+them (so a diagnostic can say "invisible" rather than "unexpected"), and the
+code points **unassigned** in the pinned version (General_Category Cn), so a
+diagnostic can say "newer than the pin" on every host rather than asking the
+host's own Unicode (trap 12).
 Changing the pin means changing UNICODE_VERSION below, re-running this, and
 reviewing the diff -- it is a change to the format, not a refresh.
 """
@@ -17,6 +21,8 @@ from pathlib import Path
 
 UNICODE_VERSION = "14.0.0"
 URL = f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/DerivedCoreProperties.txt"
+GC_URL = (f"https://www.unicode.org/Public/{UNICODE_VERSION}/ucd/extracted/"
+          f"DerivedGeneralCategory.txt")
 OUT = Path(__file__).resolve().parent.parent / "src" / "yapyon" / "_xid.py"
 
 
@@ -53,13 +59,19 @@ def main(argv: list[str]) -> None:
     if len(argv) > 1 and argv[1] in ("-h", "--help"):
         print(__doc__)
         return
-    if len(argv) > 1:
+    if len(argv) > 2:
         text = Path(argv[1]).read_text(encoding="utf-8")
+        gc = Path(argv[2]).read_text(encoding="utf-8")
     else:
         with urllib.request.urlopen(URL) as r:
             text = r.read().decode("utf-8")
+        with urllib.request.urlopen(GC_URL) as r:
+            gc = r.read().decode("utf-8")
     if f"DerivedCoreProperties-{UNICODE_VERSION}.txt" not in text[:200]:
         raise SystemExit(f"not the {UNICODE_VERSION} DerivedCoreProperties file")
+    if f"DerivedGeneralCategory-{UNICODE_VERSION}.txt" not in gc[:200]:
+        raise SystemExit(f"not the {UNICODE_VERSION} DerivedGeneralCategory file")
+    unassigned = load(gc, "Cn")
     ignorable = load(text, "Default_Ignorable_Code_Point")
     start = load(text, "XID_Start") - ignorable
     cont = load(text, "XID_Continue") - ignorable
@@ -74,7 +86,9 @@ def main(argv: list[str]) -> None:
         + render("XID_START", ranges(start)) + "\n"
         + render("XID_CONTINUE", ranges(cont)) + "\n"
         + "# Identifier characters removed as invisible, for diagnostics only.\n"
-        + render("XID_IGNORED", ranges(excluded)),
+        + render("XID_IGNORED", ranges(excluded)) + "\n"
+        + f"# Code points unassigned in Unicode {UNICODE_VERSION}, for diagnostics only.\n"
+        + render("UNASSIGNED", ranges(unassigned)),
         encoding="utf-8")
     print(f"wrote {OUT}: {len(start)} start, {len(cont)} continue")
 

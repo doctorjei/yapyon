@@ -9,7 +9,7 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## 0.3.0 — 2026-10-17
+## 0.3.0 — 2026-10-19
 
 The specification is **v0.3**, and this release builds it. Holes take
 **calls**: the serializers become built-in functions, and a document may
@@ -108,6 +108,12 @@ instead of refusing it. **Several changes are breaking** — see Changed.
   empty document, which is akan. An empty container is written flow at the
   root as anywhere else (§4.4). *Any value is a valid document* (GRAMMAR §G6)
   is now pinned by tests and corpus cases; nothing executed it before.
+- **A key holding a character newer than Unicode 14 got a different message
+  on different Pythons** — and the suite failed on Python 3.11, the oldest
+  supported, in every release since 0.1.0. The hint asked the host's own
+  Unicode and printed the host's character name. It now reads a pinned
+  table of what Unicode 14.0.0 left unassigned (`tools/gen_xid_table.py`),
+  so every host gives the same text. Tested on 3.11, 3.13, and 3.14.
 - YAML strings holding a newline were single-quoted, where YAML folds a
   line break into a space; quoted strings are now double-quoted with
   escapes.

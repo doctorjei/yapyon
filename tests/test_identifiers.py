@@ -45,6 +45,32 @@ def test_the_table_holds_no_invisible_character():
     assert not any(is_identifier("a" + chr(cp)) for cp in points(XID_IGNORED))
 
 
+def test_the_newer_than_the_pin_message_is_the_same_on_every_host():
+    # Found 2026-10-19 by running the suite on Python 3.11, whose Unicode is
+    # 14.0.0: the hint asked the host's isidentifier() and printed the
+    # host's character name, so 3.11 and 3.13 gave different text (trap 12).
+    with pytest.raises(AkanError) as e:
+        loads("\U00011F04: 1")
+    assert ("U+11F04 is not in Unicode 14.0.0, which yapyon's names are "
+            "pinned to") in str(e.value)
+    assert "KAWI" not in str(e.value)        # a 3.11 host has no name for it
+
+
+def test_the_unassigned_table_agrees_with_the_host_only_as_a_subset():
+    # Whatever this host calls unassigned was unassigned in 14 as well; the
+    # reverse need not hold on a newer host.
+    import unicodedata
+    from yapyon._xid import UNASSIGNED
+    lows = [lo for lo, _ in UNASSIGNED]
+    from bisect import bisect_right
+    def pinned_unassigned(cp):
+        i = bisect_right(lows, cp) - 1
+        return i >= 0 and cp <= UNASSIGNED[i][1]
+    for cp in range(0, 0x30000, 7):
+        if unicodedata.category(chr(cp)) == "Cn":
+            assert pinned_unassigned(cp), hex(cp)
+
+
 def test_a_character_newer_than_unicode_14_is_refused_on_every_host():
     # U+11F04 KAWI LETTER A arrived in Unicode 15. Python 3.13 calls it an
     # identifier; the pin does not, so the answer no longer varies.
