@@ -383,6 +383,12 @@ class Resolver:
                                   f"name")
             current = self._search(steps.pop(0)[1], site)
         for step in steps:
+            if isinstance(current, YString):
+                # Waiting on a y-string mid-walk (a subscript's key, or the
+                # value being walked): defer the whole reference, as §5.3's
+                # fixpoint does for any target not resolved yet. Judging it
+                # now would make the answer depend on document order (trap 4).
+                return current
             current = self._step(current, step, ref, site)
         return current
 
@@ -609,6 +615,8 @@ class Resolver:
             # not of the node being indexed. `{mind.dialects[protocol]}`
             # means "the entry named by *my* protocol".
             key = self._subscript_value(payload, ref, site)
+            if isinstance(key, YString):
+                return key
             # A resolved key is whatever it resolved to: an int indexes a
             # list, exactly as a literal one would. The two spellings of a
             # subscript must not disagree about what the value means.
@@ -622,6 +630,8 @@ class Resolver:
     def _subscript_value(self, inner: Ref, ref: str, site: _Site):
         """Resolve `[someref]` to the key it names."""
         target = self._lookup(inner.text, site)
+        if isinstance(target, YString):
+            return target                            # not resolved yet
         if not isinstance(target, Scalar):
             self._akan(f"{{{ref}}}: the subscript {{{inner.text}}} must name "
                        f"a string or a number to use as a key, not a "

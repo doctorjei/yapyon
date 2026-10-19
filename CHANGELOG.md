@@ -20,6 +20,18 @@ before it needed `pip install yapyon --pre` to be seen.
   by loading them and checking each `# -> value` comment, and its command
   line session against `examples/bridge.yap`. Nothing here is breaking.
 
+### Fixed
+
+- **§5.3: a subscript's key may be written later in the document.** In
+  every release since `0.1.0`, an indirect subscript whose key was a
+  y-string not yet resolved — `u: y"{d[p].u}"` written above
+  `p: y"{q}"` — was judged on the spot and refused as *"must name a string
+  or a number to use as a key, not a container"*, while the same lines in
+  the other order loaded. The reference now waits for its key like any
+  other forward reference, and a key that waits on the reference itself is
+  reported as the cycle it is. New corpus case
+  `full/20-a-subscript-key-written-later`.
+
 ---
 
 ## 0.3.0 — 2026-10-19

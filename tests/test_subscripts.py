@@ -729,3 +729,30 @@ def test_refusals_survive_deferral(src, needle):
     # v0.3 serializers approximate rather than refuse, so the refusals left
     # are a signature and a template; deferring must not swallow either
     akan(src, needle)
+
+
+# --------------------------------------------------------------------------- #
+# §5.3: a subscript's key may be written later — order must not matter
+# --------------------------------------------------------------------------- #
+# Found 2026-10-19: a key still waiting to resolve was judged on the spot and
+# reported as "not a container", so the same reference loaded or akaned
+# depending on which key came first in the document (trap 4).
+FORWARD = [
+    ('d:\n  a: {u: "x"}\n', 'u: y"{d[p].u}"\n', 'p: y"{q}"\nq: "a"\n'),
+    ('d:\n  a: "x"\n', 'u: y"{d[p]}"\n', 'p: y"{q}"\nq: "a"\n'),
+    ('d:\n  a: {b: {c: "x"}}\n', 'u: y"{d[p][r].c}"\n',
+     'p: y"{q}"\nq: "a"\nr: y"b"\n'),
+]
+
+
+@pytest.mark.parametrize("data,user,keys", FORWARD)
+def test_a_subscript_key_resolves_in_either_order(data, user, keys):
+    before = loads(data + keys + user)
+    after = loads(data + user + keys)
+    assert before == after
+    assert after["u"] == "x"
+
+
+def test_a_subscript_key_waiting_on_itself_is_a_cycle():
+    with pytest.raises(AkanError, match="they form a cycle"):
+        loads('d:\n  a: {u: "x"}\nu: y"{d[p].u}"\np: y"{u}"\n')
