@@ -107,7 +107,7 @@ Nine core types. **Prefixes are *spellings*, not types** — the prefix table is
 | bytes | `b"..."`, `rb"..."`, and the stream literals `bin dna oct hex c32 b64` | eight spellings, one type |
 | list | `[a, b]` flow, `- ` block | |
 | dict | `{k: v}` flow, indented block | identifier keys (§7) |
-| multimap | `+ ` block | keyed and ordered; keys may repeat (§7.1) |
+| multimap | `+ ` block; `{+}` when empty | keyed and ordered; keys may repeat (§7.1) |
 
 **Numbers are numbers; bytes are streams.** An integer literal in any radix
 (`0b 0q 0o 0x 0z`, `GRAMMAR §G4.3`) is a signed, unbounded integer: leading
@@ -250,7 +250,7 @@ Whatever the source, **layout is the writer's**, since comments, blank lines,
 indentation, and the choice of flow or block are not tokens and carry no
 lexeme: a sequence that holds no mapping or multimap is written on one line if
 it fits, and every other container in block form (§14.1); an empty container
-has no block spelling and is written flow (`[]`, `{}`).
+has no block spelling and is written flow (`[]`, `{}`, `{+}`).
 
 Normalization therefore **keeps every spelling and every value, and loses
 only layout and comments**. The property an implementation must satisfy is
@@ -740,8 +740,11 @@ changes:
 - **Order is significant and preserved.** Two multimaps are equal iff their
   entry sequences are equal; **a multimap is never equal to a mapping**, even
   when its keys happen to be unique.
-- Entry keys are **invisible to holes** (§5.2). There is no flow spelling in
-  this version (§9).
+- Entry keys are **invisible to holes** (§5.2).
+- **`{+}` is the empty multimap** (`GRAMMAR §G6`) — a block needs an entry,
+  so this is its one spelling when it holds none. **`{}` is a mapping**, as
+  everywhere: the `+` is what says "multimap", in the document's own bytes,
+  as the block marker does. A flow multimap *with* entries is reserved (§9).
 
 Why a marker rather than simply permitting repeated keys in a mapping: ehmon 1.
 A repeated key would otherwise be indistinguishable from a typo, and the
@@ -766,7 +769,8 @@ partition is exact and has no other members.
 
 Syntax that is akan in v0.3 with the door explicitly open: `yb64` and `ytb`
 prefixes; **quoted keys** (the key side of the grammar's `a["b.c"]`, whose
-reference side is built); a flow spelling for multimaps (`{+ a: 1}`); format
+reference side is built); a flow spelling for multimaps with entries (`{+ a: 1}`; the empty `{+}`
+is built, §7.1); format
 specs and conversions in holes; list interpolation; **keyword arguments to
 declared functions** (§13.7); positional access to a multimap's entries
 (`{mm[0]}`);

@@ -79,7 +79,8 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
 - **Flow suppression.** Inside `[` `]` or `{` `}`, newlines, indentation and
   the dash and plus rules are suppressed entirely — Python's implicit line
   joining. Commas are mandatory separators and a single trailing comma is
-  permitted.
+  permitted. Directly inside `{` `}`, a `+` that does not begin a signed
+  number is the token `PLUS`, which spells the empty multimap (§G6).
 
 ## §G4 Tokens
 
@@ -585,7 +586,7 @@ flow_value  ::= scalar | flow_list | flow_map
 scalar      ::= STRING | BYTES | YSTR | YBSTR | YTSTR
               | INT | FLOAT | KEYWORD
 flow_list   ::= LBRACKET [ flow_value (COMMA flow_value)* [COMMA] ] RBRACKET
-flow_map    ::= LBRACE [ fpair (COMMA fpair)* [COMMA] ] RBRACE
+flow_map    ::= LBRACE ( PLUS | [ fpair (COMMA fpair)* [COMMA] ] ) RBRACE
 fpair       ::= NAME COLON flow_value
 ```
 
@@ -594,6 +595,13 @@ fpair       ::= NAME COLON flow_value
   indented deeper than the frame's anchor. Both are layout, not meaning:
   `- 1` and `-` followed by an indented `1` are the same document, exactly as
   `k: 1` and `k:` followed by an indented `1` already are.
+- **`{+}` is the empty multimap**, and `{}` the empty mapping: a block
+  multimap needs an entry, so this is the one spelling for a multimap that
+  holds none. Like `{ }`, it is three tokens, and whitespace between them is
+  layout (`{ + }`). A flow multimap **with** entries (`{+ a: 1, + a: 2}`) is
+  reserved; `{+` followed by anything but `}` is akan. The choice is made at
+  the token after `{` — `PLUS`, a `NAME`, or `}` — so the grammar stays
+  LL(1).
 - **Any value is a valid document.** A tool wanting a mapping at the top level
   enforces that itself.
 - **One document per file.** `---` and `...` are reserved tokens with no

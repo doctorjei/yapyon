@@ -166,6 +166,14 @@ def _lexeme_lines(lexeme: str, level: int) -> list[str]:
 # --------------------------------------------------------------------------- #
 # Containers
 # --------------------------------------------------------------------------- #
+def _empty(node: Node) -> str:
+    """The flow spelling of an empty container: `[]`, `{}`, or `{+}` for a
+    multimap, which has no other form when it holds nothing (GRAMMAR §G6)."""
+    if isinstance(node, Sequence):
+        return "[]"
+    return "{+}" if isinstance(node, MultiMap) else "{}"
+
+
 def _is_empty(node: Node) -> bool:
     return ((isinstance(node, Mapping) and not node.pairs)
             or (isinstance(node, Sequence) and not node.items)
@@ -187,7 +195,7 @@ def _inline(node: Node, level: int, source: str | None) -> list[str] | None:
             return _block_lines(node.value, level)
         return [_scalar(node)]
     if _is_empty(node):
-        return ["[]" if isinstance(node, Sequence) else "{}"]
+        return [_empty(node)]
     return None
 
 
@@ -228,11 +236,11 @@ def _lines(node: Node, level: int, source: str | None) -> list[str]:
     flow = _flow(node, source)
     if flow is not None and _fits(pad + flow):
         return [pad + flow]
-    if isinstance(node, (Mapping, Sequence)) and _is_empty(node):
+    if _is_empty(node):
         # An empty container has no block spelling (§4.4), at the root as
         # anywhere else: with no lines at all, `{}` came back as an empty
         # document, which is akan.
-        return [pad + ("[]" if isinstance(node, Sequence) else "{}")]
+        return [pad + _empty(node)]
     if isinstance(node, Mapping):
         return _pairs(node.pairs, pad, level, source, marker="")
     if isinstance(node, MultiMap):

@@ -85,11 +85,15 @@ instead of refusing it. **Several changes are breaking** — see Changed.
 - **Long decimals (§3.1):** a decimal integer past 4,300 digits is shiran,
   past `max_digits` (default 17,200) akan; conversion never depends on the
   host's own digit limit.
+- **`{+}`, the empty multimap** (GRAMMAR §G6, SPEC §7.1). A block multimap
+  needs an entry, so an empty one had no spelling at all, and a writer
+  given one wrote nothing. `{}` stays a mapping; a flow multimap with
+  entries stays reserved.
 - **Indented documents (GRAMMAR §G3):** the first line holding a token sets
   the base column; blank and comment lines are not measured.
 - **The pinned display-width table** (`tools/gen_wcwidth_table.py`,
   Unicode 14.0.0) that §14.1's layout measures with.
-- Conformance corpus: 64 cases (was 48).
+- Conformance corpus: 65 cases (was 48).
 
 ### Fixed
 

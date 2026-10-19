@@ -134,7 +134,7 @@ _SCALAR_KINDS = frozenset({"STRING", "BYTES", "INT", "FLOAT", "KEYWORD",
 _DESCRIBE = {
     "NEWLINE": "end of line", "EOF": "end of file",
     "INDENT": "an indented block", "DEDENT": "the end of a block",
-    "DASH": "a sequence item ('- ')",
+    "DASH": "a sequence item ('- ')", "PLUS": "a multimap's '+'",
     "COLON": "':'", "COMMA": "','",
     "LBRACKET": "'['", "RBRACKET": "']'",
     "LBRACE": "'{'", "RBRACE": "'}'",
@@ -436,8 +436,19 @@ class Parser:
         self._advance()                          # RBRACKET
         return Sequence(opener.line, opener.col, items)
 
-    def _flow_map(self) -> Mapping:
+    def _flow_map(self) -> Node:
         opener = self._advance()                 # LBRACE
+        if self._at("PLUS"):
+            # `{+}`: the empty multimap (GRAMMAR §G6). `{}` stays a mapping
+            # (operator, 2026-10-19); a flow multimap with entries is
+            # reserved (§9), so anything after the `+` is akan.
+            self._advance()
+            if not self._at("RBRACE"):
+                self._akan("a flow multimap with entries is reserved (§9); "
+                           "{+} is the empty multimap, and entries are "
+                           "written as a '+ ' block")
+            self._advance()                      # RBRACE
+            return MultiMap(opener.line, opener.col, [])
         pairs: list[Pair] = []
         first_line: dict[str, tuple[int, str]] = {}
         while not self._at("RBRACE"):

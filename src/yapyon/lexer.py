@@ -1182,6 +1182,15 @@ class Lexer:
                 self._emit("NAME", fold_name(name), line, col, lexeme=name)
             return
 
+        if ch == "+" and self.brackets[-1:] == ["{"]:
+            # GRAMMAR §G6: inside braces `+` is a token of the flow multimap
+            # -- `{+}`, the empty one, is all that is built (§9 reserves the
+            # rest). A signed number was taken above, so `{a: +1}` is still
+            # a number; the parser judges where a PLUS may stand.
+            self._emit("PLUS", "+", line, col)
+            self._advance()
+            return
+
         for reserved in ("---", "..."):           # GRAMMAR §G6, reserved tokens
             if self.text.startswith(reserved, self.pos):
                 self._akan(f"{reserved!r} is reserved and has no meaning; "
