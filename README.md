@@ -38,7 +38,7 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1396 tests** on the current tree; the number here tracks the tree,
+suite is **1416 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 A document is one of three kinds, and `yapyon.tier_of` says which (§12.5):
@@ -64,6 +64,9 @@ other two, and where they disagree the spec wins and the case is wrong. What
 it adds is a check rather than a definition — every case is data, not code
 in a language, so a second implementation runs the same files against its
 own loader and gets a yes or no.
+
+New to the format? [`docs/TUTORIAL.md`](docs/TUTORIAL.md) walks through it
+from first values to contracts, with every example executed by the suite.
 
 References run one way: the spec cites the grammar, the grammar cites
 nothing. A parser can be written from the grammar alone, which is the point of

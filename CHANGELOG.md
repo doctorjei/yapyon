@@ -9,6 +9,19 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **`docs/TUTORIAL.md`**, a walk through the format from first values to
+  contracts. It teaches and does not define — the spec and grammar stay
+  normative — and every example in it is executed by the suite
+  (`tests/test_tutorial.py`): its `>>>` sessions as doctests, its documents
+  by loading them and checking each `# -> value` comment, and its command
+  line session against `examples/bridge.yap`. Nothing here is breaking.
+
+---
+
 ## 0.3.0 — 2026-10-19
 
 The specification is **v0.3**, and this release builds it. Holes take
