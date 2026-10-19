@@ -33,7 +33,9 @@ the way Python and YAML both drop `{"a": 1, "a": 2}` down to one entry.
 
 ## Status
 
-**`0.3.0`**, built to specification **v0.3**. Lexer, parser, resolver,
+**`0.3.0`**, built to specification **v0.3** (tag `0.3.0`; the documents
+on `main` are the **v0.4** drafts, which add keyword arguments for
+declared functions — see the CHANGELOG). Lexer, parser, resolver,
 loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
