@@ -9,9 +9,9 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## Unreleased
+## 0.4.0 — 2026-10-21
 
-The specification and grammar are now **v0.4** (drafts): declared
+Built to specification and grammar **v0.4**: declared
 functions take keyword arguments, documents may read the environment, and
 there are four tiers.
 
