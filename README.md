@@ -61,15 +61,6 @@ A document is one of four kinds (discoverable via `yapyon.tier_of()`:
 
 Yapyon has no ambient scope nor includes and is built to be completely auditable / verifiable.
 
-**template** (3) is finished by something outside it — the environment it
-reads with `{$HOME}` or `__ENV__`, or the consumer joining a `yt`; an
-**assembly** (4) calls functions that a **contract** declares, which the
-program loading it supplies. There is no ambient scope and no includes: a
-document reaches outside itself only through variables it names, which the
-loader exposes (the standard ones by default, never secrets unless asked),
-and through a contract its loader was handed — so its reach is something you
-can *prove* rather than audit.
-
 ## Element References
 
 A hole names a value. The shortcut style `a.b` is syntactic sugar for`(equivalent to) a["b"]`.
