@@ -15,14 +15,15 @@ builtin:
   - 'byte_encodings'           # Standard, base64, crockford32, hex, etc...
   - 'serializers'              # To JSON, YAML, TOML, and of course Yapyon!
 types:
-  scalar: ['bool', 'int', 'float', 'str (always quoted!}', 'None']
+  scalar: ['bool', 'int', 'float', 'str (always quoted!)', 'None']
   containers: ['list', 'dict', 'multimap', 'bytes', 'template strings']
 encodings:
   + bytes: b'Python-style' # Same as it ever was...
   + bytes: dna'GATTACA'    # Base-4... and more!
-  + int32: 0z1A            # Crockford base32
+  + int: 0z1A              # Crockford base32 (42, naturally)
+```
 
-**The pitch:** the same bytes with the same inputs yield the same the same data, to every parser, on every machine, always. There's no implicit typing: `no` is not `False`, and strings are always quoted; there are no anchors or tags, one null spelling, and one document per file. A repeated key in a map is an error, never an uncaught typo silently overwriting data.
+**The pitch:** the same bytes with the same inputs yield the same data, to every parser, on every machine, always. There's no implicit typing: `no` is not `False`, and strings are always quoted; there are no anchors or tags, one null spelling, and one document per file. A repeated key in a map is an error, never an uncaught typo silently overwriting data.
 
 ## Quick-Start Guide
 
@@ -38,11 +39,11 @@ It can be quickly tested, too:
 {'name': 'gw', 'port': 8080, 'addr': 'gw:8080'}
 ```
 
-The `loads` and `load` functions return plain Python. Types include builtin Python types as well as OrderedMultiMap ('+'-syntax) and `Template` ('y-string').
+The `loads` and `load` functions return plain Python. Types include builtin Python types as well as `OrderedMultimap` (`+`-syntax) and `Template` (`yt`-string).
 
 Some other quick commands:
 ```
-$ python -m yapyon record examples/registry.yap  # A Yapon record
+$ python -m yapyon record examples/registry.yap  # A Yapyon record
 $ python -m yapyon lexer  examples/gateway.yap   # token dump
 $ python -m yapyon parser examples/gateway.yap   # AST dump
 $ python -m yapyon tier   examples/gateway.yap   # tier 3 — it carries a yt
@@ -219,11 +220,11 @@ Various binary representations are built into Yapyon to simplify data transfer.
 |---|---|---|---|
 | `b` | Standard bytes | b'Python-style' | Same as it ever was... |
 | `rb` | Raw bytes | rb'Look\ma\no\escapes!' | Same as Python raw bytes |
-| `b64` | RFC46468 base64 | b64'base64//RFC4648=' | 4-symbol blocks (padded with '=') |
+| `b64` | RFC 4648 base64 | b64'base64//RFC4648=' | 4-symbol blocks (padded with '=') |
 | `c32` | Crockford base32 | c32'AllYerCrockford-base 0' | Read c32'A11YERCR0CKF0RDBASE0' |
 | `hex` | Hexadecimal | hex'badbeef' | Read hex'badbeef0' (0-padded, right) |
 | `oct` | Octal | oct'10111052' | Read oct'10111052' (hex: 20 92 2A) |
-| `dna` | DNA Seq. (base4) | dna'GATTACA' | Read dna'GATTACAT' (hex 98) (0-padded, right) |
+| `dna` | DNA Seq. (base4) | dna'GATTACA' | Read dna'GATTACAT' (hex E0 98) (0-padded, right) |
 | `bin` | Binary | bin'100' | Read bin'10000000' (hex 80) (0-padded, right) |
 
 ### int (integers)
@@ -231,9 +232,9 @@ Various binary representations are built into Yapyon to simplify data transfer.
 | Prefix | Meaning | Example | Notes |
 |---|---|---|---|
 | None | Base 10 | 4 | Invented for counting on fingers |
-| `0b` | Binary | 0x1000 | Read 0b00001000 (0-padded, left) |
-| `0q` | Quarternary | 0q33 | Read 0q0033 (0-padded, left) |
-| `0o` | Octal | 0o20 | Read 0c020 (0-padded, left) |
+| `0b` | Binary | 0b1000 | Read 0b00001000 (0-padded, left) |
+| `0q` | Quaternary | 0q33 | Read 0q0033 (0-padded, left) |
+| `0o` | Octal | 0o20 | Read 0o020 (0-padded, left) |
 | `0x` | Hexadecimal | 0x17 | Read 0x17 (0-padded left; not shown) |
 | `0z` | Crockford base32 | 0z1A | Read 0z01A (0-padded, left) |
 
@@ -244,9 +245,9 @@ Various binary representations are built into Yapyon to simplify data transfer.
 |---|---|---|---|---|
 | `r` | Raw str  | r'chubby\bunny🐇' | are-string | Same as Python raw str |
 | `rb` | Raw bytes | rb'Look\ma\no\escapes!' | reeb string | Same as Python raw bytes |
-| `y` | yapyon str | y'Head like a {desc}' | why-string | bytes, spliced at parse |
-| `yb` | yapyon bytes | y'Head like a {desc}' | yeeb-string | bytes, spliced at parse |
-| `yt` | yapyon template string | y'{part1}, {part2}' | yeet-string | Template, unjoined |
+| `y` | yapyon str | y'Head like a {desc}' | why-string | str, spliced at parse |
+| `yb` | yapyon bytes | yb'Head like a {desc}' | yeeb-string | bytes, spliced at parse (holes must be bytes or numbers) |
+| `yt` | yapyon template string | yt'{part1}, {part2}' | yeet-string | Template, unjoined |
 | `ry` | raw yapyon string | ry'{part1}\{part2}' | ree-string | str, backslash literal |
 
 `f"..."`, `t"..."`, `u"..."` are errors with hints — their meaning depends on

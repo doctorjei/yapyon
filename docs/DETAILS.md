@@ -7,17 +7,17 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1672 tests** on the current tree; the number here tracks the tree,
+suite is **1674 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 **The normative specification is published, in two documents under
-[`docs/`](docs/):**
+[`docs/`](./):**
 
 | | |
 |---|---|
-| [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
-| [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 74 portable cases; the directory's own README is the protocol |
+| [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
+| [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
+| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 74 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -25,7 +25,7 @@ it adds is a check rather than a definition — every case is data, not code
 in a language, so a second implementation runs the same files against its
 own loader and gets a yes or no.
 
-New to the format? [`docs/TUTORIAL.md`](docs/TUTORIAL.md) walks through it
+New to the format? [`docs/TUTORIAL.md`](TUTORIAL.md) walks through it
 from first values to contracts, with every example executed by the suite.
 
 References run one way: the spec cites the grammar, the grammar cites
