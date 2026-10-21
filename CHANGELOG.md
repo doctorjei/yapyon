@@ -53,6 +53,12 @@ there are four tiers.
   keys. This version already behaved so; the spec now says it, so that a
   binding added later (`cpp`, `rust`, `mojo`, `csharp`) may give its entry
   keys an older reader does not know without breaking it.
+- **§13.1: a borrow is valid only during the call it was passed to**, and
+  a function must not keep it. An obligation, as determinism is (§13.6):
+  this implementation does not enforce it, and a Python function that
+  keeps a view still works here — but a C, C++, or Rust binding frees the
+  document after the load, so the rule is stated now, before those
+  languages arrive.
 - **Conformance:** a case may declare its environment in a
   `<name>.env.json`; without one it loads in an empty environment. Eight
   environment cases (74 in all).

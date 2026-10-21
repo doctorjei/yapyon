@@ -1179,7 +1179,11 @@ literal rendering of it, and not ownership of it.
   cannot reach the node's parent or change anything. The node keeps its
   identity (the same node passed twice is the same node) and its source
   position, so a type mismatch inside it is reported where it is written
-  (§13.3).
+  (§13.3). **A borrow is valid only during the call it was passed to; a
+  function must not keep it.** Like determinism (§13.6) this is an
+  obligation on the function, which an implementation may be unable to
+  check; a binding whose values point into the loaded document depends on
+  it.
 - **No argument may contain the call site.** A reference argument naming an
   ancestor of the hole is akan. For an anchor this is visible in the syntax,
   which does not generate it (`GRAMMAR §G5`); for any other reference it is

@@ -19,6 +19,11 @@ multimap views over the node itself, in document order, that can reach the
 node's descendants and nothing else. The same node lent twice in one load is
 the same view. Values below a declared type arrive as that type says —
 an `int` where `float` is declared arrives as a `float` (§13.3).
+
+**A borrow is valid only during the call** (§13.1) — an obligation on the
+function, not enforced here: a view a Python function keeps still reads
+correctly afterward, because the node it wraps is kept alive. Bindings
+whose handles point into a freed document (C, C++, Rust) depend on it.
 """
 
 from __future__ import annotations
