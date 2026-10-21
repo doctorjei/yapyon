@@ -222,7 +222,6 @@ Various binary representations are built into Yapyon to simplify data transfer.
 | Prefix | Meaning | Example | Notes |
 |---|---|---|---|
 | `b` | Standard bytes | b'Python-style' | Same as it ever was... |
-| `rb` | Raw bytes | rb'Look\ma\no\escapes!' | Same as Python raw bytes |
 | `b64` | RFC 4648 base64 | b64'base64//RFC4648=' | 4-symbol blocks (padded with '=') |
 | `c32` | Crockford base32 | c32'AllYerCrockford-base 0' | Read c32'A11YERCR0CKF0RDBASE0' |
 | `hex` | Hexadecimal | hex'badbeef' | Read hex'badbeef0' (0-padded, right) |
