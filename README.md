@@ -5,6 +5,7 @@ Yapyon is a Python-style typed literals with YAML-like block structure, includin
 
 ```yapyon
 # Comments!
+
 features:
   explicit_literal_types: True        # 'no' != False... or Norway
   lexeme_preserving_templates: True   # 3.10 is displayed 3.10, not 3.1!
@@ -14,9 +15,11 @@ ambiguous_conversions: None
 builtin:
   - 'byte_encodings'           # Standard, base64, crockford32, hex, etc...
   - 'serializers'              # To JSON, YAML, TOML, and of course Yapyon!
+
 types:
   scalar: ['bool', 'int', 'float', 'str (always quoted!)', 'None']
   containers: ['list', 'dict', 'multimap', 'bytes', 'template strings']
+
 encodings:
   + bytes: b'Python-style' # Same as it ever was...
   + bytes: dna'GATTACA'    # Base-4... and more!
