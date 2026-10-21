@@ -48,6 +48,11 @@ there are four tiers.
   `POSIX_STANDARD_ENV`, `WINDOWS_STANDARD_ENV`, and `ENV_ALL` are exported.
   `python -m yapyon expand` takes `--env-allow NAME`, `--env-all`, and
   `--no-env`. `expand_record` writes the values it read into the record.
+- **§13.2: another language's `impl` entry is ignored entirely** — its
+  keys and whatever it holds — and each language defines its own entry's
+  keys. This version already behaved so; the spec now says it, so that a
+  binding added later (`cpp`, `rust`, `mojo`, `csharp`) may give its entry
+  keys an older reader does not know without breaking it.
 - **Conformance:** a case may declare its environment in a
   `<name>.env.json`; without one it loads in an empty environment. Eight
   environment cases (74 in all).
@@ -72,6 +77,10 @@ there are four tiers.
   line session against `examples/bridge.yap`. Nothing here is breaking.
 
 ### Fixed
+
+- **§13.4: a function returning a string with a lone surrogate is akan.**
+  A yapyon `str` is Unicode scalar values, and a document cannot write a
+  lone surrogate; 0.3.0 let a declared function deliver one anyway.
 
 - **§5.3: a subscript's key may be written later in the document.** In
   every release since `0.1.0`, an indirect subscript whose key was a
