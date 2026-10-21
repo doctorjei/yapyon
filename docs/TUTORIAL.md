@@ -302,9 +302,10 @@ Traceback (most recent call last):
 yapyon.lexer.AkanError: akan: line 1, col 3: references never resolve (they form a cycle): {b} at line 1, col 3; {a} at line 2, col 3
 ```
 
-There is no environment lookup. `$HOME` and `~` are ordinary characters, and
-a document's values come from its own bytes — the `$VAR` problem is
-"which environment?", and a format cannot answer that for you.
+A `$` or `~` in the text of a string is an ordinary character:
+`y"${HOME}"` is a dollar sign and then the hole `{HOME}`. Reading the
+environment is written inside the braces, `{$HOME}` — see "Reading the
+environment" in §8.
 
 ### The other y prefixes
 
@@ -392,16 +393,17 @@ serializer cannot encode the block it sits in — that would need its own
 result to compute its own result — so `{__PARENT__.__AS_JSON__()}` is akan;
 name a sibling block instead.
 
-## 8. Three kinds of document
+## 8. Four kinds of document
 
-Everything so far sorts every document into one of three tiers (§12), and
+Everything so far sorts every document into one of four tiers (§12), and
 each tier contains the one before it:
 
-| Level | Name | Holds | Needs |
+| Level | Name | Holds | Finished by |
 |---|---|---|---|
-| 1 | **record** | literals only | a parser |
-| 2 | **template** | y-strings and built-in calls | a resolver |
-| 3 | **assembly** | calls to declared functions | a resolver and a contract |
+| 1 | **record** | literals only | nothing: it is already data |
+| 2 | **ledger** | y-strings and built-in calls | its own bytes |
+| 3 | **template** | `yt` strings, or reads of the environment | the environment, or the consumer joining the parts |
+| 4 | **assembly** | calls to declared functions | a contract |
 
 The tier is visible in the bytes, so a program can ask before it loads:
 
@@ -410,8 +412,10 @@ The tier is visible in the bytes, so a program can ask before it loads:
 1
 >>> yapyon.tier_of('port: 8080\naddr: y"localhost:{port}"\n')
 2
->>> yapyon.tier_of('title: "Hi"\npath: y"/{slug(title)}"\n')
+>>> yapyon.tier_of('user: "ana"\ncmd: yt"echo {user}"\n')
 3
+>>> yapyon.tier_of('title: "Hi"\npath: y"/{slug(title)}"\n')
+4
 ```
 
 A **record** is the safe form by design: nothing in it depends on
@@ -430,7 +434,7 @@ yapyon.lexer.AkanError: akan: line 2, col 6: a record's leaves must all be liter
 Braces in a plain string are inert: `"{name}"` is six characters, in every
 implementation, forever. Only the `y` makes a hole.
 
-**A template reduces to a record.** `expand_record` resolves every hole and
+**A ledger reduces to a record.** `expand_record` resolves every hole and
 writes the result back out as yapyon, so a tool on the far side needs only
 the simple reader. Here it is on `examples/bridge.yap` (shown without
 its comments):
@@ -459,6 +463,43 @@ paths:
 
 Every literal comes back spelled as the author spelled it; only layout and
 comments are normalized.
+
+### Reading the environment
+
+A hole can read the environment of the program loading the document. `$NAME`
+is strict, and `__ENV__` takes a fallback (§5.1.3):
+
+```yapyon
+home: y"{$HOME}"
+config: y"{__ENV__('XDG_CONFIG_HOME', default_config)}/app"
+default_config: y"{$HOME}/.config"
+```
+
+```pycon
+>>> doc = 'home: y"{$HOME}"\nconfig: y"{__ENV__(\'XDG_CONFIG_HOME\', default_config)}/app"\ndefault_config: y"{$HOME}/.config"\n'
+>>> yapyon.loads(doc, env={"HOME": "/home/ana"})
+{'home': '/home/ana', 'config': '/home/ana/.config/app', 'default_config': '/home/ana/.config'}
+>>> yapyon.loads(doc, env={"HOME": "/home/ana", "XDG_CONFIG_HOME": "/cfg"})["config"]
+'/cfg/app'
+```
+
+`env` defaults to the process's own environment; it is given here so the
+example means the same thing everywhere. Not every variable is visible: a
+load exposes only the standard ones — locations, identity, locale, and the
+like — because environments often hold secrets (§5.1.4). Anything else
+looks unset until the program allows it:
+
+```pycon
+>>> yapyon.loads('key: y"{$API_KEY}"\n', env={"API_KEY": "s3cret"})
+Traceback (most recent call last):
+yapyon.lexer.AkanError: akan: line 1, col 5: {$API_KEY}: $API_KEY is not set, or not exposed by this application
+>>> yapyon.loads('key: y"{$API_KEY}"\n', env={"API_KEY": "s3cret"},
+...              env_allow=yapyon.STANDARD_ENV | {"API_KEY"})
+{'key': 's3cret'}
+```
+
+A document that reads the environment is a **template**: the same bytes give
+the same data in the same environment.
 
 ## 9. Functions and contracts
 

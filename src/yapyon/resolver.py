@@ -44,11 +44,13 @@ from typing import NamedTuple
 from ._digits import REFUSE_DIGITS, decimal_text
 from .contract import (BindError, Declared, Lender, ResultError,
                        float_misfit, result_node)
+from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
+                          environment)
 from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
 from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
                      Sequence, YString)
-from .serializers import SERIALIZERS, YEETED_YT
+from .serializers import BUILTIN_NAMES, ENV_BUILTIN, SERIALIZERS, YEETED_YT
 from .typespec import check, parse_type, show
 
 # §5.3 defines two tiers, and they are not the same number.
@@ -73,6 +75,16 @@ MAX_SIZE = 1 << 20                   # §5.3 warn tier, codepoints/bytes rendere
 REFUSE_FACTOR = 4                    # ceiling sits above the warn tier, so the
 REFUSE_DEPTH = REFUSE_FACTOR * MAX_DEPTH   # shiran is reachable by default
 REFUSE_SIZE = REFUSE_FACTOR * MAX_SIZE
+
+
+_STANDARD = object()      # Resolver's default: the process env, standard names
+
+
+def _standard_environment():
+    """`loads`' defaults (SPEC §5.1.4): the process environment, read now,
+    exposing the standard variables of this environment system."""
+    import os
+    return environment(os.environ, STANDARD_ENV)
 
 
 class _At(NamedTuple):
@@ -164,9 +176,12 @@ class Resolver:
     def __init__(self, tree: Node, *, max_depth: int = REFUSE_DEPTH,
                  max_size: int = REFUSE_SIZE, warn=None,
                  source: str | None = None, functions=None,
-                 max_digits: int = REFUSE_DIGITS):
+                 max_digits: int = REFUSE_DIGITS, environment=_STANDARD):
         self.root = tree
         self.functions = functions           # a contract.Functions, or None
+        # §5.1.3: one snapshot per load, or None when access is off.
+        self.environment = (_standard_environment()
+                            if environment is _STANDARD else environment)
         self.max_digits = max_digits         # §3.1, for function results
         self._lender = Lender()              # one per load: borrows keep identity
         self.source = source                 # a name for diagnostics, if known
@@ -372,6 +387,8 @@ class Resolver:
 
         Split out so a serializer can reach the value it encodes without
         re-parsing, and without a second copy of the traversal."""
+        if parsed.env is not None:                   # §5.1.3: {$NAME}
+            return self._env(parsed.env, ref, site, strict=True)
         steps = list(parsed.steps)
         if parsed.root:
             current = self.root
@@ -444,7 +461,9 @@ class Resolver:
             kwargs[name] = node
         depth = max(map(self._deep_depth, args + list(kwargs.values())),
                     default=0)
-        if isinstance(builtin, Declared):
+        if builtin is ENV_BUILTIN:
+            result = self._env_call(args, kwargs, ref, site)
+        elif isinstance(builtin, Declared):
             # §13.1: keywords fill parameters by name, and the function
             # receives every argument in declared order.
             ordered = args + [kwargs[name] for name, _ in
@@ -466,11 +485,14 @@ class Resolver:
             seen.add(name)
         if not is_dunder(call.name):
             return self._declared_shape(call, ref, site)
+        if call.name == ENV_BUILTIN:
+            return self._env_shape(call, ref, site)
         builtin = SERIALIZERS.get(call.name)
         if builtin is None:
             self._akan(f"{{{ref}}}: there is no built-in named {call.name}(); "
                        f"yapyon defines "
-                       f"{', '.join(n + '()' for n in SERIALIZERS)}", site.node)
+                       f"{', '.join(n + '()' for n in BUILTIN_NAMES)}",
+                       site.node)
         if len(call.args) != 1:
             self._akan(f"{{{ref}}}: {call.name}() takes one argument "
                        f"({builtin.takes}), not {len(call.args)}", site.node)
@@ -481,6 +503,54 @@ class Resolver:
                 self._akan(f"{{{ref}}}: {call.name}() has no keyword "
                            f"argument {name}; {offer}", site.node)
         return builtin
+
+    # -- §5.1.3 the environment ------------------------------------------------
+    def _env_shape(self, call: Call, ref: str, site: _Site) -> str:
+        """`__ENV__(var_name, fallback=None)`: one or two positional
+        arguments, and `fallback` by keyword if not by position."""
+        given = len(call.args) + len(call.kwargs)
+        for name, _ in call.kwargs:
+            if name != "fallback":
+                self._akan(f"{{{ref}}}: __ENV__() has no keyword argument "
+                           f"{name}; it takes fallback", site.node)
+            if len(call.args) > 1:
+                self._akan(f"{{{ref}}}: __ENV__()'s fallback is given by "
+                           f"position and again by keyword", site.node)
+        if not call.args or given > 2:
+            self._akan(f"{{{ref}}}: __ENV__() takes a variable name and an "
+                       f"optional fallback, not {given} argument"
+                       f"{'' if given == 1 else 's'}", site.node)
+        return ENV_BUILTIN
+
+    def _env_call(self, args: list, kwargs: dict, ref: str,
+                  site: _Site) -> Node:
+        """The variable's value, or the fallback when it is not found. The
+        fallback was resolved with the other arguments, used or not."""
+        miss = check(args[0], _signature("str"))
+        if miss is not None:
+            self._akan(f"{{{ref}}}: __ENV__()'s var_name takes str, not "
+                       f"{miss.found}", miss.node)
+        fallback = args[1] if len(args) > 1 else kwargs.get("fallback")
+        if fallback is None:
+            fallback = Scalar(site.node.line, site.node.col, "none", None)
+        found = self._env(args[0].value, ref, site, strict=False)
+        return fallback if found is None else found
+
+    def _env(self, name: str, ref: str, site: _Site, *, strict: bool):
+        """The one lookup behind `{$NAME}` and `__ENV__` (§5.1.3). Not found
+        is akan when strict and None otherwise; access off is akan always —
+        a fallback answers "not set", never "not allowed"."""
+        if self.environment is None:
+            self._akan(f"{{{ref}}}: {ACCESS_OFF}", site.node)
+        try:
+            value = self.environment.get(name)
+        except EnvValueError as exc:
+            self._akan(f"{{{ref}}}: {exc}", site.node)
+        if value is None:
+            if strict:
+                self._akan(f"{{{ref}}}: ${name} {NOT_FOUND}", site.node)
+            return None
+        return Scalar(site.node.line, site.node.col, "str", value)
 
     def _declared_shape(self, call: Call, ref: str, site: _Site) -> Declared:
         declared = None if self.functions is None else \
@@ -827,7 +897,7 @@ def splice_text(target: Node) -> tuple[str | None, str]:
 def resolve(tree: Node, *, max_depth: int = REFUSE_DEPTH,
             max_size: int = REFUSE_SIZE, warn=None,
             source: str | None = None, functions=None,
-            max_digits: int = REFUSE_DIGITS) -> Node:
+            max_digits: int = REFUSE_DIGITS, environment=_STANDARD) -> Node:
     """Resolve every y/ry/yb literal in `tree`, in place. Returns the tree
     (which may itself be replaced, if the whole document was a y-string).
 
@@ -836,4 +906,5 @@ def resolve(tree: Node, *, max_depth: int = REFUSE_DEPTH,
     """
     return Resolver(tree, max_depth=max_depth, max_size=max_size,
                     warn=warn, source=source, functions=functions,
-                    max_digits=max_digits).resolve()
+                    max_digits=max_digits,
+                    environment=environment).resolve()

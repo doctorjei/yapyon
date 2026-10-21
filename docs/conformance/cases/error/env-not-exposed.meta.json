@@ -1,0 +1,1 @@
+{"expect": "akan", "rule": "SPEC §5.1.4", "why": "API_KEY is not a standard variable, so it is not exposed, and looks unset"}

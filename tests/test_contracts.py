@@ -506,10 +506,10 @@ def test_unused_code_is_never_loaded():
 @pytest.mark.parametrize("doc,tier", [
     ('a: 1\n', 1),
     ('a: {x: 1}\nu: y"{a.__AS_JSON__()}"\n', 2),
-    ('u: y"{f()}"\n', 3),
-    ('u: y"{__AS_JSON__(f())}"\n', 3),
-    ('d: {k: 1}\nu: y"{d[f()]}"\n', 3),
-    ('u: y"{a.__AS_JSON__(lexemes=f())}"\na: 1\n', 3),
+    ('u: y"{f()}"\n', 4),
+    ('u: y"{__AS_JSON__(f())}"\n', 4),
+    ('d: {k: 1}\nu: y"{d[f()]}"\n', 4),
+    ('u: y"{a.__AS_JSON__(lexemes=f())}"\na: 1\n', 4),
 ])
 def test_a_document_that_calls_a_declared_function_is_an_assembly(doc, tier):
     assert tier_of(doc) == tier

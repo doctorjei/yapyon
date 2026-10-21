@@ -115,27 +115,22 @@ def test_the_quantifier_hint_fires_only_on_quantifier_shaped_content():
 def test_the_quantifier_hint_does_not_fire_on_everything_else():
     # it used to be appended to every non-identifier hole, which told an
     # author about regex when they had written something else entirely
-    for src in ('a: y"{$HOME}"\n', 'a: y"{a-b}"\n', 'a: y"{a b}"\n'):
+    for src in ('a: y"{$1X}"\n', 'a: y"{a-b}"\n', 'a: y"{a b}"\n'):
         assert "doubled braces" not in str(akan_of(src)), src
 
 
-def test_a_dollar_segment_gets_the_environment_hint():
-    e = akan_of('a: y"{$HOME}"\n')
+def test_a_dollar_after_a_dot_says_where_an_environment_variable_may_go():
+    e = akan_of('a: y"{x.$HOME}"\nx:\n  b: 1\n')
     assert "'$HOME' is not an identifier" in str(e)
-    assert "yapyon does not expand them" in str(e)
+    assert "may lead a reference" in str(e)
 
 
 def test_an_unresolved_hole_after_a_dollar_gets_the_hint():
-    # y"${HOME}" is a literal $ plus the hole {HOME}; the akan is right and
-    # only the wording needed work
+    # y"${HOME}" is a literal $ plus the hole {HOME} (GRAMMAR §G4.7); the
+    # akan is right and only the wording needed work
     e = akan_of('a: y"${HOME}"\n')
     assert "no value named 'HOME' is in scope here" in str(e)
-    assert "yapyon does not expand them" in str(e)
-
-
-def test_the_hint_says_after_loading_not_pre_process():
-    # the pre-parse text pass is the injection-prone path
-    assert "do that after loading" in str(akan_of('a: y"${HOME}"\n'))
+    assert "inside the braces: {$NAME}" in str(e)
 
 
 def test_an_unresolved_hole_with_no_dollar_gets_no_hint():

@@ -1,0 +1,1 @@
+{"expect": "akan", "rule": "SPEC §5.1.3", "why": "with access off a fallback does not apply; it answers not set, not not allowed"}

@@ -40,13 +40,17 @@ neither, since both are resolver limits.
 
 from __future__ import annotations
 
+import os
+
 from ._digits import REFUSE_DIGITS
 from .contract import Functions
+from .environment import STANDARD_ENV, environment
 from .lexer import (AkanError, Lexer, Ref, RefError, Yakamashiwa, fold_name,
                     is_dunder, parse_ref)
 from .multimap import OrderedMultimap
 from .parser import (Mapping, MultiMap, Pair, Parser, ResolvedTemplate,
                      Scalar, Sequence, YString)
+from .serializers import ENV_BUILTIN
 from .resolver import (REFUSE_DEPTH, REFUSE_SIZE, Resolver, _Site, resolve,
                        splice_text)
 from .template import Hole, Template
@@ -93,9 +97,10 @@ def _hole(part, source: str | None) -> Hole:
                 text, why)
 
 
-def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
-          max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
-          contract=None, provide=None, source: str | None = None):
+def loads(text: str, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
+          max_depth: int = REFUSE_DEPTH, max_size: int = REFUSE_SIZE,
+          max_digits: int = REFUSE_DIGITS, contract=None, provide=None,
+          source: str | None = None):
     """Load a document from text.
 
     `source` names the text for diagnostics — pass it when the caller knows
@@ -106,7 +111,15 @@ def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
     `loads_contract`) declares the functions the document may call, and
     `provide` maps a `symbol` to the code for each declared without `from`
     (SPEC §13.2).
+
+    `env` is the environment a document's `{$NAME}` and `__ENV__` read
+    (SPEC §5.1.3) — the process's own by default, copied when the load
+    starts; `None` turns access off. `env_allow` is which of its names are
+    exposed: the standard variables of this environment system by default
+    (§5.1.4), any set of names, or `ENV_ALL` for every one. A name not
+    exposed is indistinguishable from one that is unset.
     """
+    view = environment(env, env_allow)
     lexer = Lexer(text, source=source, max_digits=max_digits)
     parser = Parser(lexer.tokenize(), lexer.warnings, source=source)
     tree = parser.parse()
@@ -116,7 +129,7 @@ def loads(text: str, *, warn=None, max_depth: int = REFUSE_DEPTH,
     return build(resolve(tree, warn=warn, max_depth=max_depth,
                          max_size=max_size, max_digits=max_digits,
                          functions=_functions(contract, provide),
-                         source=source), source)
+                         environment=view, source=source), source)
 
 
 def _functions(contract, provide):
@@ -128,15 +141,17 @@ def _functions(contract, provide):
     return Functions(contract, provide)
 
 
-def load(fp, *, warn=None, max_depth: int = REFUSE_DEPTH,
-         max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
-         contract=None, provide=None, source: str | None = None):
+def load(fp, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
+         max_depth: int = REFUSE_DEPTH, max_size: int = REFUSE_SIZE,
+         max_digits: int = REFUSE_DIGITS, contract=None, provide=None,
+         source: str | None = None):
     """Load a document from an open file (text mode, UTF-8).
 
     `source` defaults to the file's own name when it has one, so reading a
     file gets located diagnostics without the caller asking.
     """
-    return loads(fp.read(), warn=warn, max_depth=max_depth,
+    return loads(fp.read(), env_allow=env_allow, env=env, warn=warn,
+                 max_depth=max_depth,
                  max_size=max_size, max_digits=max_digits, contract=contract,
                  provide=provide, source=_name_of(fp, source))
 
@@ -186,22 +201,17 @@ def is_record(text: str, *, source: str | None = None) -> bool:
                    for tok in Lexer(text, source=source).tokenize())
 
 
-#: The token kinds that mark a construct reaching **outside the document's own
-#: bytes** — the axis `tier_of` measures.
-#:
-#: **Empty by fact, not by oversight.** Nothing in the shipped language
-#: reaches outside the document: law 3 forbids ambient scope, includes and
-#: environment at the format level, and the only callables are the three
-#: declared serializers, whose results are known. So every well-formed
-#: non-record document is level 2 today, and the set has nothing to hold.
-#:
-#: It is a set rather than a hardcoded `return 2` because the day a
-#: tier-3 construct is built — file embedding, environment access, see
-#: `workbook/designs/document-tiers.md` — its token kind is added here and
-#: `tier_of` starts distinguishing the two with no other change. Growing
-#: this set is a deliberate act: `tests/test_tiers.py` asserts it is empty,
-#: so the change cannot arrive as a silent edit.
-_TIER3_KINDS: frozenset = frozenset()
+def _reaches_out(ref) -> bool:
+    """Does a parsed reference read the environment (SPEC §5.1.3)?"""
+    if ref.env is not None:
+        return True
+    if ref.call is None:
+        return any(kind == "ref" and _reaches_out(step)
+                   for kind, step in ref.steps)
+    if ref.call.name == ENV_BUILTIN:
+        return True
+    args = list(ref.call.args) + [value for _, value in ref.call.kwargs]
+    return any(isinstance(arg, Ref) and _reaches_out(arg) for arg in args)
 
 
 def _calls_declared(ref) -> bool:
@@ -216,34 +226,34 @@ def _calls_declared(ref) -> bool:
 
 
 def tier_of(text: str, *, source: str | None = None) -> int:
-    """The lowest loader capability `text` needs in order to mean itself.
+    """The tier `text` is (SPEC §12): the least it needs in order to mean
+    itself.
 
-    **1** — a record. Every leaf is a literal, so no resolver is needed at
-    all (§12). **2** — a template: the document's own bytes decide its
-    meaning, with the resolver in hand, built-in calls included. **3** — an
-    assembly: it calls a function a contract declares (§13.1), so its
-    meaning needs the contract and the code.
+    **1** — a record: every leaf is a literal, so no resolver is needed.
+    **2** — a ledger: it splices and calls built-ins, and its own bytes
+    finish it, so it reduces to the same record on any machine. **3** — a
+    template: something outside the document finishes it — the environment
+    it reads (`$NAME`, `__ENV__`), or the consumer joining a `yt`'s parts.
+    **4** — an assembly: it calls a function a contract declares (§13.1).
 
-    The axis is **closure, not power**: what you must have in hand to know
-    what the document means. It is *lexically* decidable, which is what
-    makes the level computable rather than merely declared — a declaration
-    can be a contract, but detection is authoritative. That property is
-    load-bearing: it is why a loader can check a claimed level instead of
-    trusting one.
+    The tier is **lexically decidable**, which is what makes it computable
+    rather than merely declared — a loader can check a claimed tier instead
+    of trusting one.
 
     Same discipline as `is_record`: this reads the token stream and does not
-    parse, so text that lexes but does not parse still gets a level here,
+    parse, so text that lexes but does not parse still gets a tier here,
     and the parse error surfaces when it is loaded. Text that does not lex
     raises, there being no document to answer about — hence `source`.
     """
     tokens = Lexer(text, source=source).tokenize()
-    kinds = {tok.kind for tok in tokens}
-    if kinds & _TIER3_KINDS or any(_calls_declared(parse_ref(ref))
-                                   for tok in tokens
-                                   for part, ref in tok.parts
-                                   if part == "hole"):
+    refs = [parse_ref(ref) for tok in tokens for part, ref in tok.parts
+            if part == "hole"]
+    if any(_calls_declared(ref) for ref in refs):
+        return 4
+    if any(tok.kind == "YTSTR" for tok in tokens) \
+            or any(_reaches_out(ref) for ref in refs):
         return 3
-    if kinds & _DEFERRED_KINDS:
+    if any(tok.kind in _DEFERRED_KINDS for tok in tokens):
         return 2
     return 1
 
@@ -303,8 +313,8 @@ class _PathResolver(Resolver):
     anchors, serializers — is the parent class's, which is the point.
     """
 
-    def __init__(self, tree, where: str, functions=None):
-        super().__init__(tree, functions=functions)
+    def __init__(self, tree, where: str, functions=None, view=None):
+        super().__init__(tree, functions=functions, environment=view)
         self._where = where
 
     def _akan(self, msg: str, at):
@@ -323,7 +333,8 @@ class _PathResolver(Resolver):
         return super()._key_of(parsed, ref, site)
 
 
-def lookup(tree, current, ref: str, *, contract=None, provide=None):
+def lookup(tree, current, ref: str, *, env_allow=STANDARD_ENV,
+           env=os.environ, contract=None, provide=None):
     """Resolve `ref` the way a hole written inside `current` would.
 
     `tree` is what `loads` returns — or several such trees a consumer has
@@ -366,8 +377,8 @@ def lookup(tree, current, ref: str, *, contract=None, provide=None):
     where = _where(path)
     probe = YString(0, 0, "y", [("hole", ref)])
     try:
-        found = _PathResolver(root, where,
-                              _functions(contract, provide))._lookup(
+        found = _PathResolver(root, where, _functions(contract, provide),
+                              environment(env, env_allow))._lookup(
             ref, _Site(probe, chain, None))
     except RefError as exc:
         raise _PathAkan(f"{{{ref}}}: {exc}", where) from None

@@ -40,17 +40,20 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1592 tests** on the current tree; the number here tracks the tree,
+suite is **1669 tests** on the current tree; the number here tracks the tree,
 not a release.
 
-A document is one of three kinds, and `yapyon.tier_of` says which (§12.5):
-a **record** (1) is literals only and needs no resolver; a **template** (2)
-splices and calls built-ins, and resolves from its own bytes alone; an
-**assembly** (3) calls functions that a **contract** declares, which the
-program loading it supplies. There is no ambient scope, no includes, and no
-environment at the format level: a document reaches outside itself only
-through a contract its loader was handed, never one it names — so its reach
-is something you can *prove* rather than audit.
+A document is one of four kinds, and `yapyon.tier_of` says which (§12.5):
+a **record** (1) is literals only and needs no resolver; a **ledger** (2)
+splices and calls built-ins, and resolves from its own bytes alone; a
+**template** (3) is finished by something outside it — the environment it
+reads with `{$HOME}` or `__ENV__`, or the consumer joining a `yt`; an
+**assembly** (4) calls functions that a **contract** declares, which the
+program loading it supplies. There is no ambient scope and no includes: a
+document reaches outside itself only through variables it names, which the
+loader exposes (the standard ones by default, never secrets unless asked),
+and through a contract its loader was handed — so its reach is something you
+can *prove* rather than audit.
 
 **The normative specification is published, in two documents under
 [`docs/`](docs/):**
@@ -59,7 +62,7 @@ is something you can *prove* rather than audit.
 |---|---|
 | [`docs/GRAMMAR.md`](docs/GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](docs/SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 66 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](docs/conformance/) | *does an implementation agree?* — 74 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -145,8 +148,8 @@ lexing, without loading.
 
 This is why an implementation with no resolver can still be a conforming one:
 the safe subset is declared up front rather than carved out afterwards — and
-why the spec asks every implementation to say which of the two it provides.
-**yapyon implements the full form**, and so also loads records.
+why the spec asks every implementation to say which tier it provides.
+**yapyon implements every tier**, and so also loads records.
 *(New in `0.1.0a2`.)*
 
 A record also prints back out as yapyon, normalized:
@@ -201,8 +204,8 @@ From a checkout, the stages will also dump what they see:
 $ pip install -e ".[dev]" && pytest -q
 $ python -m yapyon lexer  examples/gateway.yap   # token dump
 $ python -m yapyon parser examples/gateway.yap   # AST dump
-$ python -m yapyon tier   examples/gateway.yap   # 2 — this one needs the resolver
-$ python -m yapyon expand examples/bridge.yap    # level 2 in, a record out
+$ python -m yapyon tier   examples/gateway.yap   # 3 — it carries a yt
+$ python -m yapyon expand examples/bridge.yap    # a ledger in, a record out
 ```
 
 Every stage writes its output to stdout and its diagnostics to stderr, and

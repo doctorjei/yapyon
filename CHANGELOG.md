@@ -12,9 +12,45 @@ before it needed `pip install yapyon --pre` to be seen.
 ## Unreleased
 
 The specification and grammar are now **v0.4** (drafts): declared
-functions take keyword arguments.
+functions take keyword arguments, documents may read the environment, and
+there are four tiers.
+
+### Breaking
+
+- **§12: four tiers, and `tier_of` renumbers.** A document is a **record**
+  (1), a **ledger** (2), a **template** (3), or an **assembly** (4). A
+  ledger is what 0.3.0 called a template: it splices and calls built-ins,
+  and its own bytes finish it. A template is now finished by something
+  outside the document — the environment it reads, or the consumer joining
+  a `yt`'s parts. So `tier_of` and `python -m yapyon tier` report **3** for
+  a document holding a `yt` (it was 2), and **4** for an assembly (it was
+  3). The §12.5 conformance levels follow: a ledger implementation needs no
+  §6.
 
 ### Added
+
+- **§5.1.3: environment variables.** `{$HOME}` reads a variable of the
+  process loading the document — strictly: unset is akan.
+  `{__ENV__("XDG_CONFIG_HOME", fallback)}` is a built-in that returns the
+  fallback when the variable is unset, and `None` with no fallback, as
+  Python's `os.getenv` does. An empty value is a value. `$NAME` may be the
+  whole hole, a receiver (`{$HOME.__AS_JSON__()}`), an argument, or a key
+  in a bracket, and takes no step; a name it cannot spell is reached
+  through `__ENV__`. Splicing the value cannot inject structure. `{$X}` was
+  akan in 0.3.0, so nothing that loaded changes meaning.
+- **§5.1.4: only standard variables are exposed by default** — those the
+  pinned POSIX and XDG standards, or Microsoft's references, define for
+  location, identity, hardware, locale, language, or presentation, and
+  never a secret. Any other variable looks unset. `loads`, `load`,
+  `expand_record`, and `lookup` take `env_allow=` (default
+  `STANDARD_ENV`; a set of names, or `ENV_ALL`) and `env=` (default
+  `os.environ`; `None` turns access off). `STANDARD_ENV`,
+  `POSIX_STANDARD_ENV`, `WINDOWS_STANDARD_ENV`, and `ENV_ALL` are exported.
+  `python -m yapyon expand` takes `--env-allow NAME`, `--env-all`, and
+  `--no-env`. `expand_record` writes the values it read into the record.
+- **Conformance:** a case may declare its environment in a
+  `<name>.env.json`; without one it loads in an empty environment. Eight
+  environment cases (74 in all).
 
 - **§13.1: keyword arguments for declared functions**, as Python takes
   them: positional arguments (the receiver first) fill the parameters in

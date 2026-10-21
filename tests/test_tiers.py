@@ -1,12 +1,9 @@
-"""Document-level tests — one test per rule, named after the rule.
+"""Document tiers (SPEC §12) — one test per rule, named after the rule.
 
-The axis is **closure, not power**: what a loader must have in hand to know
-what the document means. **1** is a record (no resolver at all, §12), **2**
-is self-contained (resolver in hand, law 3), **3** needs something outside
-the document and is unreachable today.
-
-Naming for the levels is deferred (`workbook/designs/document-tiers.md`),
-so these tests speak in numbers deliberately.
+**1** a record (literals only), **2** a ledger (splices and built-ins,
+finished by its own bytes), **3** a template (finished by something outside
+the document: the environment it reads, or the consumer joining a `yt`),
+**4** an assembly (calls a function a contract declares).
 """
 
 import subprocess
@@ -16,7 +13,6 @@ import pytest
 
 import yapyon
 from yapyon import AkanError, is_record, tier_of
-from yapyon.loader import _DEFERRED_KINDS, _TIER3_KINDS
 
 RECORDS = [
     'a: "x"\n',
@@ -26,11 +22,26 @@ RECORDS = [
     'a: "x"\na: "y"\n',          # a multimap is plain keyed data
 ]
 
-FULL = [
+LEDGERS = [
     'n: "gw"\nb: y"{n} v1"\n',
     'a: ry"x"\n',
     'a: yb"x"\n',
+    'cfg:\n  a: 1\nj: y"{cfg.__AS_JSON__()}"\n',
+]
+
+TEMPLATES = [
     'a: yt"x"\n',
+    'home: y"{$HOME}"\n',
+    'home: y"{__ENV__(\'HOME\')}"\n',
+    'j: y"{$HOME.__AS_JSON__()}"\n',
+    'd:\n  x: 1\nv: y"{d[$USER]}"\n',
+    'v: y"{__AS_JSON__($HOME)}"\n',
+]
+
+ASSEMBLIES = [
+    'v: y"{f(1)}"\n',
+    'home: y"{f($HOME)}"\n',          # a declared call outranks the env
+    'a: yt"{f(1)}"\n',
 ]
 
 
@@ -40,63 +51,61 @@ def run(text):
 
 
 # --------------------------------------------------------------------------- #
-# The rule: the level is the lowest loader capability the bytes need
+# The rule: the tier is the least the bytes need
 # --------------------------------------------------------------------------- #
-def test_a_record_is_level_1():
+def test_a_record_is_tier_1():
     for text in RECORDS:
         assert tier_of(text) == 1, text
 
 
-def test_a_y_string_makes_the_document_level_2():
-    assert tier_of('n: "gw"\nb: y"{n} v1"\n') == 2
+def test_y_yb_and_ry_make_a_ledger():
+    for text in LEDGERS:
+        assert tier_of(text) == 2, text
 
 
-def test_all_four_y_prefixes_are_level_2():
-    # `ry` shares the YSTR token kind with `y` (lexer._TOKEN_KIND_FOR_PREFIX),
-    # which is what makes _DEFERRED_KINDS cover all four prefixes with three
-    # kinds. If that mapping ever changes, this is the test that notices
-    # `tier_of` quietly started calling `ry` a record.
-    for prefix in ("y", "yb", "yt", "ry"):
-        assert tier_of(f'a: {prefix}"x"\n') == 2, prefix
+def test_built_in_serializers_keep_a_document_a_ledger():
+    assert tier_of('cfg:\n  a: 1\nj: y"{cfg.__AS_YAML__()}"\n') == 2
 
 
-def test_level_1_is_exactly_is_record():
-    # Two functions, one question. A divergence here would be trap 5's shape:
-    # two implementations of one rule, silently disagreeing.
-    for text in RECORDS + FULL:
+def test_a_yt_makes_a_template():
+    # SPEC §6: the consumer joins a `yt`'s parts, so the document alone does
+    # not finish it, and it cannot reduce to a record.
+    assert tier_of('a: yt"x"\n') == 3
+
+
+def test_reading_the_environment_makes_a_template():
+    for text in TEMPLATES:
+        assert tier_of(text) == 3, text
+
+
+def test_calling_a_declared_function_makes_an_assembly():
+    for text in ASSEMBLIES:
+        assert tier_of(text) == 4, text
+
+
+def test_tier_1_is_exactly_is_record():
+    # Two functions, one question. A divergence here would be trap 5's shape.
+    for text in RECORDS + LEDGERS + TEMPLATES + ASSEMBLIES:
         assert (tier_of(text) == 1) == is_record(text), text
 
 
-def test_an_empty_document_is_level_1():
+def test_an_env_reference_nested_in_a_bracket_still_counts():
+    assert tier_of('d:\n  x: 1\nv: y"{d[e[$X]]}"\ne:\n  a: "x"\n') == 3
+
+
+def test_a_dollar_outside_a_hole_reads_nothing():
+    # `y"${HOME}"` is a `$` and then the hole `{HOME}` (GRAMMAR §G4.7).
+    assert tier_of('HOME: "h"\nv: y"${HOME}"\n') == 2
+
+
+def test_an_empty_document_is_tier_1():
     assert tier_of("") == 1
-
-
-# --------------------------------------------------------------------------- #
-# The tripwire: level 3 is unreachable because nothing reaches outside
-# --------------------------------------------------------------------------- #
-def test_no_construct_is_level_3_yet():
-    # This asserts an *absence*, and it is the test that guards the absence.
-    # When a tier-3 construct is built -- embedding, environment access --
-    # this fails. Do not delete it: give the new construct its own token kind
-    # in loader._TIER3_KINDS, its own level-3 test here, and re-read the
-    # docstring on _TIER3_KINDS, which says why the set was empty.
-    assert _TIER3_KINDS == frozenset()
-
-
-def test_no_shipped_document_reaches_level_3():
-    assert 3 not in {tier_of(t) for t in RECORDS + FULL}
 
 
 # --------------------------------------------------------------------------- #
 # The discipline: read the tokens, leave the parse alone
 # --------------------------------------------------------------------------- #
-def test_text_that_lexes_but_does_not_parse_still_gets_a_level():
-    # Same discipline as is_record: the level is a fact about the token
-    # stream, so a parse error is not this function's to report -- it
-    # surfaces at load. This document mixes a pair and a sequence item, so
-    # it lexes clean and fails to parse; the level is still answered.
-    # (An unclosed bracket would NOT work here -- that is a lexer fact, and
-    # this function would raise on it.)
+def test_text_that_lexes_but_does_not_parse_still_gets_a_tier():
     assert tier_of('a: "x"\n- 1\n') == 1
 
 
@@ -114,7 +123,7 @@ def test_tier_of_is_part_of_the_public_api():
 # --------------------------------------------------------------------------- #
 # The CLI: a number on stdout, nothing else
 # --------------------------------------------------------------------------- #
-def test_the_cli_prints_the_level_and_nothing_else():
+def test_the_cli_prints_the_tier_and_nothing_else():
     done = run('n: "gw"\nb: y"{n}"\n')
     assert done.stdout == "2\n"
     assert done.returncode == 0
@@ -124,9 +133,12 @@ def test_the_cli_prints_1_for_a_record():
     assert run('a: "x"\n').stdout == "1\n"
 
 
+def test_the_cli_prints_3_for_a_template_and_4_for_an_assembly():
+    assert run('h: y"{$HOME}"\n').stdout == "3\n"
+    assert run('v: y"{f(1)}"\n').stdout == "4\n"
+
+
 def test_the_cli_reports_an_unlexable_document_on_stderr_not_stdout():
-    # stdout is the payload; a diagnostic there would corrupt whatever a
-    # redirect is writing into it.
     done = run('a: "unterminated\n')
     assert done.stdout == ""
     assert "akan" in done.stderr

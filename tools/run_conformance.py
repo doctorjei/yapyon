@@ -48,6 +48,22 @@ class Case:
         self.input_path = input_path
         self.expected_path = expected_path
         self.meta = meta or {}
+        env_path = input_path.with_name(input_path.stem + ".env.json")
+        self.env = (json.loads(env_path.read_text(encoding="utf-8"))
+                    if env_path.exists() else {"env": {}})
+
+    def env_args(self) -> dict:
+        """The environment this case loads in (README, "Environments"):
+        empty unless a `<name>.env.json` declares one, so no case depends
+        on the machine running it."""
+        allow = self.env.get("allow", "posix-standard")
+        env_allow = {"posix-standard": yapyon.POSIX_STANDARD_ENV,
+                     "windows-standard": yapyon.WINDOWS_STANDARD_ENV,
+                     "all": yapyon.ENV_ALL}.get(allow) if isinstance(
+                         allow, str) else frozenset(allow)
+        if env_allow is None:
+            raise SystemExit(f"{self.name}: unknown allow {allow!r}")
+        return {"env": self.env["env"], "env_allow": env_allow}
 
     @property
     def name(self) -> str:
@@ -139,7 +155,8 @@ def _run_case(case: Case) -> tuple[bool, str]:
         loader = (yapyon.loads_record if case.meta.get("loader") == "record"
                   else yapyon.loads)
         try:
-            value = loader(src, source=case.name)
+            kw = case.env_args() if loader is yapyon.loads else {}
+            value = loader(src, source=case.name, **kw)
         except AkanError as e:
             return True, f"akan as expected: {_first_line(str(e))}"
         return False, f"expected akan ({case.meta.get('rule', '?')}), got {value!r}"
@@ -159,7 +176,7 @@ def _run_case(case: Case) -> tuple[bool, str]:
         if yapyon.tier_of(src) == 1:
             return False, ("filed under full/ but tier_of says 1 — it is a "
                           "record, so it tests nothing the record cases do not")
-        got = yapyon.loads(src, source=case.name)
+        got = yapyon.loads(src, source=case.name, **case.env_args())
 
     ok, why = same_data(got, expected)
     if ok:

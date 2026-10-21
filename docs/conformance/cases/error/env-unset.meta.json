@@ -1,0 +1,1 @@
+{"expect": "akan", "rule": "SPEC §5.1.3", "why": "{$NAME} is strict: an unset variable is akan"}

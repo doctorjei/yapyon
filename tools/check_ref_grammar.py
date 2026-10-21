@@ -84,7 +84,10 @@ _STR = r'''(?P<pre>[A-Za-z0-9_]*)(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)'''
 _NUM = (r"0[xXoObBqQzZ]_?[0-9A-Za-z]+(?:_[0-9A-Za-z]+)*"     # §G4.3, no sign
         r"|(?:\d+(?:_\d+)*(?:\.(?:\d+(?:_\d+)*)?)?|\.\d+(?:_\d+)*)"
         r"(?:[eE][+-]?\d+(?:_\d+)*)?")
+# ENV ::= "$" ENVNAME; ENVNAME is ASCII letters, digits, "_", no leading digit
+_ENV = r"\$[A-Za-z_][A-Za-z0-9_]*"
 TOK = re.compile(rf"[ \t\n]*(?:(?P<str>{_STR})|(?P<num>{_NUM})(?![A-Za-z0-9_])"
+                 rf"|(?P<env>{_ENV})"
                  rf"|(?P<name>[^\W\d]\w*)|(?P<p>[.\[\](),=+-]))")
 
 
@@ -141,6 +144,8 @@ def lex(s):
             if not _token_ok(kind, text):
                 return None
             out.append((kind, text))
+        elif m.group("env") is not None:
+            out.append(("ENV", m.group("env")))
         elif m.group("name") is not None:
             name = m.group("name")
             out.append(("KEYWORD" if name in KEYWORDS else "NAME", name))
@@ -218,9 +223,9 @@ LITERAL = alt(kind("STRING"), kind("BYTES"),
 ref.p       = alt(key_ref, value_ref)
 key_ref.p   = alt(seq(parents, lit("."), lit("__KEY__")), lit("__KEY__"))
 value_ref.p = alt(path, applied)
-path.p      = seq(alt(anchor, SEG), star(step))
+path.p      = alt(seq(alt(anchor, SEG), star(step)), kind("ENV"))
 applied.p   = alt(seq(receiver, plus(suffix)), seq(call, star(suffix)))
-receiver.p  = alt(seq(anchor, plus(step)), seq(SEG, star(step)))
+receiver.p  = alt(seq(anchor, plus(step)), seq(SEG, star(step)), kind("ENV"))
 suffix.p    = seq(lit("."), call)
 call.p      = alt(seq(callee, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
                   seq(callee, lit("("), opt(seq(args, lit(","))), kwargs,
@@ -249,12 +254,13 @@ def generates(s):
 # The corpus
 # --------------------------------------------------------------------------- #
 heads = ["a", "__ROOT__", "__PARENT__", "__PARENT__.__PARENT__", "__foo__",
-         "True", "0", "__", "___", "_a", "a1"]
+         "True", "0", "__", "___", "_a", "a1", "$HOME", "$_x1", "$1X", "$"]
 steps = ["", ".b", "[0]", "[-1]", "[-0]", "[+1]", '["b.c"]', "[p]", ".b[0]", "[p].c",
          "[hex'68']", "[0x1]",
          ".__KEY__", ".__PARENT__", "[a[b]]", "..b", ".0", ".True", "[__KEY__]",
          "[ - 1 ]", " . b", "[f(x)]", "['b\\'c']", '[b"x"]', "[1.5]", "[0x1]",
-         "[01]", "[__ROOT__]", "[a.f()]", "[]"]
+         "[01]", "[__ROOT__]", "[a.f()]", "[]", "[$U]", "[ $U ]", "[$U.x]",
+         "[$U.__AS_JSON__()]", "[$]"]
 # Derived from the code, not listed by hand: a serializer the implementation
 # gains must be exercised here without anyone remembering to add it.
 tails = ([""] + [f".{n}()" for n in SERIALIZER_NAMES]
@@ -276,7 +282,8 @@ arglists = ["", "x", "x, y", "x,", ",x", ",", "x,,", "x, y ,", "lexemes=False,",
             "__AS_JSON__(x)", "[0]", "x[0]", "x[0].g(1)", "1.5e3", "0x1F",
             "1_000", "x.0", "f(g(h(1)))", "hex'6869'", "bin'01'", "dna'GA'",
             "oct'320'", "c32'D1MG'", "0q13", "0z7Z", "-0Z_7z", "0zU", "hex'6g'",
-            "HEX'68'", "rhex'68'"]
+            "HEX'68'", "rhex'68'", "$HOME", "x, $HOME", "fallback=$HOME",
+            "$HOME.x", "$HOME[0]", "$ HOME", "$1X", "$HOME.g()", "x, k=$Y"]
 calltails = ["", ".g()", "[0]", ".b", ".g(y)", " . g ( y ) "]
 
 loose = [" a . b ", "f( a , b )", "f (a)", "xs[ - 1 ]", "a .f()", "a. f()",
@@ -284,7 +291,9 @@ loose = [" a . b ", "f( a , b )", "f (a)", "xs[ - 1 ]", "a .f()", "a. f()",
          "", " ", "a b", "a[b c]", _S, f"{_S} ()",
          "__AS_JSON__(lexemes = False)", "a.__AS_JSON__(lexemes=False, x)",
          "a.__AS_JSON__(x=1, x=2)", "8080", '"x"', '"x".f()', "f(x)(y)",
-         "$HOME", "a.$b", "a-b", "-1", "f(-)", "f(1,,2)"]
+         "$HOME", "a.$b", "a-b", "-1", "f(-)", "f(1,,2)", "$", "$ HOME",
+         "$1X", "$HOMEé", "$ＨＯＭＥ", " $HOME . __AS_JSON__ ( ) ", "d[$U].x",
+         "$HOME$X", "__ENV__('HOME')", "__ENV__('HOME', $X)", "$HOME.__KEY__"]
 
 
 def corpus():

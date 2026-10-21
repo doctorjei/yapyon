@@ -81,3 +81,12 @@ YEETED_YT = ("yeeted yt; a record cannot hold a template's unjoined parts. "
 #: imports this rather than keeping a further list, and
 #: `tools/check_ref_grammar.py` checks it against SPEC §5.1.2's table.
 SERIALIZER_NAMES = tuple(SERIALIZERS)
+
+#: SPEC §5.1.3's one built-in that is not a serializer: `__ENV__(var_name,
+#: fallback=None)`. It reads the environment rather than writing a value, so
+#: it has no writer here; the resolver applies it beside `{$NAME}`, through
+#: the same lookup (`environment.Environment.get`).
+ENV_BUILTIN = "__ENV__"
+
+#: Every built-in a dunder call may name (SPEC §5.1.2, §5.1.3).
+BUILTIN_NAMES = SERIALIZER_NAMES + (ENV_BUILTIN,)

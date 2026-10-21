@@ -1,19 +1,15 @@
-"""CLI: `python -m yapyon tier FILE` — the level a document needs.
+"""CLI: `python -m yapyon tier FILE` — the tier a document is (SPEC §12).
 
-Prints **1**, **2** or **3** on stdout and nothing else, so it composes in
-a shell test rather than needing to be parsed out of prose:
+Prints **1** (record), **2** (ledger), **3** (template) or **4** (assembly)
+on stdout and nothing else, so it composes in a shell test rather than
+needing to be parsed out of prose:
 
     [ "$(python -m yapyon tier cfg.yap)" = 1 ] && echo "a minimal loader can read this"
 
-The level is *computed from the bytes*, not read off a declaration the
+The tier is *computed from the bytes*, not read off a declaration the
 author wrote about the file. That is the whole point of it: a loader can
-check a claimed level instead of trusting one. `loader.tier_of` holds what
-each level means; **3 is unreachable today**, because no shipped construct
-reaches outside the document.
-
-The levels have no names yet — naming is deferred
-(`workbook/designs/document-tiers.md`) — so this prints a number rather
-than a word the format has not chosen.
+check a claimed tier instead of trusting one. `loader.tier_of` holds what
+each tier means.
 """
 
 from __future__ import annotations

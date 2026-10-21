@@ -7,8 +7,8 @@ Home: https://github.com/doctorjei/yapyon
     >>> yapyon.loads('name: "gw"\\nbanner: y"{name} v1"\\n')
     {'name': 'gw', 'banner': 'gw v1'}
 
-**Conformance (SPEC §12.5): this implementation provides the full form**,
-and therefore also loads yapyon records — `loads_record`, `load_record` and
+**Conformance (SPEC §12.5): this is an assembly implementation**, so it
+loads every tier, records included — `loads_record`, `load_record` and
 `is_record` are the record surface.
 
 **Identifier tables (GRAMMAR §G4.1): pinned to Unicode 14.0.0.** yapyon
@@ -30,6 +30,8 @@ from .loader import (build, is_record, load, load_record, loads, loads_record,
 from .emitter import emit
 from .expand import expand_record
 from .contract import Contract, load_contract, loads_contract
+from .environment import (ENV_ALL, POSIX_STANDARD_ENV, STANDARD_ENV,
+                          WINDOWS_STANDARD_ENV)
 
 __version__ = "0.3.0"
 
@@ -47,6 +49,8 @@ __all__ = [
     "load_record", "loads_record", "is_record",
     # §5.2's scope search over a loaded tree, for consumers that assemble one
     "lookup",
+    # the environment a document may read (SPEC §5.1.3, §5.1.4)
+    "STANDARD_ENV", "POSIX_STANDARD_ENV", "WINDOWS_STANDARD_ENV", "ENV_ALL",
     # contracts: the functions a document may call (SPEC §13.2)
     "load_contract", "loads_contract", "Contract",
     # the level a document needs to mean itself (python -m yapyon tier)

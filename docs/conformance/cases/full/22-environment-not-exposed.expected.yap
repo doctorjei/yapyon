@@ -1,0 +1,2 @@
+key: "hidden"
+home: "/h"

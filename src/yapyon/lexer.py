@@ -202,6 +202,16 @@ def _digit(ch: str) -> bool:
     return ch.isdigit() and ch.isascii()
 
 
+def _env_start(ch: str) -> bool:
+    """ENVNAME's first character (GRAMMAR §G5): ASCII letter or `_`. False
+    at EOF, where slicing gives ""."""
+    return ch.isascii() and (ch.isalpha() or ch == "_")
+
+
+def _env_continue(ch: str) -> bool:
+    return ch.isascii() and (ch.isalnum() or ch == "_")
+
+
 class RefError(ValueError):
     """A malformed hole reference, position-free.
 
@@ -222,7 +232,9 @@ class Ref:
     and `tests/test_ref_grammar.py` runs it.
 
     A reference is either a **path** — an anchor or a name, then steps — or
-    a **call**, in which case `call` is set and the path fields are empty.
+    a **call**, in which case `call` is set and the path fields are empty,
+    or an **environment variable** (`$NAME`, SPEC §5.1.3), in which case
+    `env` is the name and nothing else is set: it takes no steps.
 
     `a.b` is sugar for `a["b"]`: the bracket is the general form and its
     content yields a key. So `steps` is a flat list of what to do next, and
@@ -239,15 +251,18 @@ class Ref:
     can show what the author actually wrote.
     """
 
-    __slots__ = ("root", "steps", "text", "shirans", "parents", "key", "call")
+    __slots__ = ("root", "steps", "text", "shirans", "parents", "key", "call",
+                 "env")
 
     def __init__(self, root: bool, steps: list, text: str, shirans=(),
-                 parents: int = 0, key: bool = False, call: "Call | None" = None):
+                 parents: int = 0, key: bool = False, call: "Call | None" = None,
+                 env: "str | None" = None):
         self.root, self.steps, self.text = root, list(steps), text
         self.shirans: list[str] = list(shirans)   # legal, but worth a word
         self.parents = parents      # §5.1.1: how many __PARENT__ hops, 0 if none
         self.key = key              # §5.1.1: ends in __KEY__, naming a position
         self.call = call            # §13.1: a call, or None for a path
+        self.env = env              # §5.1.3: an environment variable's name
 
     @property
     def bare_anchor(self) -> bool:
@@ -260,11 +275,11 @@ class Ref:
         return (isinstance(other, Ref) and self.root == other.root
                 and self.steps == other.steps
                 and self.parents == other.parents and self.key == other.key
-                and self.call == other.call)
+                and self.call == other.call and self.env == other.env)
 
     def __hash__(self):
         return hash((self.root, self.parents, self.key,
-                     tuple(map(str, self.steps)), self.call))
+                     tuple(map(str, self.steps)), self.call, self.env))
 
     def __repr__(self):
         return f"Ref({self.text!r})"
@@ -480,6 +495,8 @@ class _RefParser:
         `argument` is set where §G5 has `receiver | applied` rather than
         `path`: a bare anchor is then refused, because it contains the
         hole that would be computing with it."""
+        if self.peek() == "$":
+            return self._env(source)
         name = self.name()
         if name == "__KEY__":
             self._key_ends()
@@ -532,6 +549,39 @@ class _RefParser:
                 f"{anchor} contains this hole, so passing it to a function "
                 f"would need the value being computed; name a block that "
                 f"does not contain it, as {anchor}.blk")
+        return ref
+
+    def _env(self, source: str) -> Ref:
+        """`ENV ::= "$" ENVNAME` (GRAMMAR §G5): one token, ASCII, no step
+        after it — a variable is a string, so only a call may follow."""
+        self.i += 1
+        start = self.i
+        if _env_start(self.s[start:start + 1]):
+            self.i += 1
+            while _env_continue(self.s[self.i:self.i + 1]):
+                self.i += 1
+        name = self.s[start:self.i]
+        glued = self.s[self.i:self.i + 1]
+        if not name or (glued and glued not in _HOLE_SPACE + ".[](),=}"):
+            j = self.i
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}":
+                j += 1
+            spelled = self.s[start:j]
+            raise RefError(
+                "'$' must be followed directly by a variable name"
+                if not spelled else
+                f"${spelled} is not an environment variable name: write ASCII "
+                f"letters, digits, and '_', not starting with a digit; "
+                f"{{__ENV__({spelled!r})}} reaches any other name")
+        ref = Ref(False, [], source, env=name)
+        if self.peek() == "." and self._dot_calls():
+            self.i += 1
+            call_name = self.name()
+            return self._chain(self._call(call_name, [ref], receiver=True),
+                               source)
+        if self.peek() in (".", "["):
+            raise RefError(f"${name} is a string, so it has no keys or "
+                           f"positions; only a call may follow it")
         return ref
 
     def _dot_calls(self) -> bool:
@@ -808,15 +858,14 @@ def _check_segment(seg: str) -> None:
                        f"reserved names are written exactly one way")
 
 
-DOLLAR_HINT = (" — if the `$` was meant as an environment variable, yapyon "
-               "does not expand them; do that after loading")
-"""Hedged on purpose (GRAMMAR §G4.7, and the `$VAR` decision behind it).
+DOLLAR_HINT = (" — if the `$` was meant as an environment variable, write "
+               "it inside the braces: {$NAME}")
+"""Hedged on purpose (GRAMMAR §G4.7, SPEC §5.1.3).
 
-`$` is an ordinary character with no meaning in yapyon, so we cannot know
-whether the author meant a variable or wrote a literal dollar. The hint says
-"if", never diagnoses, and never changes the outcome — only the wording.
-"After loading" rather than "pre-process", because the pre-parse text
-substitution three projects reach for is the injection-prone path.
+`$` outside a hole is an ordinary character, so `y"${HOME}"` is a dollar and
+then the hole `{HOME}`: we cannot know whether the author meant a variable
+or wrote a literal dollar. The hint says "if", never diagnoses, and never
+changes the outcome — only the wording.
 """
 
 
@@ -830,7 +879,8 @@ def bad_segment_hint(seg: str) -> str:
     if seg and all(ch.isdigit() or ch == "," for ch in seg):
         return " (a regex quantifier needs doubled braces: {{n,m}})"
     if seg.startswith("$"):
-        return DOLLAR_HINT
+        return (" — an environment variable, $NAME, may lead a reference, "
+                "stand as an argument, or key a bracket, but not follow a dot")
     for ch in seg:
         why = why_not_in_name(ch)
         if why:

@@ -26,6 +26,8 @@ docs/conformance/
               <name>.expected.yap   what it resolves to, as a record
     error/    <name>.yap            input that must be refused
               <name>.meta.json      which rule it refuses, and why
+    full/, error/
+              <name>.env.json       optional: the environment it loads in
 ```
 
 **The record is the assertion language.** An expectation is not JSON, not a
@@ -50,8 +52,27 @@ misfiled: a `record/` input must report `tier_of == 1`, and a `full/` input
 must **not**. A full-form document parked under `record/` would be testing
 the resolver while claiming not to, which is worse than having no case.
 
+### Environments
+
+A `full/` or `error/` case loads in an **empty environment** unless a
+`<name>.env.json` beside it declares one, so no case depends on the machine
+running it:
+
+```json
+{"env": {"HOME": "/h", "API_KEY": "s3cret"}, "allow": "posix-standard"}
+```
+
+- `env` — the variables, name to value; `null` means environment access is
+  **off** (SPEC §5.1.3).
+- `allow` — which names are exposed (§5.1.4): `"posix-standard"` (the
+  default), `"windows-standard"`, `"all"`, or a list of names.
+
+Run the case with exactly that environment and exposure, whatever your
+host's own. Names in the corpus are written in the case their standard
+spells them, so a case means the same on a case-insensitive system.
+
 **Assemblies are not in the corpus.** A document that calls a declared
-function (SPEC §13, level 3) means nothing without a contract and the code
+function (SPEC §13, tier 4) means nothing without a contract and the code
 it binds, and that code is per-language — a corpus case could not carry it
 portably. Calls to the **built-ins** are covered (`full/19-calls`), and a
 call to an undeclared name with no contract is covered as an error.
@@ -147,6 +168,11 @@ inert gate look identical from outside, and only the break tells them apart.
   unbound holes, a serializer on a bare anchor, a multimap in a
   serializer, `None` in TOML, bytes in JSON, a `yt` in `__AS_YAPYON__()`,
   and a full document refused by `loads_record`.
+- **The environment (§5.1.3, §5.1.4)** — `{$NAME}`, `__ENV__` with and
+  without a fallback, an empty value, a `$` reference as a receiver and as
+  a bracket key, a variable that is not exposed, a widened exposure; and as
+  errors, an unset variable, an unexposed one, a step after `$NAME`, a bad
+  name, and access off with a fallback.
 
 **`yt` is deliberately absent from `full/`.** A `yt` value is a template
 delivered in parts (§6), and a record cannot express one — `expand_record`

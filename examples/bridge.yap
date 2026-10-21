@@ -1,7 +1,7 @@
-# A **full-form** document — level 2. The y-strings defer their values, so
+# A **ledger** — tier 2. The y-strings defer their values, so
 # reading this needs the resolver.
 #
-# `python -m yapyon expand` resolves them and emits a **record**: level 1,
+# `python -m yapyon expand` resolves them and emits a **record**: tier 1,
 # loadable by an implementation that has no resolver at all. That crossing
 # is the point of this file. Compare registry.yap, which starts as a record,
 # and gateway.yap, which carries a `yt` and so cannot cross.

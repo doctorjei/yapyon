@@ -4,7 +4,9 @@
     python -m yapyon parser FILE    # AST dump
     python -m yapyon record FILE    # a record, normalized back to yapyon
     python -m yapyon expand FILE    # a full document, resolved into a record
-    python -m yapyon tier   FILE    # the level the document needs: 1, 2 or 3
+                                    #   --env-allow NAME, --env-all, --no-env
+    python -m yapyon tier   FILE    # the tier: 1 record, 2 ledger,
+                                    #   3 template, 4 assembly
 
 Prefer this spelling over `python -m yapyon.lexer`. Both work, but the
 per-module form re-executes a module the package has already imported, which

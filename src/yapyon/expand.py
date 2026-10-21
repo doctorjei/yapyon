@@ -36,10 +36,12 @@ hand-picked cases.
 
 from __future__ import annotations
 
+import os
 import sys
 
 from ._cli import run
 from .emitter import emit
+from .environment import ENV_ALL, STANDARD_ENV, environment
 from ._digits import REFUSE_DIGITS
 from .lexer import AkanError, Lexer
 from .loader import _functions
@@ -70,13 +72,15 @@ def _refuse_template(tokens, source: str | None = None) -> None:
 def _expand(text: str, source: str | None = None, *,
             max_depth: int = REFUSE_DEPTH, max_size: int = REFUSE_SIZE,
             max_digits: int = REFUSE_DIGITS, contract=None, provide=None,
-            warn=None) -> tuple[str, list[str]]:
+            warn=None, env_allow=STANDARD_ENV,
+            env=os.environ) -> tuple[str, list[str]]:
     """Full document in; record source out, plus any shirans on the way.
 
     Shirans are reported as they happen rather than batched at the end, so
     that a later akan cannot swallow an earlier warning — the ordering
     `loads` already keeps.
     """
+    view = environment(env, env_allow)
     lexer = Lexer(text, source=source, max_digits=max_digits)
     tokens = lexer.tokenize()
     parser = Parser(tokens, lexer.warnings, source=source)
@@ -95,14 +99,15 @@ def _expand(text: str, source: str | None = None, *,
     resolved = resolve(tree, max_depth=max_depth, max_size=max_size,
                        max_digits=max_digits,
                        functions=_functions(contract, provide),
-                       warn=report, source=source)
+                       environment=view, warn=report, source=source)
     return emit(resolved, source=source), shirans
 
 
-def expand_record(text: str, *, max_depth: int = REFUSE_DEPTH,
-                 max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
-                 contract=None, provide=None,
-                 source: str | None = None) -> str:
+def expand_record(text: str, *, env_allow=STANDARD_ENV, env=os.environ,
+                  max_depth: int = REFUSE_DEPTH,
+                  max_size: int = REFUSE_SIZE, max_digits: int = REFUSE_DIGITS,
+                  contract=None, provide=None,
+                  source: str | None = None) -> str:
     """A full document in; canonical record source out.
 
     Warnings are dropped here, as everywhere in the library API; the CLI
@@ -118,11 +123,41 @@ def expand_record(text: str, *, max_depth: int = REFUSE_DEPTH,
     """
     return _expand(text, source=source, max_depth=max_depth,
                    max_size=max_size, max_digits=max_digits,
-                   contract=contract, provide=provide)[0]
+                   contract=contract, provide=provide,
+                   env_allow=env_allow, env=env)[0]
+
+
+USAGE = ("usage: python -m yapyon expand [--env-allow NAME]... [--env-all] "
+         "[--no-env] [FILE]")
 
 
 def main(argv: list[str]) -> int:
-    return run(argv, _expand)
+    """`--env-allow NAME` (repeatable) exposes a variable beyond the standard
+    set, `--env-all` exposes every one, and `--no-env` turns environment
+    access off (SPEC §5.1.3, §5.1.4)."""
+    rest, allow, env_all, no_env = [argv[0]], set(), False, False
+    args = iter(argv[1:])
+    for arg in args:
+        if arg == "--env-allow":
+            name = next(args, None)
+            if name is None:
+                print(f"akan: --env-allow needs a name\n{USAGE}",
+                      file=sys.stderr)
+                return 2
+            allow.add(name)
+        elif arg == "--env-all":
+            env_all = True
+        elif arg == "--no-env":
+            no_env = True
+        elif arg.startswith("--"):
+            print(f"akan: unknown option {arg}\n{USAGE}", file=sys.stderr)
+            return 2
+        else:
+            rest.append(arg)
+    env_allow = ENV_ALL if env_all else STANDARD_ENV | allow
+    env = None if no_env else os.environ
+    return run(rest, lambda text, source: _expand(
+        text, source, env_allow=env_allow, env=env))
 
 
 if __name__ == "__main__":
