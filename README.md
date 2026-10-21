@@ -105,7 +105,7 @@ relative ones, so a block can refer to where it *is*:
 store: "/cfg"
 personas:
   kisama:
-    id:     y"{__PARENT__.__KEY__}"              # -> "kimi"
+    id:     y"{__PARENT__.__KEY__}"              # -> "kisama"
     prompt: y"{__ROOT__.store}/{__PARENT__.__PARENT__.__KEY__}/{__PARENT__.__KEY__}.md"
 ```
 
