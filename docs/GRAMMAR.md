@@ -383,9 +383,10 @@ Inside a `YSTR`, `YBSTR`, or `YTSTR` literal, braces delimit **holes**.
   ends at its first closing quote outside every hole.
 - **Braces are the only structure.** Inside a y-family literal, `$`, `%`,
   backtick and every other character are ordinary content. `y"$HOME/x"` is the
-  eight characters `$HOME/x` and no substitution of any kind occurs; `y"{$HOME}"`
-  is akan, because `$HOME` is not a `NAME` and so cannot be a segment. There is
-  exactly one interpolation syntax, and it is the brace.
+  eight characters `$HOME/x` and no substitution of any kind occurs, and
+  `y"${HOME}"` is a `$` followed by the hole `{HOME}`. There is exactly one
+  interpolation syntax, and it is the brace. **Inside a hole**, `$` begins an
+  environment reference (`ENV`, §G5): `y"{$HOME}"` is a hole, not text.
 
 ## §G5 Reference grammar
 
@@ -404,12 +405,14 @@ key_ref     ::= parents "." "__KEY__"
 value_ref   ::= path | applied
 
 path        ::= ( anchor | SEG ) step*
+              | ENV
 
 applied     ::= receiver suffix+
               | call suffix*
 
 receiver    ::= anchor step+
               | SEG    step*
+              | ENV
 
 suffix      ::= "." call
 
@@ -445,6 +448,8 @@ SEG         ::= NAME, excluding every dunder name (§G4.2)
 DUNDER      ::= NAME that is a dunder name, other than "__ROOT__",
                 "__PARENT__", and "__KEY__"
 DIGITS      ::= one or more ASCII digits "0"–"9"
+ENV         ::= "$" ENVNAME
+ENVNAME     ::= ( ASCII letter | "_" ) ( ASCII letter | ASCII digit | "_" )*
 ```
 
 `STRING`, `BYTES`, `INT`, and `FLOAT` are the tokens of §G4, with two
@@ -477,6 +482,18 @@ What the production says, and why:
   positional argument can — `{cfg.__AS_JSON__(lexemes=opts.keep)}` is as
   well-formed as a literal. Which keywords a function takes is the
   specification's business, as its arity is.
+- **`$NAME` names an environment variable**, and is one token: no
+  whitespace after the `$`, and `ENVNAME` is ASCII — letters, digits, and
+  `_`, not starting with a digit, as POSIX spells a name. It is **not** a
+  `NAME`: §G4.1's Unicode test and folding do not apply, and it can never
+  collide with a key. It stands where a leading segment does — the whole
+  hole (`{$HOME}`), a receiver (`{$HOME.__AS_JSON__()}`), an argument
+  (`{f($HOME)}`), or a key in a bracket (`{d[$USER]}`) — but **takes no
+  step**: `{$HOME.x}` and `{$HOME[0]}` are not generated, because an
+  environment variable is a string and has no keys or positions. A name
+  `ENVNAME` cannot spell is reached through a built-in call with a string
+  argument; which variables exist and what they hold is the
+  specification's business.
 - **Nothing follows a call but another call.** `suffix ::= "." call`, so
   `{f(x).g()}` chains, but `{f(x)[0]}` and `{f(x).name}` are not generated.
 - **A literal appears only as an argument** (positional or keyword), or a
@@ -540,6 +557,9 @@ afterwards.
 - **Format specs and conversions** — `{x:...}`, `{x!r}` — are akan and
   reserved.
 - A **`#` outside a string literal** — holes have no comments.
+- A **step after an environment reference** — `{$HOME.x}`, `{$HOME[0]}` —
+  and a `$` not followed by an `ENVNAME`: `{$}`, `{$ HOME}`, `{$1X}`,
+  `{$ＨＯＭＥ}`.
 
 ### §G5.3 A note on borrowing
 

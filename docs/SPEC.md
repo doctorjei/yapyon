@@ -29,10 +29,12 @@ references to them still land in the right place.
 Sections marked *(reserved)* name syntax deliberately akan in v0.4 but held
 for future versions.
 
-A yapyon document is one of **three tiers** (ehmon 2): a **record**, in
-which every leaf element has a literal value (§12); a **template**, which
-also splices and applies the format's built-in functions (§5, §6); and an
-**assembly**, which also calls functions declared in a contract (§13). §12
+A yapyon document is one of **four tiers** (ehmon 2): a **record**, in
+which every leaf element has a literal value (§12); a **ledger**, which
+also splices and applies the format's built-in functions (§5); a
+**template**, which also holds template strings (§6) or reads the
+environment of the process loading it (§5.1.3); and an **assembly**, which also calls functions declared in a
+contract (§13). §12
 states what an implementation of each must support.
 
 ---
@@ -51,16 +53,22 @@ Every rule in both documents follows from seven guiding principles, the
    unrepresentable.)
 2. **Reducibility.** Computation is driven by data and yields a document. A
    **record** computes nothing: every leaf is a literal, and loading one
-   needs no resolver (§12). A **template** splices named values into strings
-   and applies only the format's own encodings (§5.1.2), and reduces to a
-   record that is the same on every system. An **assembly** may also apply
-   the functions its contract declares (§13), and reduces to a record given
-   that contract.
+   needs no resolver (§12). A **ledger** — a record with references to
+   itself — splices named values into strings and applies only the
+   format's own encodings (§5.1.2), and reduces to a record that is the
+   same on every system. A **template** is finished by something outside
+   the document: it may read the environment of the process loading it
+   (§5.1.3), and reduces to a record given that environment, and it may
+   hold template strings (§6), whose parts the consumer joins. An **assembly** may also apply the functions its contract
+   declares (§13), and reduces to a record given that contract and
+   environment.
 3. **Independence.** A document's meaning depends on nothing it does not
-   declare. A **record** or a **template** depends only on its own bytes. An
-   **assembly** depends also on the contract it is loaded with: every
-   function it calls is named at its call site and declared, with its types,
-   in that contract (§13). There is no ambient scope at the format level, and
+   declare. A **record** or a **ledger** depends only on its own bytes. A
+   **template** may depend also on the environment it is loaded in, and
+   only on variables it names, each at its reference (§5.1.3). An **assembly**
+   depends also on the contract it is loaded with: every function it calls
+   is named at its call site and declared, with its types, in that
+   contract (§13). There is no ambient scope at the format level, and
    nothing reaches a document undeclared. (Loaders and tools may layer such
    things above the format.)
 4. **Closure.** A splice is legal iff the target's validity is closed under
@@ -296,7 +304,8 @@ section and §5.2.
   (§13).
 - Holes contain **references, calls, and literal arguments**, and nothing
   else: no arithmetic, no operators, and no way to reach outside the
-  document except through a declared function. The grammar admits nothing
+  document except the loading process's own environment (§5.1.3) and a
+  declared function. The grammar admits nothing
   more, which is why it is small enough to be implemented identically twice.
 
 ### 5.1.1 Relative references: `__PARENT__` and `__KEY__`
@@ -381,9 +390,10 @@ positional argument by position only.
 both are legal (§13.1). A result is a `str`, and a chain is checked like
 any call: `{a.__AS_JSON__().__AS_YAML__()}` writes the JSON text as a YAML
 string, while `{a.__AS_JSON__().__AS_TOML__()}` is a type error at the
-second link, since `__AS_TOML__` takes a table. **A dunder call that names none of these is
-akan** at the call, naming the serializers that exist: a dunder call names
-a built-in or nothing.
+second link, since `__AS_TOML__` takes a table. **A dunder call that names
+no built-in — these four, or `__ENV__` (§5.1.3) — is akan** at the call,
+naming the built-ins that exist: a dunder call names a built-in or
+nothing.
 
 **Every serializer outputs a record.** Its output is the record (§12) its
 argument resolves to — no holes, no calls, no templates — written in the
@@ -467,6 +477,155 @@ argument as a record (§12) in the spelling §4.4 gives every yapyon writer:
 each value as written — its lexeme, so `v: 3.10` stays `3.10` and
 `hex'6869'` stays `hex'6869'` — and a value with no lexeme (a resolved
 y-string, a function result) in its canonical form.
+
+### 5.1.3 The environment: `$NAME` and `__ENV__`
+
+A hole may read **the environment of the process loading the document** —
+its own, and no other. Two spellings, one lookup:
+
+```
+paths:
+  home: y"{$HOME}"
+  config: y"{__ENV__('XDG_CONFIG_HOME', default_config)}/app"
+  default_config: y"{$HOME}/.config"
+```
+
+- **`{$NAME}` is strict** (`GRAMMAR §G5`): the variable's value, and
+  **akan** when it is not found — as Python's `os.environ["NAME"]` raises.
+- **`__ENV__(var_name, fallback=None)` is a built-in**: the variable's
+  value, or `fallback` when it is not found — as Python's
+  `os.getenv(key, default=None)`. With one argument the fallback is `None`,
+  which splices as `None` (§5.4) exactly as `f"{os.getenv('X')}"` does; an
+  author writing it has asked for that. `var_name` is any argument that is
+  a `str` — a literal or a reference — and anything else is a type error
+  at the call (§13.3). A name `GRAMMAR §G5`'s `ENVNAME` cannot spell is
+  reached only this way: `{__ENV__("ProgramFiles(x86)")}`. `fallback` may
+  be given by position or as `fallback=`, and takes anything an argument
+  can; like any argument it is resolved before the call (§13.1), whether
+  or not it is used.
+- **One lookup.** `{$X}` is `__ENV__("X")` except that not found is akan
+  rather than a fallback. An implementation has one implementation of it.
+
+What the lookup sees:
+
+- **Values are `str`.** An empty value is a value — `""`, not "not set":
+  some conventions treat the two alike (the XDG Base Directory
+  Specification does), and that is not universal, so a document that wants
+  it says so.
+- **Not found means not set *or* not exposed** (§5.1.4). A variable the
+  load does not expose is indistinguishable from one that is unset: `{$X}`
+  is akan and `__ENV__` returns its fallback. The akan says so — *"`$X` is
+  not set, or not exposed by this application"* — because the author who
+  meets it is often not the one who can change what is exposed.
+- **Names compare as the environment system compares them** (§5.1.4):
+  exactly on a POSIX-compatible system, ignoring case on a
+  Windows-compatible one. This applies to deciding whether a name is
+  exposed and to finding it alike.
+- **Read once per load.** Every reference in one load sees the same
+  values, whatever the environment does meanwhile.
+- **A value that is not valid Unicode text is akan** at the reference. A
+  POSIX environment holds bytes, and a value that does not decode cannot be
+  a `str` without inventing characters for it.
+- **If the loader has turned environment access off**, every environment
+  reference is akan — *"environment access is off"* — including `__ENV__`
+  with a fallback: the fallback answers "not set", not "not allowed".
+
+Where the value goes is the ordinary rules': it is a `str`, so it splices
+into text (§5.4, §5.5), arrives as a part of a `yt` (§6) whose reference
+reads `$NAME`, keys a mapping in a bracket (`{profiles[$USER]}` — a list
+position it cannot be), and passes a parameter's type check as any `str`
+does (§13.3). **Splicing cannot inject**: the value fills a place in a
+document that is already parsed, so no value, whatever it holds, adds
+structure the author did not write.
+
+**A document that reads the environment is a template** (§12), and its
+meaning depends on its bytes and that environment (ehmon 3): the same bytes
+and the same environment give the same data. `expand_record` (§12) writes
+the values it read into the record it produces — a secret it read is in
+that record.
+
+### 5.1.4 Exposed variables
+
+**Not every variable is exposed.** A process's environment commonly holds
+credentials — cloud keys, tokens, database URLs — and a document loaded
+from somewhere less trusted than the process must not be able to read
+them out. By default a load exposes the **standard variables** of its
+environment system and nothing else. A loader may expose a different set,
+wider or narrower, or turn environment access off; how it says so is an
+API, not part of this specification.
+
+The standard variables are not listed here. They are chosen by **criteria**,
+applied to the environment system's own standards:
+
+1. the variable is **defined by a standard of the environment system**
+   (below);
+2. it describes one of these, for the user or the session:
+   - **location** — a directory, a file, or a list of them (`HOME`,
+     `PATH`, `XDG_CONFIG_HOME`, `APPDATA`);
+   - **identity** — of the user, machine, device, or computational
+     instance (`LOGNAME`, `USERNAME`, `COMPUTERNAME`, `USERDOMAIN`);
+   - **hardware and processing configuration** — what the machine is and
+     how it runs programs (`PROCESSOR_ARCHITECTURE`,
+     `NUMBER_OF_PROCESSORS`, `OS`);
+   - **locale** — conventions for formatting, collation, and time (`LC_*`,
+     `TZ`);
+   - **language** — which language, and which message catalog, text
+     appears in (`LANG`, `LANGUAGE`, `TEXTDOMAIN`);
+   - **presentation** — how output is displayed (`TERM`, `COLUMNS`,
+     `LINES`, `MSGVERB`);
+3. it is **not** meant to carry a credential, token, or other secret.
+
+**There are two environment systems.** An implementation is on a
+**Windows-compatible** system when its host's environment is Windows'
+(Python: `os.name == "nt"`) and on a **POSIX-compatible** one otherwise —
+Linux, macOS, the BSDs, and environments that present POSIX on Windows
+(Cygwin, MSYS2) alike. Each system's standards are pinned, as the Unicode
+version is (`GRAMMAR §G4.1`), so that the criteria give the same answer
+over time:
+
+- **POSIX-compatible:** *The Open Group Base Specifications*, Issue 8
+  (IEEE Std 1003.1-2024), Base Definitions, chapter 8, "Environment
+  Variables"; and the **XDG Base Directory Specification**, version 0.8
+  (freedesktop.org).
+- **Windows-compatible:** the variables the **Win32 API reference**
+  documents as set by Windows, pinned by commit in Microsoft's public
+  documentation repositories:
+  - the **standard** variables listed in the remarks of
+    `DoEnvironmentSubst` — Microsoft's own term, "standard and … available
+    to both interactive applications and services", and those "only
+    available to interactive applications":
+    <https://github.com/MicrosoftDocs/sdk-api/blob/39d86831b9eaa91a7c2508da50f103c2aeb6fa99/sdk-api-src/content/shellapi/nf-shellapi-doenvironmentsubsta.md>;
+  - the variables WOW64 sets for 32- and 64-bit processes:
+    <https://github.com/MicrosoftDocs/win32/blob/367072aa99296ff4236e7c65384d643ca12e1012/desktop-src/WinProg64/wow64-implementation-details.md>;
+  - the variables `GetTempPath` reads for the temporary directory:
+    <https://github.com/MicrosoftDocs/sdk-api/blob/d43984d7c322f7d7d35704d6d1ad36dc3539703b/sdk-api-src/content/fileapi/nf-fileapi-gettemppathw.md>.
+
+Moving a pin is a change to this specification. A variable added by a
+later edition is exposed only once the pin moves, which is compatible; a
+pin never moves to remove one.
+
+*Best practice — what the criteria give today (not normative; the criteria
+are):*
+
+| System | Exposed |
+|---|---|
+| POSIX-compatible | `HOME`, `LOGNAME`, `SHELL`, `PWD`, `TMPDIR`, `PATH`, `NLSPATH`, `TEXTDOMAINDIR`, `DATEMSK`, `TERM`, `COLUMNS`, `LINES`, `MSGVERB`, `LANG`, `LANGUAGE`, `TEXTDOMAIN`, `LC_ALL`, `LC_COLLATE`, `LC_CTYPE`, `LC_MESSAGES`, `LC_MONETARY`, `LC_NUMERIC`, `LC_TIME`, `TZ`; `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, `XDG_RUNTIME_DIR`, `XDG_DATA_DIRS`, `XDG_CONFIG_DIRS` |
+| Windows-compatible | `ALLUSERSPROFILE`, `APPDATA`, `LOCALAPPDATA`, `ProgramData`, `ProgramFiles`, `PUBLIC`, `SystemDrive`, `SystemRoot`, `USERPROFILE`, `windir`, `HOMEDRIVE`, `HOMEPATH`, `COMPUTERNAME`, `USERDOMAIN`, `USERNAME`, `LOGONSERVER`, `NUMBER_OF_PROCESSORS`, `OS`, `PROCESSOR_ARCHITECTURE`, `PROCESSOR_IDENTIFIER`, `PROCESSOR_LEVEL`, `PROCESSOR_REVISION`; `ProgramFiles(x86)`, `ProgramW6432`, `CommonProgramFiles`, `CommonProgramFiles(x86)`, `CommonProgramW6432`, `PROCESSOR_ARCHITEW6432`; `TMP`, `TEMP` |
+
+*Windows keeps no locale or time zone in the environment, so a document
+asking for one there is told it is not set. `PROCESSOR_IDENTIFIER` is a
+processor model description (`Intel64 Family 6 Model 158 Stepping 10,
+GenuineIntel`), shared by every processor of that model — hardware
+configuration, despite its name. Microsoft notes that Known Folder APIs
+are more reliable than the variables naming the same folders; a consumer
+wanting that reliability can provide a declared function (§13).
+The interactive-only variables are absent in services. Under the SYSTEM account,
+`APPDATA` and `USERPROFILE` point inside
+`C:\Windows\System32\config\systemprofile`, not into a person's profile.
+Every variable in the POSIX chapter passes today. A variable outside
+these standards — `USER`, `HOSTNAME`,
+anything an application defines for itself — is exposed only by a loader
+that chooses to.*
 
 ### 5.2 Resolution scope: nearest wins
 
@@ -599,7 +758,9 @@ parse; a `yt` akans only if a consumer asks for the join.
 
 ## 6. yt — template strings
 
-**A `yt` literal is a y-string that is not joined.** Its holes resolve against
+**A `yt` literal is a y-string that is not joined**, and a document that
+holds one is a **template** (§12): it is finished by the consumer, so it
+cannot reduce to a record. Its holes resolve against
 the document at parse time by §5.2's ordinary rules, exactly as `y`'s do. The
 difference is delivery: `y` joins the parts into a string; `yt` hands the
 consumer the literal text parts and the resolved values, separately.
@@ -858,12 +1019,14 @@ normative; the individual rows are cross-references to the rule's own home.
 
 ## 12. Conformance: the yapyon record
 
-A document is a **record**, a **template**, or an **assembly** (ehmon 2),
-and each tier contains the one before it: a record is a template that
-splices nothing, and a template is an assembly that calls no declared
+A document is a **record**, a **ledger**, a **template**, or an
+**assembly** (ehmon 2), and each tier contains the one before it: a record
+is a ledger that splices nothing, a ledger is a template that holds no
+`yt` and reads no environment, and a template is an assembly that calls no declared
 function. The record is the restricted form — records are implied to be
 fixed, and this one is. The tier a document needs is computable from its
-bytes: a y-family literal makes it a template, and a call to a declared
+bytes: a `y`, `yb`, or `ry` literal makes it a ledger, a `yt` literal or
+an environment reference (`$NAME` or a call to `__ENV__`) a template, and a call to a declared
 function an assembly.
 
 ### 12.1 The rule
@@ -899,7 +1062,7 @@ implementation tests it. The test reads the token stream and nothing else:
 - **Compositional.** The marker is the prefix, per string. It is not something
   the document announces as a whole.
 - **A strict subset.** Every record is a valid yapyon document with the same
-  meaning: a template or assembly implementation loading a record returns
+  meaning: a ledger, template, or assembly implementation loading a record returns
   exactly what a record implementation returns.
 - **Unambiguous in a minimal implementation.** A plain string containing
   `{foo}` is six characters under every composition (`GRAMMAR §G4.6`), so an
@@ -927,13 +1090,16 @@ it is plain keyed data rather than deferred structure; the criterion is
 
 ### 12.5 Conformance
 
-An implementation **must state which tier it implements**. There are three:
+An implementation **must state which tier it implements**. There are four:
 
 - **Record** — the whole of `GRAMMAR.md` except the y-family prefixes
   (`§G4.6`), holes (`§G4.7`), and the reference grammar (`§G5`); plus this
   document's §3, §7, §10, §11, and §12.
-- **Template** — all of the above, plus `GRAMMAR §G4.7`, `§G5`, and this
-  document's §4.4, §5, §6, and §14, and §13 as it applies to built-ins.
+- **Ledger** — all of the above, plus `GRAMMAR §G4.7`, `§G5` except
+  `ENV`, and this document's §4.4, §5 except §5.1.3–§5.1.4, and §14, and
+  §13 as it applies to the built-ins other than `__ENV__`.
+- **Template** — all of the above, plus `yt` (§6), `ENV`,
+  §5.1.3–§5.1.4, and `__ENV__`.
 - **Assembly** — all of the above, plus the whole of §13: contracts, their
   types, and calls to declared functions.
 
@@ -943,15 +1109,18 @@ subset is declared first rather than carved out afterwards.
 
 Of §9's reserved syntax, the items that concern holes — `yb64` and `ytb`,
 format specs and conversions, list interpolation, default and variadic
-parameters, positional multimap access — are **template and above**,
+parameters, positional multimap access — are **ledger and above**,
 since a record has no holes at all. §5.1.1's relative references are
-template and above for the same reason. The rest — quoted
+ledger and above for the same reason. The rest — quoted
 keys, a flow spelling for multimaps, `---` streams, timestamp prefixes — would
 concern both forms.
 
 On meeting a y-family prefix, a record implementation is **akan at that
 prefix's line and column**, and says so as the record rule rather than as a
 syntax error: the document is well-formed yapyon, it is simply not a record.
+In the same way, a ledger implementation meeting a `yt` literal or an
+environment reference is akan there, saying that it needs a template
+implementation.
 
 *Reference implementation: `yapyon.loads_record` and `yapyon.load_record` load
 a record; `yapyon.is_record` performs the §12.2 test without loading.*
@@ -963,7 +1132,7 @@ a record; `yapyon.is_record` performs the §12.2 test without loading.*
 A document may **call functions** inside a hole (`GRAMMAR §G5`):
 `{match_first(supported, mind.dialects)}`, or in the receiver form
 `{supported.match_first(mind.dialects)}`. A dunder name calls a
-**built-in**, defined by this specification (§5.1.2); any other name calls a
+**built-in**, defined by this specification (§5.1.2, §5.1.3); any other name calls a
 function **declared** in a **contract** (§13.2) that the program loading the
 document supplies.
 
@@ -993,7 +1162,9 @@ literal rendering of it, and not ownership of it.
   (§5.1.2): `{cfg.__AS_JSON__(lexemes=False)}`. A keyword a built-in does
   not define is akan at the call.
 - **Tier.** A document that calls a declared function is an **assembly**;
-  calls to built-ins alone leave it a **template**. A record holds no calls
+  one that holds a `yt` or reads the environment (`$NAME` or `__ENV__`)
+  and calls no declared function is a **template**; calls to the other built-ins alone
+  leave it a **ledger**. A record holds no calls
   (§12).
 - **Inside-out, left to right.** Every argument resolves to a value before
   the call that takes it; a chain applies its links in order.
