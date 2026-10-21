@@ -398,12 +398,16 @@ name a sibling block instead.
 Everything so far sorts every document into one of four tiers (§12), and
 each tier contains the one before it:
 
-| Level | Name | Holds | Finished by |
-|---|---|---|---|
-| 1 | **record** | literals only | nothing: it is already data |
-| 2 | **ledger** | y-strings and built-in calls | its own bytes |
-| 3 | **template** | `yt` strings, or reads of the environment | the environment, or the consumer joining the parts |
-| 4 | **assembly** | calls to declared functions | a contract |
+| Level | Name | Holds | Finished by | Style |
+|---|---|---|---|---|
+| 1 | **record** | literals only | nothing: it is already data | basic |
+| 2 | **ledger** | y-strings and built-in calls | its own bytes | basic |
+| 3 | **template** | `yt` strings, or reads of the environment | the environment, or the consumer joining the parts | extra |
+| 4 | **assembly** | calls to declared functions | a contract | extra |
+
+Records and ledgers are **basic**: their bytes are the whole story, so they
+mean the same thing on every machine. Templates and assemblies are
+**extra**: they need something from outside before they are done.
 
 The tier is visible in the bytes, so a program can ask before it loads:
 

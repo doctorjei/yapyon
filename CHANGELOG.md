@@ -9,6 +9,15 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## Unreleased
+
+### Added
+
+- **§12: two styles of document.** Records and ledgers are **basic** —
+  finished by their own bytes, the base case every document reduces
+  toward. Templates and assemblies are **extra** — finished by something
+  outside them. Names only; nothing changes in what any document means.
+
 ## 0.4.0 — 2026-10-21
 
 Built to specification and grammar **v0.4**: declared

@@ -34,7 +34,9 @@ which every leaf element has a literal value (§12); a **ledger**, which
 also splices and applies the format's built-in functions (§5); a
 **template**, which also holds template strings (§6) or reads the
 environment of the process loading it (§5.1.3); and an **assembly**, which also calls functions declared in a
-contract (§13). §12
+contract (§13). Records and ledgers are **basic**: their own bytes finish
+them. Templates and assemblies are **extra**: something outside finishes
+them. §12
 states what an implementation of each must support.
 
 ---
@@ -1028,6 +1030,14 @@ fixed, and this one is. The tier a document needs is computable from its
 bytes: a `y`, `yb`, or `ry` literal makes it a ledger, a `yt` literal or
 an environment reference (`$NAME` or a call to `__ENV__`) a template, and a call to a declared
 function an assembly.
+
+The tiers fall into two **styles**. **Basic** documents — records and
+ledgers — are finished by their own bytes: a basic document reduces to the
+same record on every machine, the base case every document reduces toward.
+**Extra** documents — templates and assemblies — are finished by something
+outside them: the environment, the consumer joining a `yt`'s parts, or a
+contract. Basic means self-contained, not limited; extra means it needs
+more than its bytes, not that it is better.
 
 ### 12.1 The rule
 
