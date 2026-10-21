@@ -3,8 +3,10 @@
 YAMLちゃうで。やぴょんやぴょん。
 
 Replacement without computation (law 2): every hole names a value that is
-already in the document, and the only things that happen are substitution and
-the format's named encodings (§5.1.2) — no operators, no control flow.
+already in the document, a variable of the loading process's environment
+(`{$NAME}`, `__ENV__`, §5.1.3), or a declared function's result (§13), and
+the only things that happen are substitution, the format's named encodings
+(§5.1.2), and those calls — no operators, no control flow.
 
 Three rules do all the work:
 
