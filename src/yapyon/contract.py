@@ -408,7 +408,17 @@ def _node(value, alt: Type, at, max_digits, warn) -> Node:
             warn(f"returned an integer of {digits:,} decimal digits: past "
                  f"{WARN_DIGITS:,}, converting decimal is costly (SPEC §3.1)")
         return Scalar(line, col, "int", value)
-    if kind in ("str", "bytes", "bool"):
+    if kind == "str":
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            # A yapyon str is Unicode scalar values (GRAMMAR §G4.5): a lone
+            # surrogate cannot be written in a document, so it must not
+            # arrive through a function either.
+            raise ResultError("returned a str holding a lone surrogate; a "
+                              "yapyon str is Unicode scalar values") from None
+        return Scalar(line, col, kind, value)
+    if kind in ("bytes", "bool"):
         return Scalar(line, col, kind, value)
     if kind == "None":
         return Scalar(line, col, "none", None)

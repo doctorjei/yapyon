@@ -523,3 +523,34 @@ def test_expand_record_and_lookup_take_a_contract_too():
     assert lookup(tree, tree["mind"], "match_first(__ROOT__.supported, "
                                       "dialects)", contract=c, provide=p) \
         == "responses"
+
+
+# --------------------------------------------------------------------------- #
+# Forward compatibility: other languages' entries are ignored entirely
+# --------------------------------------------------------------------------- #
+def test_another_language_entry_is_ignored_whatever_it_holds():
+    # §13.2: a binding defined later may give its entry keys this version
+    # does not know, so reading them here would break older readers.
+    c = loads_contract(
+        'f:\n  params: {}\n  returns: "str"\n  impl:\n'
+        '    python:\n      symbol: "f"\n'
+        '    csharp:\n      symbol: "Ns.T.F"\n      kind: "static"\n'
+        '    rust: "registered"\n')
+    assert loads('x: y"{f()}"\n', contract=c,
+                 provide={"f": lambda: "ok"}) == {"x": "ok"}
+
+
+def test_an_unknown_key_in_the_own_language_entry_is_still_akan():
+    with pytest.raises(AkanError):
+        loads_contract('f:\n  params: {}\n  returns: "str"\n  impl:\n'
+                       '    python:\n      symbol: "f"\n      kind: "x"\n')
+
+
+def test_a_returned_lone_surrogate_is_akan():
+    # §13.4: a yapyon str is Unicode scalar values; a function may not
+    # deliver one a document could never write.
+    c = loads_contract('f:\n  params: {}\n  returns: "str"\n  impl:\n'
+                       '    python:\n      symbol: "f"\n')
+    with pytest.raises(AkanError) as e:
+        loads('x: y"{f()}"\n', contract=c, provide={"f": lambda: "a\ud800"})
+    assert "lone surrogate" in str(e.value)

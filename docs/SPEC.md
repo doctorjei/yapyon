@@ -1216,17 +1216,22 @@ match_first:
   no parameters.
 - `returns` — **required**; a type.
 - `impl` — **required**; maps a **language** to where that language finds
-  the code: `symbol` (required) and `from` (optional). **With `from`**, the
-  implementation locates the code itself: a Python module path, or a library
-  name **without** a platform suffix (`.so`, `.dll`, and `.dylib` are added
-  per platform). **Without `from`**, the program loading the document
-  provides the code.
+  the code. **Each language defines its own entry's keys.** For `python`
+  and `c` they are `symbol` (required) and `from` (optional). **With
+  `from`**, the implementation locates the code itself: a Python module
+  path, or a library name **without** a platform suffix (`.so`, `.dll`, and
+  `.dylib` are added per platform). **Without `from`**, the program loading
+  the document provides the code.
 - **Languages.** This version defines `python` and `c`. An implementation
-  reads only its own language's entry and **ignores the others**, whatever
-  their names, so one contract can serve bindings an implementation lacks. A
-  function with no entry an implementation can use is akan **when the
-  contract is loaded**, naming the function.
-- **Any other key is akan**, at any level of the contract.
+  reads only its own language's entry and **ignores every other entry
+  entirely** — its name, its keys, and whatever it holds — so one contract
+  can serve bindings an implementation lacks, and a binding defined later
+  may give its entry keys this version does not know. A function with no
+  entry an implementation can use is akan **when the contract is loaded**,
+  naming the function.
+- **Any other key is akan** — in the contract's own structure (a
+  function's keys, its `params`), and in the entry for the implementation's
+  own language.
 - A contract is given to the **loader**, never named by a document
   (ehmon 3).
 
@@ -1292,7 +1297,9 @@ a `y` is akan as any list is; other scalars splice by value (§5.4). A
 function cannot return a node of the document; its result is fresh data.
 **Returned data must be yapyon data**: a returned mapping's keys obey the
 identifier rule and are folded (§7), so a key that is not an identifier, or
-two keys that fold alike, is akan at the call, naming the function. A
+two keys that fold alike, is akan at the call, naming the function; and a
+returned string is Unicode scalar values, as a written one is
+(`GRAMMAR §G4.5`), so one holding a lone surrogate is akan there too. A
 result has no lexemes; a yapyon writer gives it canonical form (§4.4).
 
 ### 13.5 Errors
