@@ -51,7 +51,7 @@ from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
 from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
 from .parser import (Copy, Mapping, MultiMap, Node, Pair, ResolvedTemplate,
-                     Scalar, Sequence, Slot, YString)
+                     Scalar, Sequence, Slot, YString, children)
 from .serializers import BUILTIN_NAMES, ENV_BUILTIN, SERIALIZERS, YEETED_YT
 from .typespec import check, parse_type, show
 
@@ -202,11 +202,13 @@ class Resolver:
 
     # -- diagnostics ---------------------------------------------------------
     def _akan(self, msg: str, at: Node):
-        raise AkanError(msg, at.line, at.col, self.source)
+        raise AkanError(msg, at.line, at.col,
+                        getattr(at, "source", None) or self.source)
 
     def _shiran(self, msg: str, at: Node):
-        where = (f"line {at.line}, col {at.col}" if self.source is None
-                 else f"{self.source}:{at.line}:{at.col}")
+        source = getattr(at, "source", None) or self.source
+        where = (f"line {at.line}, col {at.col}" if source is None
+                 else f"{source}:{at.line}:{at.col}")
         text = f"shiran: {where}: {msg}"
         self.warnings.append(text)
         if self._warn is not None:
@@ -925,15 +927,7 @@ def _unfilled(node: Node) -> Slot | None:
     """The first slot left in a tree, in document order (SPEC §15.6)."""
     if isinstance(node, Slot):
         return node
-    if isinstance(node, Mapping):
-        children = [pair.value for pair in node.pairs]
-    elif isinstance(node, MultiMap):
-        children = [entry.value for entry in node.entries]
-    elif isinstance(node, Sequence):
-        children = node.items
-    else:
-        return None
-    for child in children:
+    for child in children(node):
         found = _unfilled(child)
         if found is not None:
             return found

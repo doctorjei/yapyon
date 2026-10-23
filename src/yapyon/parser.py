@@ -39,10 +39,15 @@ from .lexer import AkanError, Lexer, Token, Yakamashiwa, is_dunder
 # --------------------------------------------------------------------------- #
 @dataclass
 class Node:
-    """Base: every node knows where it began."""
+    """Base: every node knows where it began — line, column, and the
+    document it was written in, so a diagnostic in a tree assembled from
+    several documents names the right one (SPEC §15.6). `source` is a
+    class attribute, not a field: set on parsed nodes, `None` otherwise."""
 
     line: int
     col: int
+
+    source = None
 
 
 @dataclass
@@ -64,6 +69,7 @@ class YString(Node):
 
     prefix: str               # y | ry | yb | yt
     parts: list = field(default_factory=list)   # [("text", s) | ("hole", "a.b")]
+    lexeme: str = ""          # the literal as written, prefix and quotes included
 
     @property
     def type(self) -> str:
@@ -83,8 +89,8 @@ class Copy(YString):
     mid-walk, a subscript's key, a call's argument, §5.3's cycle — waits on
     a copy the same way, with no second path to keep in step (trap 9)."""
 
-    def __init__(self, line: int, col: int, ref: str):
-        super().__init__(line, col, "(", [("hole", ref)])
+    def __init__(self, line: int, col: int, ref: str, lexeme: str = ""):
+        super().__init__(line, col, "(", [("hole", ref)], lexeme)
 
     @property
     def ref(self) -> str:
@@ -252,6 +258,27 @@ def _bad_key_msg(tok: Token) -> str:
     return f"expected a key (a bare identifier), found {_describe(tok)}"
 
 
+def children(node: Node) -> list:
+    """A node's direct children, in document order — slot overrides
+    included. The one walk every tree pass shares."""
+    if isinstance(node, Mapping):
+        return [pair.value for pair in node.pairs]
+    if isinstance(node, MultiMap):
+        return [entry.value for entry in node.entries]
+    if isinstance(node, Sequence):
+        return list(node.items)
+    if isinstance(node, Slot):
+        return list(node.layers)
+    return []
+
+
+def stamp(node: Node, source: str) -> None:
+    """Record the document every node of `node` was written in."""
+    node.source = source
+    for child in children(node):
+        stamp(child, source)
+
+
 def _at_node(node: Node, fallback: Token) -> Token:
     """A token-shaped position for a node, for `_akan`."""
     return Token("", None, getattr(node, "line", fallback.line),
@@ -313,6 +340,8 @@ class Parser:
             self._akan(f"expected end of file, found "
                        f"{_describe(self._peek())} after the document's "
                        f"value; yapyon is one document per file")
+        if self.source is not None:
+            stamp(node, self.source)
         return node
 
     # -- block level ---------------------------------------------------------
@@ -515,9 +544,10 @@ class Parser:
     def _scalar(self) -> Node:
         tok = self._advance()
         if tok.kind == "COPY":
-            return Copy(tok.line, tok.col, tok.value)
+            return Copy(tok.line, tok.col, tok.value, tok.lexeme)
         if tok.kind in ("YSTR", "YBSTR", "YTSTR"):
-            return YString(tok.line, tok.col, tok.prefix, list(tok.parts))
+            return YString(tok.line, tok.col, tok.prefix, list(tok.parts),
+                           tok.lexeme)
         if tok.kind == "STRING":
             return Scalar(tok.line, tok.col, "str", tok.value,
                           lexeme=tok.lexeme, prefix=tok.prefix)
