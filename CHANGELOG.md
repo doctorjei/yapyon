@@ -9,7 +9,11 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## Unreleased
+## 0.4.1 — 2026-10-23
+
+Built to specification and grammar **v0.4**, amended: a value may be a
+copy of another, `(ref)`. Nothing here is breaking — every document that
+loaded in 0.4.0 loads the same, and records are unchanged.
 
 ### Added
 
