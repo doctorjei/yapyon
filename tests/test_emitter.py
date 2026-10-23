@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 import yapyon
-from yapyon import AkanError, emit, loads_record, parse
+from yapyon import AkanError, emit, loads_record
+from yapyon.parser import parse
 from yapyon.record import normalize
 
 # One entry per shape the emitter has to make a decision about. Each must be a

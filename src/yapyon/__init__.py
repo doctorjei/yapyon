@@ -18,15 +18,12 @@ depends on the interpreter, so a key means the same thing on every install.
 """
 
 from ._xid import UNICODE_VERSION as _XID_UNICODE_VERSION
-from .lexer import Lexer, Token, tokenize, AkanError, Yakamashiwa
-from .parser import (Mapping, MultiMap, Node, Pair, Parser, Scalar, Sequence,
-                     ResolvedTemplate, YString, dump, parse,
-                     parse_tokens)
-from .resolver import Resolver, resolve
+from .lexer import AkanError, Yakamashiwa
 from .multimap import Entry, KeyView, OrderedMultimap
 from .template import Hole, Template
-from .loader import (build, is_record, load, load_record, loads, loads_record,
+from .loader import (is_record, load, load_record, loads, loads_record,
                     lookup, tier_of)
+from .tree import Handle, Tree, merge, parse, parse_file
 from .emitter import emit
 from .expand import expand_record
 from .contract import Contract, load_contract, loads_contract
@@ -44,9 +41,11 @@ __all__ = [
     # what this install's identifier tables are (GRAMMAR §G4.1)
     "UNICODE_VERSION",
     # the everyday API
-    "load", "loads", "build", "Template", "Hole", "OrderedMultimap",
+    "load", "loads", "Template", "Hole", "OrderedMultimap",
     # records — the fixed, literal-only form
     "load_record", "loads_record", "is_record",
+    # a document read but not resolved: walk, merge, fill, resolve (SPEC §15)
+    "parse", "parse_file", "Tree", "Handle", "merge",
     # §5.2's scope search over a loaded tree, for consumers that assemble one
     "lookup",
     # the environment a document may read (SPEC §5.1.3, §5.1.4)
@@ -55,19 +54,12 @@ __all__ = [
     "load_contract", "loads_contract", "Contract",
     # the level a document needs to mean itself (python -m yapyon tier)
     "tier_of",
-    # a record AST back to yapyon source (python -m yapyon record)
+    # a record back to yapyon source (python -m yapyon record)
     "emit",
     # a full document resolved down to a record (python -m yapyon expand)
     "expand_record",
     # diagnostics
     "AkanError", "Yakamashiwa",
-    # the stages, for tools that want them
-    "Lexer", "Token", "tokenize",
-    "Parser", "parse", "parse_tokens", "dump",
-    "Resolver", "resolve",
-    # AST
-    "Node", "Scalar", "YString", "ResolvedTemplate", "Pair", "Mapping",
-    "Sequence", "MultiMap",
     # multimap internals
     "Entry", "KeyView",
 ]

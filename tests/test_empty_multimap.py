@@ -8,8 +8,8 @@ tokens, so whitespace between them is layout, as in `{ }`.
 
 import pytest
 
-from yapyon import (AkanError, OrderedMultimap, emit, expand_record, loads,
-                    loads_record, parse, tier_of)
+from yapyon import (AkanError, OrderedMultimap, emit, expand_record, loads, loads_record, tier_of)
+from yapyon.parser import parse
 
 
 @pytest.mark.parametrize("text", ["{+}", "{ + }", "{+\n}", "{\n  +\n}"])

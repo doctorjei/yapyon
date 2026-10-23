@@ -7,7 +7,8 @@ other NFKC merge, and reserved words spelled exactly one way.
 
 import pytest
 
-from yapyon import AkanError, emit, loads, parse
+from yapyon import AkanError, emit, loads
+from yapyon.parser import parse
 from yapyon._xid import XID_CONTINUE, XID_IGNORED, XID_START
 from yapyon.lexer import fold_name, id_start, is_identifier
 

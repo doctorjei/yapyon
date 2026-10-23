@@ -10,7 +10,8 @@ import sys
 
 import pytest
 
-from yapyon import AkanError, emit, loads, loads_record, parse
+from yapyon import AkanError, emit, loads, loads_record
+from yapyon.parser import parse
 from yapyon._digits import REFUSE_DIGITS, WARN_DIGITS
 
 

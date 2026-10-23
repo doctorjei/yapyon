@@ -19,8 +19,8 @@ import sys
 
 import pytest
 
-from yapyon import (AkanError, emit, expand_record, loads, loads_record,
-                    parse, tier_of)
+from yapyon import AkanError, emit, expand_record, loads, loads_record, tier_of
+from yapyon.parser import parse
 
 SINGLE_VALUES = [
     ("42", 42), ("-1.5", -1.5), ("0xff", 255), ('"x"', "x"), ("'x'", "x"),

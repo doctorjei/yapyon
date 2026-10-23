@@ -218,5 +218,14 @@ def test_a_resolution_error_survives_the_loader():
 
 
 def test_the_package_exposes_the_everyday_api():
-    for name in ("load", "loads", "build", "Template", "OrderedMultimap"):
+    for name in ("load", "loads", "Template", "OrderedMultimap", "parse",
+                 "Tree", "merge"):
         assert name in yapyon.__all__ and hasattr(yapyon, name)
+
+
+def test_the_parser_s_nodes_are_not_the_interface():
+    # SPEC §15.7, operator 2026-10-23: consumers walk a Tree; the AST and
+    # the stages stay importable from their modules, as internals.
+    for name in ("Mapping", "Scalar", "YString", "Node", "Parser", "Lexer",
+                 "tokenize", "resolve", "build", "dump", "parse_tokens"):
+        assert name not in yapyon.__all__ and not hasattr(yapyon, name)

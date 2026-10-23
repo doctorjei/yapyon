@@ -49,12 +49,16 @@ _SHORT = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
 
 
 def emit(node: Node, *, source: str | None = None) -> str:
-    """Render a record AST as yapyon source text, newline-terminated.
+    """Render a record — a `yapyon.Tree`, or a parsed node — as yapyon
+    source text, newline-terminated.
 
     Raises `AkanError` at the offending prefix if the tree holds a y-family
     literal, matching §12.5's rule: the document is well-formed yapyon, it is
     simply not a record, and there is nothing to normalize.
     """
+    root = getattr(node, "_root", None)          # a yapyon.Tree
+    if root is not None:
+        node, source = root, source if source is not None else node.source
     lines = _lines(node, 0, source)
     return "".join(line + "\n" for line in lines)
 

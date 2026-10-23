@@ -209,7 +209,7 @@ def test_malformed_type_strings(text, needle):
 
 
 def node_of(literal):
-    from yapyon import parse
+    from yapyon.parser import parse
     return parse(f"a: {literal}\n").by_key["a"]
 
 
