@@ -166,7 +166,8 @@ def load(fp, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
 # token is one of them" — the definition and the test coincide. LPAREN joins
 # them because a record admits no parentheses at all, `(1)` included
 # (operator, 2026-10-23: "parentheses suggest processing / computation").
-_DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR", "COPY", "LPAREN"})
+_DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR", "COPY", "LPAREN",
+                             "LABEL"})
 
 
 def _name_of(fp, source: str | None) -> str | None:
@@ -233,7 +234,8 @@ def tier_of(text: str, *, source: str | None = None) -> int:
     **2** — a ledger: it splices and calls built-ins, and its own bytes
     finish it, so it reduces to the same record on any machine. **3** — a
     template: something outside the document finishes it — the environment
-    it reads (`$NAME`, `__ENV__`), or the consumer joining a `yt`'s parts.
+    it reads (`$NAME`, `__ENV__`), the consumer joining a `yt`'s parts, or
+    the consumer filling a slot (§15).
     **4** — an assembly: it calls a function a contract declares (§13.1).
 
     The tier is **lexically decidable**, which is what makes it computable
@@ -250,7 +252,7 @@ def tier_of(text: str, *, source: str | None = None) -> int:
             if part == "hole"]
     if any(_calls_declared(ref) for ref in refs):
         return 4
-    if any(tok.kind == "YTSTR" for tok in tokens) \
+    if any(tok.kind in ("YTSTR", "LABEL") for tok in tokens) \
             or any(_reaches_out(ref) for ref in refs):
         return 3
     if any(tok.kind in _DEFERRED_KINDS for tok in tokens):

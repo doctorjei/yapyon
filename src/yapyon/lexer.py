@@ -93,8 +93,8 @@ class Yakamashiwa(Exception):
 # Tokens
 # --------------------------------------------------------------------------- #
 # kinds: NEWLINE INDENT DEDENT DASH NAME KEYWORD INT FLOAT STRING BYTES
-#        YSTR YBSTR YTSTR COPY COLON COMMA LBRACKET RBRACKET LBRACE RBRACE
-#        LPAREN RPAREN EOF
+#        YSTR YBSTR YTSTR COPY LABEL COLON COMMA LBRACKET RBRACKET LBRACE
+#        RBRACE LPAREN RPAREN EOF
 @dataclass
 class Token:
     kind: str
@@ -1186,6 +1186,8 @@ class Lexer:
         run = m.group(1)
         if is_identifier(run) or "'" in run or '"' in run:
             return
+        if "<" in run and is_identifier(run[:run.index("<")]):
+            return                                 # a slot's label, §G4.9
         if _NUMBER_RUN.fullmatch(run):
             return                                 # the parser's message
         if run.startswith("("):
@@ -1277,6 +1279,7 @@ class Lexer:
                 # The token carries the name's identity; the lexeme keeps
                 # what was written, for diagnostics.
                 self._emit("NAME", fold_name(name), line, col, lexeme=name)
+                self._lex_label()
             return
 
         if ch == "+" and self.brackets[-1:] == ["{"]:
@@ -1295,6 +1298,12 @@ class Lexer:
         if ch in "-+" and self._peek(1) in (" ", "\n", ""):
             self._akan(f"{ch!r} opens a block frame only at the start of a "
                        f"line's content")
+        if ch == "<":
+            self._akan("'<' opens a slot's label only after a key, as in "
+                       "persona<llamacpp>: (SPEC §15)")
+        if ch == ">":
+            self._akan("'>' closes a slot's label, and there is no label "
+                       "open here")
         why = why_not_in_name(ch)
         if why:
             self._akan(why)
@@ -1353,6 +1362,55 @@ class Lexer:
         self._emit("COPY", text, line, col, prefix="(",
                    parts=[("hole", text)],
                    lexeme=self.text[self.pos:end + 1])
+        self._advance(end + 1 - self.pos)
+
+    def _lex_label(self):
+        """GRAMMAR §G4.9: a `LABEL` after a name — `<llamacpp>`,
+        `<base.agent>`, `<>` — making that key's value a slot (SPEC §15).
+
+        Only spaces and tabs may stand between the name and `<` (a newline
+        there is layout); inside the brackets any whitespace may separate
+        tokens, as inside a copy. The value is the tuple of folded names,
+        empty for an abstract slot. Whether a label may stand here at all
+        is the parser's to say: the lexer only reads it."""
+        j = self.pos
+        gap = " \t\n" if self.depth else " \t"
+        while j < len(self.text) and self.text[j] in gap:
+            j += 1
+        if self.text[j:j + 1] != "<":
+            return
+        self._advance(j - self.pos)
+        line, col = self.line, self.col
+        j = self.pos
+        end = j + 1
+        while end < len(self.text) and self.text[end] not in ">:<{}[](),#'\"":
+            end += 1
+        if self.text[end:end + 1] != ">":
+            self._akan("unclosed '<': a slot's label ends at its '>'",
+                       line, col)
+        body = self.text[j + 1:end]
+        names = []
+        if body.strip(_HOLE_SPACE):
+            for piece in body.split("."):
+                word = piece.strip(_HOLE_SPACE)
+                if not word:
+                    self._akan(f"<{body}>: a label is names joined by dots, "
+                               f"and one is missing", line, col)
+                if not is_identifier(word):
+                    why = (why_not_in_name(next(
+                        (c for c in word if not _id_continue(c)), word[0]))
+                        or "labels are names (GRAMMAR §G4.1)")
+                    self._akan(f"{word!r} is not a label name: {why}",
+                               line, col)
+                if reserved_fold(word) is not None or word in KEYWORDS:
+                    self._akan(f"{word!r} is a keyword, not a label name",
+                               line, col)
+                if is_dunder(word):
+                    self._akan(f"{word!r}: dunder names belong to yapyon, "
+                               f"and a label is a name of yours", line, col)
+                names.append(fold_name(word))
+        self._emit("LABEL", tuple(names), line, col,
+                   lexeme=self.text[j:end + 1])
         self._advance(end + 1 - self.pos)
 
     def _scan_identifier(self) -> str:

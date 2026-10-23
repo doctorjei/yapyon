@@ -427,10 +427,11 @@ label_name  ::= NAME                 that is not a KEYWORD (§G4.1)
                                      and not a dunder (§G4.2)
 ```
 
-Whitespace, newlines included, may separate the key from the label and
-any two tokens inside it, as inside a copy (§G4.8): `persona<llamacpp>`,
-`persona <llamacpp>`, `persona< base . agent >`, and `persona<>` are all
-labels. A label name keeps its lexeme and is compared as a key is
+Whitespace may separate the key from the label — spaces and tabs, and
+newlines too inside brackets, where a newline is not layout (§G3) — and
+any two tokens inside the label, newlines included, as inside a copy
+(§G4.8): `persona<llamacpp>`, `persona <llamacpp>`,
+`persona< base . agent >`, and `persona<>` are all labels. A label name keeps its lexeme and is compared as a key is
 (§G4.1). `<` anywhere else outside a string — in value position, or a
 second label after the first — is akan, and so is a `<` with no `>` to
 close it.

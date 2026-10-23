@@ -109,6 +109,27 @@ class ResolvedTemplate(Node):
 
 
 @dataclass
+class Slot(Node):
+    """A slot — SPEC §15: a value its consumer fills, written
+    `key<label>: {overrides}`.
+
+    `label` is the tuple of folded names, empty for an abstract slot
+    (`<>`); `lexeme` is the label as written. `layers` holds the override
+    mappings, innermost first: one as parsed, more once merges and moved
+    slots stack them (§15.2, §15.4). A slot is never resolved — filling
+    replaces it, and one left at resolution is akan (§15.6)."""
+
+    label: tuple
+    layers: list = field(default_factory=list)   # list[Mapping]
+    lexeme: str = ""
+    key: str = ""             # the key as written, for diagnostics
+
+    @property
+    def abstract(self) -> bool:
+        return not self.label
+
+
+@dataclass
 class Pair(Node):
     """One `key: value`.  The position is the key's. `key` is the name's
     identity (folded, SPEC §7); `lexeme` is the key as written, which a
@@ -149,6 +170,9 @@ def deferred_message(kind: str, prefix: str) -> str:
         return ("a record admits no parentheses: they group what is computed "
                 "(write the value without them, or load with yapyon.loads "
                 "for the full form)")
+    if kind == "LABEL":
+        return ("a record holds no slots: a slot's value comes from outside "
+                "the document (SPEC §15)")
     if kind == "COPY":
         return ("a record's leaves must all be literals; a copy (…) takes "
                 "its value from elsewhere in the document (load with "
@@ -171,6 +195,7 @@ _DESCRIBE = {
     "LBRACKET": "'['", "RBRACKET": "']'",
     "LBRACE": "'{'", "RBRACE": "'}'",
     "LPAREN": "'('", "RPAREN": "')'", "COPY": "a copy",
+    "LABEL": "a slot's label",
     "STRING": "a string", "BYTES": "a bytes literal",
     "INT": "an integer", "FLOAT": "a float",
     "YSTR": "a y-string", "YBSTR": "a yeeb-string", "YTSTR": "a yeet-string",
@@ -227,6 +252,12 @@ def _bad_key_msg(tok: Token) -> str:
     return f"expected a key (a bare identifier), found {_describe(tok)}"
 
 
+def _at_node(node: Node, fallback: Token) -> Token:
+    """A token-shaped position for a node, for `_akan`."""
+    return Token("", None, getattr(node, "line", fallback.line),
+                 getattr(node, "col", fallback.col))
+
+
 # --------------------------------------------------------------------------- #
 # Parser
 # --------------------------------------------------------------------------- #
@@ -242,6 +273,14 @@ class Parser:
         self.source = source              # a name for diagnostics, if known
 
     # -- token helpers -------------------------------------------------------
+    def _at_key(self, n: int = 0) -> bool:
+        """A key starts here: `NAME :`, or `NAME <label> :` (GRAMMAR §G6)."""
+        if self._peek(n).kind != "NAME":
+            return False
+        nxt = self._peek(n + 1).kind
+        return nxt == "COLON" or (nxt == "LABEL"
+                                  and self._peek(n + 2).kind == "COLON")
+
     def _peek(self, n: int = 0) -> Token:
         return self.toks[min(self.i + n, len(self.toks) - 1)]   # EOF is a fixpoint
 
@@ -282,7 +321,7 @@ class Parser:
             return self._block_seq()
         if self._at("PLUS"):
             return self._block_mmap()
-        if self._at("NAME") and self._peek(1).kind == "COLON":
+        if self._at_key():
             return self._block_map()
         start = self._peek()
         value = self._flow_value()
@@ -297,7 +336,7 @@ class Parser:
         first = self._peek()
         pairs: list[Pair] = []
         first_line: dict[str, tuple[int, str]] = {}
-        while self._at("NAME") and self._peek(1).kind == "COLON":
+        while self._at_key():
             pairs.append(self._pair(first_line))
         if not self._at("DEDENT", "EOF"):
             tok = self._peek()
@@ -339,6 +378,7 @@ class Parser:
 
     def _pair(self, first_line: dict[str, tuple[int, str]]) -> Pair:
         key_tok = self._advance()                # NAME
+        label = self._advance() if self._at("LABEL") else None
         self._advance()                          # COLON
         key = self._check_key(key_tok, first_line)
 
@@ -355,7 +395,21 @@ class Parser:
             self._expect("NEWLINE",
                          f"expected end of line after the value of {key!r}, "
                          f"found {_describe(self._peek())}")
-        return Pair(key_tok.line, key_tok.col, key, value, key_tok.lexeme)
+        return Pair(key_tok.line, key_tok.col, key,
+                    self._slot(label, value, key_tok), key_tok.lexeme)
+
+    def _slot(self, label: Token | None, value: Node, key_tok: Token) -> Node:
+        """GRAMMAR §G7: a labeled pair's value is its slot's overrides, a
+        mapping — `{}` when there are none."""
+        if label is None:
+            return value
+        key = key_tok.lexeme or key_tok.value
+        if not isinstance(value, Mapping):
+            self._akan(f"{key}{label.lexeme}: a slot's value is its "
+                       f"overrides, a mapping; write {{}} for none",
+                       _at_node(value, label))
+        return Slot(label.line, label.col, label.value, [value],
+                    label.lexeme, key)
 
     def _frame_body(self, marker: Token, parse_body, what: str) -> Node:
         """`MARKER INDENT [ NEWLINE ] body DEDENT` (GRAMMAR §G6).
@@ -389,8 +443,7 @@ class Parser:
                                           "sequence item"))
         if not self._at("DEDENT", "EOF"):
             tok = self._peek()
-            if tok.kind == "PLUS" or (tok.kind == "NAME"
-                                      and self._peek(1).kind == "COLON"):
+            if tok.kind == "PLUS" or self._at_key():
                 self._akan_mixed("DASH", tok)
             self._akan(f"expected a sequence item ('- '), found "
                        f"{_describe(tok)}")
@@ -404,8 +457,7 @@ class Parser:
                                             "multimap entry"))
         if not self._at("DEDENT", "EOF"):
             tok = self._peek()
-            if tok.kind == "DASH" or (tok.kind == "NAME"
-                                      and self._peek(1).kind == "COLON"):
+            if tok.kind == "DASH" or self._at_key():
                 self._akan_mixed("PLUS", tok)
             self._akan(f"expected a multimap entry ('+ '), found "
                        f"{_describe(tok)}")
@@ -414,13 +466,17 @@ class Parser:
     def _mmap_entry(self) -> Pair:
         """Exactly one pair (GRAMMAR §G7).  Keys repeat *across* entries."""
         tok = self._peek()
-        if not (tok.kind == "NAME" and self._peek(1).kind == "COLON"):
+        if not self._at_key():
             if tok.kind in _SCALAR_KINDS or tok.kind in ("LBRACKET", "LBRACE"):
                 self._akan("a multimap entry is a 'key: value' pair, not a "
                            "bare value")
             self._akan(f"expected a key, found {_describe(tok)}")
+        if self._peek(1).kind == "LABEL":
+            self._akan("a slot in a multimap entry is reserved (SPEC §9): "
+                       "a slot is found by its key, and a multimap's keys "
+                       "repeat", self._peek(1))
         pair = self._pair({})                    # no cross-entry dup check
-        if self._at("NAME") and self._peek(1).kind == "COLON":
+        if self._at_key():
             self._akan("a multimap entry holds one key: value pair; indent it "
                        "under the key, or open a new '+ ' entry")
         return pair
@@ -509,11 +565,13 @@ class Parser:
             if key_tok.kind != "NAME":
                 self._akan(_bad_key_msg(key_tok), key_tok)
             self._advance()
+            label = self._advance() if self._at("LABEL") else None
             self._expect("COLON", f"expected ':' after the key "
                                   f"{key_tok.value!r}")
             key = self._check_key(key_tok, first_line)
-            pairs.append(Pair(key_tok.line, key_tok.col, key,
-                              self._flow_value(), key_tok.lexeme))
+            value = self._slot(label, self._flow_value(), key_tok)
+            pairs.append(Pair(key_tok.line, key_tok.col, key, value,
+                              key_tok.lexeme))
             if self._at("COMMA"):
                 self._advance()                  # trailing comma is fine
             elif not self._at("RBRACE"):
@@ -563,6 +621,11 @@ def dump(node: Node, level: int = 0) -> str:
         out = [f"{pad}sequence {where}"]
         for item in node.items:
             out.append(dump(item, level + 1))
+        return "\n".join(out)
+    if isinstance(node, Slot):
+        out = [f"{pad}slot {node.lexeme or '<>'} {where}"]
+        for layer in node.layers:
+            out.append(dump(layer, level + 1))
         return "\n".join(out)
     if isinstance(node, Copy):
         return f"{pad}copy ({node.ref}) {where}"

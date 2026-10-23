@@ -51,7 +51,7 @@ from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
 from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
 from .parser import (Copy, Mapping, MultiMap, Node, Pair, ResolvedTemplate,
-                     Scalar, Sequence, YString)
+                     Scalar, Sequence, Slot, YString)
 from .serializers import BUILTIN_NAMES, ENV_BUILTIN, SERIALIZERS, YEETED_YT
 from .typespec import check, parse_type, show
 
@@ -232,6 +232,9 @@ class Resolver:
 
     # -- driver --------------------------------------------------------------
     def resolve(self) -> Node:
+        slot = _unfilled(self.root)
+        if slot is not None:
+            self._akan(unfilled_message(slot), slot)
         holder = [self.root]
         sites: list[_Site] = []
         _collect(self.root, [], sites, lambda new: holder.__setitem__(0, new))
@@ -916,6 +919,34 @@ def _children(node: Node) -> list:
     if isinstance(node, Sequence):
         return list(node.items)
     return []
+
+
+def _unfilled(node: Node) -> Slot | None:
+    """The first slot left in a tree, in document order (SPEC §15.6)."""
+    if isinstance(node, Slot):
+        return node
+    if isinstance(node, Mapping):
+        children = [pair.value for pair in node.pairs]
+    elif isinstance(node, MultiMap):
+        children = [entry.value for entry in node.entries]
+    elif isinstance(node, Sequence):
+        children = node.items
+    else:
+        return None
+    for child in children:
+        found = _unfilled(child)
+        if found is not None:
+            return found
+    return None
+
+
+def unfilled_message(slot: Slot) -> str:
+    if slot.abstract:
+        return (f"{slot.key}<>: this abstract slot was never given a value; a document "
+                "filling from this one names what fills it, or its consumer "
+                "fills it (SPEC §15.5–§15.6)")
+    return (f"{slot.key}{slot.lexeme}: this slot is unfilled, and only its consumer "
+            f"can fill it — yapyon.loads cannot (SPEC §15.6)")
 
 
 def _pending(node: Node) -> YString | None:
