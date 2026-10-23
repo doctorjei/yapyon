@@ -65,10 +65,27 @@ because yapyon is not the one rendering. `render()` joins canonically and
 reproduces exactly what the equivalent `y` produces; it is an explicit call,
 never an implicit `str()`, because an easy implicit join would undo the point.
 
+## Copies
+
+A reference in parentheses is a **copy** of the value it names, kept as what
+it is — where a y-string can only take text. *(New in `0.4.1`.)*
+
+```python
+>>> d = yapyon.loads('wanted: ["responses", "chat"]\nsupported: (wanted)\n')
+>>> d["supported"]
+['responses', 'chat']
+>>> d["supported"] is d["wanted"]
+False
+```
+
+The lookup is a hole's, the value is resolved where it is written and then
+copied, and the copy is a separate object. Parentheses around a literal only
+group it, as in Python. SPEC §5.6 has the rules.
+
 ## Records
 
 A **yapyon record** is the restricted form in which *every leaf element has a
-literal value* — no splicing, no templates, nothing deferred. It is a strict
+literal value* — no splicing, no copies, no templates, nothing deferred. It is a strict
 subset: every record is a valid yapyon document meaning the same thing.
 
 ```python
