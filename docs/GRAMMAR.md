@@ -415,6 +415,26 @@ follows it — skipping whitespace, newlines included:
 
 `(` is never part of a `NAME`, so a key cannot begin with one (§G7).
 
+### §G4.9 Labels
+
+Outside a string literal, `<` is admitted in one place only: **after the
+`NAME` of a key, before its `:`**, where it opens a **label**, one token
+`LABEL`:
+
+```ebnf
+LABEL       ::= "<" [ label_name ( "." label_name )* ] ">"
+label_name  ::= NAME                 that is not a KEYWORD (§G4.1)
+                                     and not a dunder (§G4.2)
+```
+
+Whitespace, newlines included, may separate the key from the label and
+any two tokens inside it, as inside a copy (§G4.8): `persona<llamacpp>`,
+`persona <llamacpp>`, `persona< base . agent >`, and `persona<>` are all
+labels. A label name keeps its lexeme and is compared as a key is
+(§G4.1). `<` anywhere else outside a string — in value position, or a
+second label after the first — is akan, and so is a `<` with no `>` to
+close it.
+
 ## §G5 Reference grammar
 
 This is the interior of a hole. **It is one grammar, shared by all four
@@ -618,7 +638,7 @@ block_value ::= block_map
               | flow_value NEWLINE
 
 block_map   ::= pair+
-pair        ::= NAME COLON ( flow_value NEWLINE
+pair        ::= NAME [ LABEL ] COLON ( flow_value NEWLINE
                            | NEWLINE INDENT block_value DEDENT )
 
 block_seq   ::= seq_item+
@@ -637,7 +657,7 @@ scalar      ::= STRING | BYTES | YSTR | YBSTR | YTSTR | COPY
 group       ::= LPAREN flow_value RPAREN
 flow_list   ::= LBRACKET [ flow_value (COMMA flow_value)* [COMMA] ] RBRACKET
 flow_map    ::= LBRACE ( PLUS | [ fpair (COMMA fpair)* [COMMA] ] ) RBRACE
-fpair       ::= NAME COLON flow_value
+fpair       ::= NAME [ LABEL ] COLON flow_value
 ```
 
 - The optional `NEWLINE` after a marker is the **bare-marker form** (`-` or
@@ -678,6 +698,12 @@ parse tree to do so.
 - **Keywords are not keys.** `True: 1` is akan.
 - **Dunder keys are akan** (§G4.2). A document may not define a name that
   begins and ends with `__`.
+- **A labeled pair's value is a mapping**: a `block_map`, or a
+  `flow_map` that is not `{+}` — `{}` when it has nothing to say.
+  Anything else after a label is akan: "a slot's value is its overrides,
+  a mapping; write {} for none."
+- **No label in a multimap entry.** A `+ ` entry's pair carries no
+  `LABEL`; one there is akan. *(Reserved: slots in multimap entries.)*
 - **Duplicate keys within one mapping are akan.** A block whose keys repeat by
   design is a multimap and must say so with `+ `.
 - **Each `+ ` frame holds exactly one `key: value` pair.** A second key inside

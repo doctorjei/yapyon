@@ -32,7 +32,7 @@ for future versions.
 A yapyon document is one of **four tiers** (ehmon 2): a **record**, in
 which every leaf element has a literal value (§12); a **ledger**, which
 also splices and applies the format's built-in functions (§5); a
-**template**, which also holds template strings (§6) or reads the
+**template**, which also holds template strings (§6) or slots (§15), or reads the
 environment of the process loading it (§5.1.3); and an **assembly**, which also calls functions declared in a
 contract (§13). Records and ledgers are **basic**: their own bytes finish
 them. Templates and assemblies are **extra**: something outside finishes
@@ -62,13 +62,16 @@ Every rule in both documents follows from seven guiding principles, the
    same on every system. A **template** is finished by something outside
    the document: it may read the environment of the process loading it
    (§5.1.3), and reduces to a record given that environment, and it may
-   hold template strings (§6), whose parts the consumer joins. An **assembly** may also apply the functions its contract
+   hold template strings (§6), whose parts the consumer joins, and slots
+   (§15), which the consumer fills, and reduces to a record given those
+   fills. An **assembly** may also apply the functions its contract
    declares (§13), and reduces to a record given that contract and
    environment.
 3. **Independence.** A document's meaning depends on nothing it does not
    declare. A **record** or a **ledger** depends only on its own bytes. A
    **template** may depend also on the environment it is loaded in, and
-   only on variables it names, each at its reference (§5.1.3). An **assembly**
+   only on variables it names, each at its reference (§5.1.3), and on what
+   fills its slots, each named at the slot by its label (§15). An **assembly**
    depends also on the contract it is loaded with: every function it calls
    is named at its call site and declared, with its types, in that
    contract (§13). There is no ambient scope at the format level, and
@@ -985,7 +988,9 @@ parameters** for declared functions (§13.7); positional access to a multimap's 
 (`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
-round-tripper needs a design v0.4 does not have).
+round-tripper needs a design v0.4 does not have); **filling slots from
+files** (§15.1 leaves finding a filler to the consumer); slot labels with
+subscripts (`<base.items[0]>`); slots in multimap entries.
 
 **A reservation is a promise, not a plan.** Items arrive on this list by being
 argued individually; nothing should be built from it because it appears here,
@@ -1070,11 +1075,11 @@ normative; the individual rows are cross-references to the rule's own home.
 A document is a **record**, a **ledger**, a **template**, or an
 **assembly** (ehmon 2), and each tier contains the one before it: a record
 is a ledger that splices nothing, a ledger is a template that holds no
-`yt` and reads no environment, and a template is an assembly that calls no declared
+`yt` or slot and reads no environment, and a template is an assembly that calls no declared
 function. The record is the restricted form — records are implied to be
 fixed, and this one is. The tier a document needs is computable from its
 bytes: a `y`, `yb`, or `ry` literal, a copy, or any parenthesis makes it
-a ledger (§5.6), a `yt` literal or
+a ledger (§5.6), a `yt` literal, a slot (§15), or
 an environment reference (`$NAME` or a call to `__ENV__`) a template, and a call to a declared
 function an assembly.
 
@@ -1082,8 +1087,8 @@ The tiers fall into two **styles**. **Basic** documents — records and
 ledgers — are finished by their own bytes: a basic document reduces to the
 same record on every machine, the base case every document reduces toward.
 **Extra** documents — templates and assemblies — are finished by something
-outside them: the environment, the consumer joining a `yt`'s parts, or a
-contract. Basic means self-contained, not limited; extra means it needs
+outside them: the environment, the consumer joining a `yt`'s parts or
+filling a slot, or a contract. Basic means self-contained, not limited; extra means it needs
 more than its bytes, not that it is better.
 
 ### 12.1 The rule
@@ -1106,10 +1111,12 @@ The grammar's `scalar` has nine alternatives (§8): the five literal kinds,
 plus `YSTR`, `YBSTR`, `YTSTR`, and `COPY`. Those four are therefore
 *exactly* the non-literal set, and the only other way to begin a value is a
 grouping parenthesis, which a record does not admit either — parentheses
-mark computation, even around a literal. So
+mark computation, even around a literal. A label (`GRAMMAR §G4.9`) is
+not a value at all but makes its key's value a slot (§15), which only a
+template has. So
 
 > a document is a record iff no string in it carries a y-family prefix and
-> no parenthesis appears outside a string
+> no parenthesis or label appears outside a string
 
 is equivalent to §12.1. The first is the definition; the second is how an
 implementation tests it. The test reads the token stream and nothing else:
@@ -1138,6 +1145,7 @@ record" must not be read as "this value reaches the application unchanged".
 |---|---|---|
 | y-family prefixes `y` `yb` `yt` `ry` | **akan** | permitted |
 | copies and parentheses (§5.6) | **akan** | permitted |
+| slots (§15) | **akan** | permitted (template and above) |
 | §5 parse-time splicing | n/a | yes |
 | §6 templates | n/a | yes |
 | Resolver required | **no** | yes |
@@ -1160,7 +1168,7 @@ An implementation **must state which tier it implements**. There are four:
   `ENV`, and this document's §4.4, §5 except §5.1.3–§5.1.4, and §14, and
   §13 as it applies to the built-ins other than `__ENV__`.
 - **Template** — all of the above, plus `yt` (§6), `ENV`,
-  §5.1.3–§5.1.4, and `__ENV__`.
+  §5.1.3–§5.1.4, `__ENV__`, `LABEL` (`GRAMMAR §G4.9`), and slots (§15).
 - **Assembly** — all of the above, plus the whole of §13: contracts, their
   types, and calls to declared functions.
 
@@ -1179,7 +1187,7 @@ concern both forms.
 On meeting a y-family prefix, a record implementation is **akan at that
 prefix's line and column**, and says so as the record rule rather than as a
 syntax error: the document is well-formed yapyon, it is simply not a record.
-In the same way, a ledger implementation meeting a `yt` literal or an
+In the same way, a ledger implementation meeting a `yt` literal, a slot, or an
 environment reference is akan there, saying that it needs a template
 implementation.
 
@@ -1617,6 +1625,183 @@ handles from the token stream, before a loader discards them.
   as base64url text, a non-decimal integer in decimal, a multimap as a
   tagged list. That is the design: correct plain data for every reader,
   and the exact value for a reader that knows §14.
+
+---
+
+## 15. Slots
+
+A **slot** is a value that marks a place in a document for something from
+outside to fill. A document says where it is and what fills it; its
+consumer supplies the filler. A slot is spelled as a **label** after a key:
+
+```yapyon
+name: "local_ultron"
+path: y"{agent_store}/{name}"
+
+persona<llamacpp>:                     # persona's value is a slot, labeled llamacpp
+  mind:
+    endpoint: "http://localhost:9931"  # an override
+
+harness<claude>: {}                    # a slot with no overrides
+```
+
+`persona`'s value is a slot with the label `llamacpp` and these
+**overrides**. A slot's overrides are a mapping, block or flow; `{}`
+says there are none, and a slot with anything else as its value is akan
+(`GRAMMAR §G7`). Whitespace may surround and fill the label
+(`persona <llamacpp>:`); `persona<llamacpp>:` is the canonical spelling.
+
+A document that holds a slot is a **template** (§12): something outside
+finishes it. Nothing in this section is reachable from a record or a
+ledger.
+
+### 15.1 A slot is passive
+
+A label is a name and does nothing by itself. **It says what fills the
+slot — never how to find it.** Which file, preset, or branch a label
+stands for is the consumer's business; yapyon reads no file and searches
+nothing on a slot's behalf. A slot is not reachable from a hole: no
+reference names a label, and nothing in the document refers to one.
+
+Labels are names (`GRAMMAR §G4.9`), compared as keys are (§7). The same
+label may appear under different keys; each is a separate place.
+
+*A slot sits where YAML writes an anchor (`harness: &h`), and the likeness
+ends there: an anchor exists so the document can reuse its own content,
+which yapyon does with holes (§5) and copies (§5.6). A slot points the
+other way — out of the document, at something its consumer supplies.*
+
+### 15.2 Merging
+
+Filling is defined by **merging**, the one way two trees combine. To merge
+a later tree over an earlier one:
+
+- **Two mappings merge key by key.** A key in both takes the merge of its
+  two values; a key in one keeps its value. The earlier mapping's keys
+  keep their order, and the later mapping's new keys follow, in theirs.
+  Keys are compared as names (§7).
+- **Anything else is replaced whole** by the later value — across kinds
+  (a string may replace a mapping, and a mapping a string), and for
+  sequences, multimaps, y-strings, copies, and slots alike. `None` is a
+  value like any other: a later `None` replaces, it does not delete.
+
+Slots meeting in a merge follow from §15.3's definition, and are listed
+here so that no case is left to inference:
+
+| Earlier | Later | Result |
+|---|---|---|
+| a slot `x<a>` | a mapping | the slot, the mapping added as its last overrides |
+| a slot `x<a>` | any other value, or a slot | the later value |
+| `x<>` | a slot `x<b>` | `x<b>`, with both overrides, earlier first |
+| `x<>` | `x<>` | `x<>`, with both overrides, earlier first |
+| `x<>` | any value that is not a slot | the later value |
+| anything not a slot | a slot | the slot |
+
+### 15.3 Filling
+
+**A slot filled with a tree becomes the merge of that tree under the
+slot's overrides**: the filler first, the overrides over it. The filler is
+copied in (§5.6's linearity): one tree may fill many slots, and each
+receives its own.
+
+> **The meaning of any assembly of fills and merges is that of filling to
+> literal, merging, and repeating.** Every slot inside a filler is filled
+> before the filler fills anything, and every merge applies to filled
+> trees. An implementation may take any route — fill in any order, keep
+> overrides waiting on a slot — that gives this result.
+
+Two consequences, stated because they are easy to get wrong:
+
+- **A slot's overrides apply only if the slot is filled.** A later value
+  that replaces the slot replaces its overrides with it.
+- **Order of filling does not change the result.** A slot's overrides
+  apply in the order their documents nest, innermost first, whatever order
+  the fills are made in.
+
+A filler that contains the slot it would fill is akan.
+
+### 15.4 A label may reach into its filler
+
+A label is one name or several, joined by dots. **The first names the
+filler; the rest is a path inside it**, followed as dotted keys are:
+
+```yapyon
+# base.tmpl
+agent:
+  name: "agent_base"
+```
+
+```yapyon
+# example_agent.tmpl
+agent<base.agent>:
+  name: "example"
+```
+
+`agent<base.agent>` fills with the `agent` branch of what `base` stands
+for, not with all of it — without this, every layer would nest the last
+one a level deeper. The consumer is given the **whole label** and supplies
+the tree its first name stands for; the implementation follows the rest.
+A key the path does not find is akan, naming the label.
+
+A path may **end on a slot**: that slot, its overrides included, takes the
+place of the one being filled, with the filled slot's overrides applying
+over its own, and is filled in turn. A path that would pass **through** a
+slot not yet filled is akan: fill that slot first.
+
+### 15.5 Abstract slots: `<>`
+
+An empty label is an **abstract slot**: what fills it is not yet chosen.
+
+```yapyon
+# template.tmpl
+agent:
+  harness<>:
+    timeout: 30
+```
+
+```yapyon
+# an agent file filling from it
+agent<template.agent>:
+  harness<claude>: {}
+```
+
+**A fill that brings in an abstract slot obliges the slot doing the
+filling to give that key a value in its overrides**, at the same place.
+Any value meets it:
+
+- `harness<claude>: {}` names what fills it (§15.2: the label is taken,
+  and the template's overrides still apply under the agent file's);
+- `harness<>: {}` passes the obligation on, explicitly, to whatever fills
+  from this document in turn;
+- a value that is not a slot — `harness: {}`, `harness: None` — replaces
+  the abstract slot, and its overrides with it.
+
+A fill whose overrides leave an abstract slot without a value is akan at
+that fill, naming the abstract slot. An abstract slot that no fill brings
+in — at the top of the document a consumer starts from — is the
+consumer's to fill directly.
+
+### 15.6 Resolving
+
+**Holes resolve after filling, once, where the content has landed.** A
+filled tree is part of the document it fills, and its holes follow §5.2
+from where they now sit: a hole in a filled harness finds the sibling
+persona, and `{name}` finds the nearest `name`, wherever that came from.
+
+**A slot still unfilled when the document resolves is akan** — an abstract
+slot saying it needs a label or a fill, any other naming its label. So
+`loads` refuses a document that holds a slot: nothing has filled it.
+
+Diagnostics name the document each value was written in, at its own line
+and column, however the tree was assembled.
+
+### 15.7 What an implementation offers
+
+The operations above are the format's: an implementation of the template
+tier offers a consumer a way to **parse** a document without resolving it,
+**walk** the result — every value with its lexeme (`GRAMMAR §G4`) and its
+place — **merge** trees, **fill** a slot, **remove** a value, and
+**resolve** once. Their names and shapes are the implementation's.
 
 ---
 
