@@ -76,8 +76,8 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
   `- + a: 1` opens a dash frame holding a plus frame.
 - **A marker needs its space.** `-` and `+` open a frame only when a space or
   end of line follows. `-5` and `+5` are signed numbers, not frames.
-- **Flow suppression.** Inside `[` `]` or `{` `}`, newlines, indentation and
-  the dash and plus rules are suppressed entirely — Python's implicit line
+- **Flow suppression.** Inside `[` `]`, `{` `}`, or `(` `)`, newlines,
+  indentation and the dash and plus rules are suppressed entirely — Python's implicit line
   joining. Commas are mandatory separators and a single trailing comma is
   permitted. Directly inside `{` `}`, a `+` that does not begin a signed
   number is the token `PLUS`, which spells the empty multimap (§G6).
@@ -388,6 +388,34 @@ Inside a `YSTR`, `YBSTR`, or `YTSTR` literal, braces delimit **holes**.
   interpolation syntax, and it is the brace. **Inside a hole**, `$` begins an
   environment reference (`ENV`, §G5): `y"{$HOME}"` is a hole, not text.
 
+### §G4.8 Copies and parentheses
+
+Outside a string literal, `(` opens one of two things, decided by what
+follows it — skipping whitespace, newlines included:
+
+- **A copy**, one token `COPY`, when the next character is `$`, or begins a
+  `NAME` that is neither a keyword (§G4.1) nor a prefix touching its quote
+  (§G4.6). The token runs to the `)` that closes it, found as a hole's `}`
+  is (§G4.7): a string literal inside may hold any bracket or quote, and
+  other brackets nest. Its interior is a `copy_ref`:
+
+  ```ebnf
+  COPY      ::= "(" copy_ref ")"
+  copy_ref  ::= key_ref | path       (§G5), where path is not a bare anchor
+  ```
+
+  So `(a)`, `(mind.dialects[protocol])`, `(__ROOT__.x)`,
+  `(__PARENT__.__KEY__)`, and `($HOME)` are copies, and whitespace may
+  surround any token inside one, as in a hole: `( a . b )`. A call is not
+  a `path`: `(f(x))` and `(a.__AS_JSON__())` are akan. A **bare anchor** is
+  akan — `(__ROOT__)`, `(__PARENT__)` — because a copy sits inside every
+  anchor that can name it.
+- **A grouping parenthesis**, the token `LPAREN`, otherwise: `(1)`,
+  `("x")`, `(True)`, `(y"{a}")`, `([1, 2])`, `((a))`. Its `)` is the token
+  `RPAREN`. A `)` that closes no `(` is akan.
+
+`(` is never part of a `NAME`, so a key cannot begin with one (§G7).
+
 ## §G5 Reference grammar
 
 This is the interior of a hole. **It is one grammar, shared by all four
@@ -604,9 +632,10 @@ mmap_entry  ::= PLUS INDENT [ NEWLINE ] entry_body DEDENT
 entry_body  ::= pair
               | INDENT pair DEDENT
 
-flow_value  ::= scalar | flow_list | flow_map
-scalar      ::= STRING | BYTES | YSTR | YBSTR | YTSTR
+flow_value  ::= scalar | flow_list | flow_map | group
+scalar      ::= STRING | BYTES | YSTR | YBSTR | YTSTR | COPY
               | INT | FLOAT | KEYWORD
+group       ::= LPAREN flow_value RPAREN
 flow_list   ::= LBRACKET [ flow_value (COMMA flow_value)* [COMMA] ] RBRACKET
 flow_map    ::= LBRACE ( PLUS | [ fpair (COMMA fpair)* [COMMA] ] ) RBRACE
 fpair       ::= NAME COLON flow_value
@@ -624,15 +653,20 @@ fpair       ::= NAME COLON flow_value
   reserved; `{+` followed by anything but `}` is akan. The choice is made at
   the token after `{` — `PLUS`, a `NAME`, or `}` — so the grammar stays
   LL(1).
+- **A group is not a tuple.** `group` holds exactly one value, so `()`,
+  `(1,)`, and `(1, 2)` are not generated, and are akan; a sequence is
+  spelled with brackets.
 - **Any value is a valid document.** A tool wanting a mapping at the top level
   enforces that itself.
 - **One document per file.** `---` and `...` are reserved tokens with no
   meaning. *(Reserved: multi-document streams.)*
 
-Note that `scalar` has **eight** alternatives, of which five — `STRING`,
+Note that `scalar` has **nine** alternatives, of which five — `STRING`,
 `BYTES`, `INT`, `FLOAT`, `KEYWORD` — are literals readable from their own
-bytes, and three — `YSTR`, `YBSTR`, `YTSTR` — are not. That partition is exact
-and has no other members; the specification builds a conformance form on it.
+bytes, and four — `YSTR`, `YBSTR`, `YTSTR`, `COPY` — are not. That partition is
+exact and has no other members, and `LPAREN` is the only other token a
+`flow_value` can begin with; the specification builds a conformance form on
+both.
 
 ## §G7 Static rules
 

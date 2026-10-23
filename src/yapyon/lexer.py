@@ -93,7 +93,8 @@ class Yakamashiwa(Exception):
 # Tokens
 # --------------------------------------------------------------------------- #
 # kinds: NEWLINE INDENT DEDENT DASH NAME KEYWORD INT FLOAT STRING BYTES
-#        YSTR YBSTR YTSTR COLON COMMA LBRACKET RBRACKET LBRACE RBRACE EOF
+#        YSTR YBSTR YTSTR COPY COLON COMMA LBRACKET RBRACKET LBRACE RBRACE
+#        LPAREN RPAREN EOF
 @dataclass
 class Token:
     kind: str
@@ -368,6 +369,34 @@ def _find_hole_end(s: str, start: int) -> int:
             depth -= 1
         elif ch == "}" and depth <= 0:
             return i
+        i += 1
+    return -1
+
+
+def _find_copy_end(s: str, start: int) -> int:
+    """Index of the `)` that closes a copy opening before `start`, or -1.
+
+    `_find_hole_end`'s scan with `)` for `}`: strings may hold any bracket
+    or quote, and a backslash protects the character after it."""
+    depth, i, quote = 0, start, ""
+    while i < len(s):
+        ch = s[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "[(":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+        elif ch == ")":
+            if depth <= 0:
+                return i
+            depth -= 1
         i += 1
     return -1
 
@@ -1159,6 +1188,9 @@ class Lexer:
             return
         if _NUMBER_RUN.fullmatch(run):
             return                                 # the parser's message
+        if run.startswith("("):
+            self._akan(f"{run!r} is not a valid key: parentheses group or "
+                       f"copy a value (§5.6), and keys are bare identifiers")
         # The reason and the fix both come from the pinned table, never
         # the host's `\w` (trap 12: `²` is a word character to Python).
         first = run[0]
@@ -1202,6 +1234,18 @@ class Lexer:
                 while self._peek() and self._peek() in " \t\n":
                     self._advance()
                 self._check_key_run()
+            return
+
+        if ch == "(":
+            self._lex_paren(line, col)
+            return
+        if ch == ")":
+            if self.brackets[-1:] != ["("]:
+                self._akan("unmatched ')'")
+            self.brackets.pop()
+            self.depth -= 1
+            self._emit("RPAREN", ")")
+            self._advance()
             return
 
         if ch in "'\"":
@@ -1261,6 +1305,59 @@ class Lexer:
             self._akan(f"{ch!r} cannot appear in a name (GRAMMAR §G4.1: names are "
                        f"Unicode identifiers, UAX #31)")
         self._akan(f"unexpected character {ch!r}")
+
+    def _lex_paren(self, line: int, col: int):
+        """SPEC §5.6: `(` opens a **copy** when a reference follows it, and
+        otherwise only groups (`(1)`, `("x")`, `((a))`), as in Python.
+
+        A reference is told apart by its first word, lexically: `$`, or a
+        name that is neither a keyword nor a string prefix touching its
+        quote. A copy is one token, its interior parsed by `parse_ref` (the
+        one implementation of GRAMMAR §G5), so the parser sees no new
+        structure; a group is an ordinary bracket pair."""
+        j = self.pos + 1
+        while j < len(self.text) and self.text[j] in _HOLE_SPACE:
+            j += 1
+        first = self.text[j:j + 1]
+        copy = first == "$"
+        if not copy and id_start(first):
+            k = j + 1
+            while _id_continue(self.text[k:k + 1]):
+                k += 1
+            word = self.text[j:k]
+            copy = (word not in KEYWORDS
+                    and self.text[k:k + 1] not in ("'", '"'))
+        if not copy:
+            self.depth += 1
+            self.brackets.append("(")
+            self._emit("LPAREN", "(")
+            self._advance()
+            return
+        end = _find_copy_end(self.text, j)
+        if end < 0:
+            self._akan("unclosed '(' (a copy ends at its ')')")
+        text = self.text[j:end].strip()
+        try:
+            ref = parse_ref(text)
+        except RefError as e:
+            if "," in text:
+                self._akan(f"{e}; a comma in parentheses would make a tuple, "
+                           f"and yapyon has no tuples")
+            self._akan(str(e))
+        if ref.call is not None:
+            self._akan(f"({text}): a call's result cannot be copied; calls "
+                       f"as values are reserved (§9) -- splice it in a "
+                       f"y-string instead")
+        if ref.bare_anchor:
+            self._akan(f"({text}): a copy of an anchor would contain itself, "
+                       f"since the copy sits inside it; name a block that "
+                       f"does not contain it")
+        for message in ref.shirans:
+            self._shiran(message, line, col)
+        self._emit("COPY", text, line, col, prefix="(",
+                   parts=[("hole", text)],
+                   lexeme=self.text[self.pos:end + 1])
+        self._advance(end + 1 - self.pos)
 
     def _scan_identifier(self) -> str:
         """Scan one identifier (GRAMMAR §G4.1) as written: a start

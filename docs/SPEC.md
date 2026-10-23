@@ -49,15 +49,16 @@ Every rule in both documents follows from seven guiding principles, the
 **ehmon** (ええもん, "the good stuff"):
 
 1. **Precision.** A value's type is fixed by its syntax or by a declared
-   contract (§13); it is never inferred from bare text. There are no plain
+   contract (§13) — for a copy (§5.6), by the syntax of the value it
+   copies; it is never inferred from bare text. There are no plain
    scalars: an unquoted word in value position is akan, never a string,
    never a boolean. (YAML's implicit typing — the Norway problem — is
    unrepresentable.)
 2. **Reducibility.** Computation is driven by data and yields a document. A
    **record** computes nothing: every leaf is a literal, and loading one
    needs no resolver (§12). A **ledger** — a record with references to
-   itself — splices named values into strings and applies only the
-   format's own encodings (§5.1.2), and reduces to a record that is the
+   itself — splices named values into strings, copies named values whole
+   (§5.6), and applies only the format's own encodings (§5.1.2), and reduces to a record that is the
    same on every system. A **template** is finished by something outside
    the document: it may read the environment of the process loading it
    (§5.1.3), and reduces to a record given that environment, and it may
@@ -82,8 +83,7 @@ Every rule in both documents follows from seven guiding principles, the
 6. **Consistency.** A Python spelling may be borrowed iff its meaning
    survives the removal of the enclosing program. `b`/`r` pass (and are held
    bit-exact with Python); `f`/`t`/`u` fail by definition and are akan with
-   an explanatory message. Everything with yapyon-native semantics is spelled
-   in the `y` namespace.
+   an explanatory message.
 7. **Direction.** Errors yield direction — what is akan, which line and
    column — at load time, before any value reaches the consumer. Malformed
    input is never merely warned about or silently reinterpreted. Well-formed
@@ -756,6 +756,47 @@ makes it an unjoined y-string rather than a second construct. The one
 difference is *when* a refusal lands: a `y` is always joined, so it akans at
 parse; a `yt` akans only if a consumer asks for the join.
 
+### 5.6 Copies: `(ref)`
+
+**Syntax: `GRAMMAR §G4.8`.** In value position, a reference in parentheses
+is a **copy**: the value is the value the reference names, kept as what it
+is — a list stays a list, a mapping a mapping.
+
+    wanted: ["responses", "chat"]
+    supported_dialects: (wanted)    # ["responses", "chat"]
+
+- **The same lookup as a hole.** `(mind.dialects[protocol])` names what
+  `{mind.dialects[protocol]}` names, by §5.1 and §5.2, and is akan where
+  that hole would be. `(__PARENT__.__KEY__)` is the key, and `($HOME)` the
+  variable (§5.1.3), each a `str`.
+- **Resolved first, then copied.** A copy waits, as a hole does (§5.3),
+  until everything in the value it names is resolved, and then takes that
+  value. Nothing in the copy is resolved again where it lands: with
+  `prod: (base)`, a `{__PARENT__.__KEY__}` inside `base` is `"base"` in
+  both places. A copy holds finished values.
+- **A copy, never the same node.** No node appears in the tree twice, so a
+  consumer never receives one object at two places: after
+  `supported_dialects: (wanted)`, changing one list in a loaded document
+  does not change the other. (Python's `foo = (bar)` binds the same object;
+  this is the one difference, and it shows only after loading.) Every
+  literal in a copy keeps its lexeme (§3): with `b: 0xff`, a serializer
+  writes `(b)`'s value as it writes `b`'s.
+- **A copy cannot contain itself.** `a: [(__ROOT__.a)]`, `(__PARENT__)`,
+  and `(__ROOT__)` are akan; two copies naming each other are §5.3's
+  cycle.
+- **What a copy cannot name.** A call's result cannot be copied yet (§9):
+  `(f(x))` and `(a.__AS_JSON__())` are akan, and a y-string splices one
+  instead.
+- **Limits.** A copy is one link of a dependency chain, and adds what it
+  copies to the rendered size — the length of each string and bytes value
+  in it, and one for each other value — so copies that double their input
+  meet §5.3's ceiling as y-strings do.
+
+**Parentheses around a literal only group it**, as in Python: `(1)` is
+`1`, `("x")` is `"x"`, and `((a))` is `(a)`. There are no tuples, so `()`
+and a comma inside parentheses are akan. Parentheses are not literal
+syntax: a document using them, even as `(1)`, is not a record (§12).
+
 ---
 
 ## 6. yt — template strings
@@ -923,9 +964,10 @@ says which was meant, in the document's own bytes.
 it cannot express.
 
 One property of that grammar is load-bearing here and is cited by §12:
-`scalar` has **eight** alternatives, of which exactly five are literals
-readable from their own bytes and exactly three are the y-family. The
-partition is exact and has no other members.
+`scalar` has **nine** alternatives, of which exactly five are literals
+readable from their own bytes and exactly four are not — the y-family and
+the copy. The partition is exact and has no other members, and the one
+other token a value can begin with is a grouping parenthesis.
 
 ---
 
@@ -938,6 +980,7 @@ is built, §7.1); format
 specs and conversions in holes; list interpolation; **default and variadic
 parameters** for declared functions (§13.7); positional access to a multimap's entries
 (`{mm[0]}`);
+a call's result as a whole value (`(f(x))`, §5.6);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
 round-tripper needs a design v0.4 does not have).
@@ -1016,6 +1059,7 @@ normative; the individual rows are cross-references to the rule's own home.
 | identifier folding | NFKC | width variants, then NFC — `ｎａｍｅ` ≡ `name`, but `ﬁ` ≢ `fi` (GRAMMAR §G4.1) |
 | identifier character set | the interpreter's Unicode version | pinned to Unicode 14.0.0; no invisible characters |
 | set / tuple / complex literals | types | akan (not in the data model) |
+| `(name)` as a value | the same object | a copy of its value (§5.6) |
 
 ---
 
@@ -1027,7 +1071,8 @@ is a ledger that splices nothing, a ledger is a template that holds no
 `yt` and reads no environment, and a template is an assembly that calls no declared
 function. The record is the restricted form — records are implied to be
 fixed, and this one is. The tier a document needs is computable from its
-bytes: a `y`, `yb`, or `ry` literal makes it a ledger, a `yt` literal or
+bytes: a `y`, `yb`, or `ry` literal, a copy, or any parenthesis makes it
+a ledger (§5.6), a `yt` literal or
 an environment reference (`$NAME` or a call to `__ENV__`) a template, and a call to a declared
 function an assembly.
 
@@ -1055,11 +1100,14 @@ literal either (`GRAMMAR §G7`, no implicit null).
 
 ### 12.2 The mechanical test
 
-The grammar's `scalar` has eight alternatives (§8): the five literal kinds,
-plus `YSTR`, `YBSTR`, `YTSTR`. The y-family is therefore *exactly* the
-non-literal set, with nothing else in it, so
+The grammar's `scalar` has nine alternatives (§8): the five literal kinds,
+plus `YSTR`, `YBSTR`, `YTSTR`, and `COPY`. Those four are therefore
+*exactly* the non-literal set, and the only other way to begin a value is a
+grouping parenthesis, which a record does not admit either — parentheses
+mark computation, even around a literal. So
 
-> a document is a record iff no string in it carries a y-family prefix
+> a document is a record iff no string in it carries a y-family prefix and
+> no parenthesis appears outside a string
 
 is equivalent to §12.1. The first is the definition; the second is how an
 implementation tests it. The test reads the token stream and nothing else:
@@ -1087,6 +1135,7 @@ record" must not be read as "this value reaches the application unchanged".
 | | yapyon record | yapyon |
 |---|---|---|
 | y-family prefixes `y` `yb` `yt` `ry` | **akan** | permitted |
+| copies and parentheses (§5.6) | **akan** | permitted |
 | §5 parse-time splicing | n/a | yes |
 | §6 templates | n/a | yes |
 | Resolver required | **no** | yes |

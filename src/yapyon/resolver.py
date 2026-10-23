@@ -50,8 +50,8 @@ from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
                           environment)
 from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
-from .parser import (Mapping, MultiMap, Node, ResolvedTemplate, Scalar,
-                     Sequence, YString)
+from .parser import (Copy, Mapping, MultiMap, Node, Pair, ResolvedTemplate,
+                     Scalar, Sequence, YString)
 from .serializers import BUILTIN_NAMES, ENV_BUILTIN, SERIALIZERS, YEETED_YT
 from .typespec import check, parse_type, show
 
@@ -193,6 +193,8 @@ class Resolver:
         self.warnings: list[str] = []
         self.rendered = 0
         self._depth: dict[int, int] = {}     # id(resolved Scalar) -> its depth
+        self._facts: dict[int, tuple] = {}   # id(settled node) -> (node, size,
+                                             # depth), for §5.6's copies
         # Deepest chain seen, as (depth, line, col). Kept so the warn-tier
         # shiran can be reported once, at a position that does not depend on
         # the order sites happen to resolve in -- see `_note_depth`.
@@ -284,7 +286,9 @@ class Resolver:
         for site in deferred:
             for kind, ref in site.node.parts:
                 if kind == "hole":
-                    stuck.append(f"{{{ref}}} at line {site.node.line}, col "
+                    shown = (f"({ref})" if isinstance(site.node, Copy)
+                             else f"{{{ref}}}")
+                    stuck.append(f"{shown} at line {site.node.line}, col "
                                  f"{site.node.col}")
         self._akan("references never resolve (they form a cycle): "
                    + "; ".join(stuck), deferred[0].node)
@@ -293,6 +297,8 @@ class Resolver:
     def _try(self, site: _Site):
         """Resolve one y-string, or None to defer it to a later pass."""
         node = site.node
+        if isinstance(node, Copy):
+            return self._copy(site)
         targets, pending = {}, False
         for kind, ref in node.parts:
             if kind != "hole":
@@ -347,6 +353,113 @@ class Resolver:
                         value, prefix="b" if to_bytes else "")
         self._depth[id(result)] = depth
         return result
+
+    # -- §5.6, copies ----------------------------------------------------------
+    def _copy(self, site: _Site):
+        """`(ref)`: the value `ref` names, copied once it is wholly resolved,
+        or None to defer.
+
+        Resolve first, then copy: the copy holds finished values, so nothing
+        in it depends on where it lands. It is a copy, never the node itself
+        — no node appears in the tree twice (linearity), so a consumer never
+        holds one object at two keys. The copy is built from the resolved
+        AST, so every literal keeps its lexeme (§3)."""
+        node, ref = site.node, site.node.ref
+        target = self._lookup(ref, site)
+        facts = self._settled(target)
+        if facts is None:
+            # Something in it is still pending. If that something is this
+            # copy, it never will be: say so here rather than as a cycle.
+            if target is node or _contains(target, node):
+                self._akan(f"({ref}) contains this copy, so the copy would "
+                           f"contain itself; name a block that does not "
+                           f"contain it", node)
+            return None                               # §5.3: wait for it
+        size, deep = facts
+        depth = 1 + deep
+        if depth > self.max_depth:
+            self._akan(f"resolution exceeded the depth ceiling "
+                       f"({self.max_depth}): this copy sits at the end of a "
+                       f"chain {depth} deep -- raise max_depth to accept it",
+                       node)
+        self._note_depth(depth, node)
+        # §5.3: a copy renders what it copies, so a chain of copies doubling
+        # its input meets the same ceiling a chain of y-strings does. Judged
+        # before the copy is built, so the ceiling bounds the work as well.
+        self.rendered += size
+        if self.rendered > self.max_size:
+            self._akan(f"document exceeds the rendered-size ceiling "
+                       f"({self.max_size}) -- raise max_size to accept it",
+                       node)
+        result = self._clone(target)
+        self._depth[id(result)] = depth
+        self._facts[id(result)] = (result, size, depth)
+        return result
+
+    def _settled(self, node: Node):
+        """`(size, depth)` for a subtree with nothing pending, or None.
+
+        Size is what a copy of it adds to §5.3's rendered total: the length
+        of every string and bytes value, and one for every other value.
+        Depth is `_deep_depth`'s. A settled subtree never changes again —
+        only a pending node is ever replaced — so the answer is kept, which
+        is what keeps a chain of copies from re-walking what it copies.
+        The node itself is kept beside it, so a recycled `id` cannot match."""
+        known = self._facts.get(id(node))
+        if known is not None and known[0] is node:
+            return known[1], known[2]
+        if isinstance(node, YString):
+            return None
+        own = self._depth.get(id(node), 0)
+        if isinstance(node, Scalar):
+            size = len(node.value) if node.type in ("str", "bytes") else 1
+            deep = own
+        else:
+            children = (_children(node) if not isinstance(node,
+                                                          ResolvedTemplate)
+                        else [part[2] for part in node.parts
+                              if part[0] == "hole"])
+            size, deep = 1, own
+            for child in children:
+                facts = self._settled(child)
+                if facts is None:
+                    return None
+                size, deep = size + facts[0], max(deep, facts[1])
+        self._facts[id(node)] = (node, size, deep)
+        return size, deep
+
+    def _clone(self, node: Node) -> Node:
+        """A fresh copy of a resolved subtree, positions and lexemes kept,
+        each node carrying the dependency depth of the one it copies.
+
+        Built field by field rather than through the dataclass constructors:
+        a copy can be a million nodes, and §5.3's ceiling admits that much."""
+        new = object.__new__(type(node))
+        fields = dict(node.__dict__)
+        if isinstance(node, Mapping):
+            fields["pairs"] = [self._clone_pair(p) for p in node.pairs]
+            fields["by_key"] = {p.key: p.value for p in fields["pairs"]}
+        elif isinstance(node, MultiMap):
+            fields["entries"] = [self._clone_pair(e) for e in node.entries]
+        elif isinstance(node, Sequence):
+            fields["items"] = [self._clone(item) for item in node.items]
+        elif isinstance(node, ResolvedTemplate):
+            fields["parts"] = [part if part[0] == "text"
+                               else (part[0], part[1], self._clone(part[2]))
+                               for part in node.parts]
+        elif not isinstance(node, Scalar) or isinstance(node, YString):
+            raise Yakamashiwa(f"unresolved {type(node).__name__} reached "
+                              f"the copy step")
+        new.__dict__ = fields
+        depth = self._depth.get(id(node))
+        if depth is not None:
+            self._depth[id(new)] = depth
+        return new
+
+    def _clone_pair(self, pair: Pair) -> Pair:
+        new = object.__new__(Pair)
+        new.__dict__ = dict(pair.__dict__, value=self._clone(pair.value))
+        return new
 
     # -- §5.5, the splice matrix --------------------------------------------
     def _splice(self, target: Node, at: YString, to_bytes: bool):

@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.6",
+  "why": "a copy inside the value it names would contain itself"
+}

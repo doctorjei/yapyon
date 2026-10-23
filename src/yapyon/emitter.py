@@ -38,8 +38,8 @@ from __future__ import annotations
 
 from ._digits import decimal_text
 from ._width import text_width
-from .parser import (AkanError, Mapping, MultiMap, Node, Pair, Scalar,
-                     Sequence, YString, Yakamashiwa)
+from .parser import (AkanError, Copy, Mapping, MultiMap, Node, Pair, Scalar,
+                     Sequence, YString, Yakamashiwa, deferred_message)
 
 INDENT = "  "
 WIDTH = 100          # §14.1: a container fits if its line is this wide or less
@@ -185,8 +185,8 @@ def _inline(node: Node, level: int, source: str | None) -> list[str] | None:
     block of its own. A list, because a block string spans lines."""
     if isinstance(node, YString):
         raise AkanError(
-            f"a record's leaves must all be literals; a {node.prefix}-string "
-            f"defers its value (load with yapyon.loads for the full form)",
+            deferred_message("COPY" if isinstance(node, Copy) else "",
+                             node.prefix),
             node.line, node.col, source)
     if isinstance(node, Scalar):
         if node.lexeme:

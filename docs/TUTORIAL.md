@@ -302,6 +302,36 @@ Traceback (most recent call last):
 yapyon.lexer.AkanError: akan: line 1, col 3: references never resolve (they form a cycle): {b} at line 1, col 3; {a} at line 2, col 3
 ```
 
+### Copying a whole value
+
+A list or a mapping cannot go into text, but it can go somewhere else
+whole. A reference in parentheses is a **copy**: the value it names, kept
+as what it is.
+
+```yapyon
+wanted: ["responses", "chat"]
+supported: (wanted)               # -> ["responses", "chat"]
+servers:
+  main: {host: "a.example", port: 8080}
+backup: (servers.main)            # -> {"host": "a.example", "port": 8080}
+port: (servers.main.port)         # -> 8080
+```
+
+Inside the parentheses goes anything a hole could name, found the same way.
+The value is resolved where it is written and then copied, and the copy is
+a separate object, so changing one list after loading leaves the other
+alone:
+
+```pycon
+>>> d = yapyon.loads('wanted: ["chat"]\nsupported: (wanted)\n')
+>>> d["supported"].append("responses")
+>>> d["wanted"]
+['chat']
+```
+
+Parentheses around a literal only group it, as in Python — `(8080)` is
+`8080` — and there are no tuples, so `(1, 2)` is akan.
+
 A `$` or `~` in the text of a string is an ordinary character:
 `y"${HOME}"` is a dollar sign and then the hole `{HOME}`. Reading the
 environment is written inside the braces, `{$HOME}` — see "Reading the
@@ -401,7 +431,7 @@ each tier contains the one before it:
 | Level | Name | Holds | Finished by | Style |
 |---|---|---|---|---|
 | 1 | **record** | literals only | nothing: it is already data | basic |
-| 2 | **ledger** | y-strings and built-in calls | its own bytes | basic |
+| 2 | **ledger** | y-strings, copies, and built-in calls | its own bytes | basic |
 | 3 | **template** | `yt` strings, or reads of the environment | the environment, or the consumer joining the parts | extra |
 | 4 | **assembly** | calls to declared functions | a contract | extra |
 

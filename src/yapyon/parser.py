@@ -70,7 +70,25 @@ class YString(Node):
         return _Y_TYPE[self.prefix]
 
 
-_Y_TYPE = {"y": "str", "ry": "str", "yb": "bytes", "yt": "template"}
+_Y_TYPE = {"y": "str", "ry": "str", "yb": "bytes", "yt": "template",
+           "(": "copy"}
+
+
+class Copy(YString):
+    """An unresolved copy, `(ref)` — SPEC §5.6: a typed copy of the value
+    `ref` names, taken once that value is resolved.
+
+    A `YString` on purpose: one hole and no text, so every place the
+    resolver waits on an unresolved y-string — a hole's target, a step
+    mid-walk, a subscript's key, a call's argument, §5.3's cycle — waits on
+    a copy the same way, with no second path to keep in step (trap 9)."""
+
+    def __init__(self, line: int, col: int, ref: str):
+        super().__init__(line, col, "(", [("hole", ref)])
+
+    @property
+    def ref(self) -> str:
+        return self.parts[0][1]
 
 
 @dataclass
@@ -125,11 +143,25 @@ class MultiMap(Node):
     entries: list = field(default_factory=list)   # list[Pair], in source order
 
 
+def deferred_message(kind: str, prefix: str) -> str:
+    """Why a record refuses this token (SPEC §12)."""
+    if kind == "LPAREN":
+        return ("a record admits no parentheses: they group what is computed "
+                "(write the value without them, or load with yapyon.loads "
+                "for the full form)")
+    if kind == "COPY":
+        return ("a record's leaves must all be literals; a copy (…) takes "
+                "its value from elsewhere in the document (load with "
+                "yapyon.loads for the full form)")
+    return (f"a record's leaves must all be literals; a {prefix}-string "
+            f"defers its value (load with yapyon.loads for the full form)")
+
+
 # --------------------------------------------------------------------------- #
 # Token classes and diagnostics
 # --------------------------------------------------------------------------- #
 _SCALAR_KINDS = frozenset({"STRING", "BYTES", "INT", "FLOAT", "KEYWORD",
-                           "YSTR", "YBSTR", "YTSTR"})
+                           "YSTR", "YBSTR", "YTSTR", "COPY"})
 
 _DESCRIBE = {
     "NEWLINE": "end of line", "EOF": "end of file",
@@ -138,6 +170,7 @@ _DESCRIBE = {
     "COLON": "':'", "COMMA": "','",
     "LBRACKET": "'['", "RBRACKET": "']'",
     "LBRACE": "'{'", "RBRACE": "'}'",
+    "LPAREN": "'('", "RPAREN": "')'", "COPY": "a copy",
     "STRING": "a string", "BYTES": "a bytes literal",
     "INT": "an integer", "FLOAT": "a float",
     "YSTR": "a y-string", "YBSTR": "a yeeb-string", "YTSTR": "a yeet-string",
@@ -399,14 +432,34 @@ class Parser:
             return self._flow_list()
         if tok.kind == "LBRACE":
             return self._flow_map()
+        if tok.kind == "LPAREN":
+            return self._group()
         if tok.kind in _SCALAR_KINDS:
             return self._scalar()
         if tok.kind == "NAME":
             self._akan(_bare_word_msg(tok.value))
         self._akan(f"expected a value, found {_describe(tok)}")
 
+    def _group(self) -> Node:
+        """`(value)` is the value (SPEC §5.6), as in Python. A tuple is not:
+        yapyon has none, so `()` and a comma are akan."""
+        opener = self._advance()                 # LPAREN
+        if self._at("RPAREN"):
+            self._akan("'()' would be an empty tuple, and yapyon has no "
+                       "tuples", opener)
+        value = self._flow_value()
+        if self._at("COMMA"):
+            self._akan("a comma in parentheses would make a tuple, and "
+                       "yapyon has no tuples; use a list", self._peek())
+        self._expect("RPAREN", f"expected ')' to close the '(' at line "
+                     f"{opener.line}, col {opener.col}, found "
+                     f"{_describe(self._peek())}")
+        return value
+
     def _scalar(self) -> Node:
         tok = self._advance()
+        if tok.kind == "COPY":
+            return Copy(tok.line, tok.col, tok.value)
         if tok.kind in ("YSTR", "YBSTR", "YTSTR"):
             return YString(tok.line, tok.col, tok.prefix, list(tok.parts))
         if tok.kind == "STRING":
@@ -511,6 +564,8 @@ def dump(node: Node, level: int = 0) -> str:
         for item in node.items:
             out.append(dump(item, level + 1))
         return "\n".join(out)
+    if isinstance(node, Copy):
+        return f"{pad}copy ({node.ref}) {where}"
     if isinstance(node, YString):
         return f"{pad}{node.prefix}-string {node.parts!r} {where}"
     if isinstance(node, Scalar):

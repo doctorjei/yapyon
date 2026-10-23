@@ -7,7 +7,7 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1674 tests** on the current tree; the number here tracks the tree,
+suite is **1748 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 **The normative specification is published, in two documents under
@@ -17,7 +17,7 @@ not a release.
 |---|---|
 | [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 74 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 81 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What

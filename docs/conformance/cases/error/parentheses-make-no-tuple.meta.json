@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.6",
+  "why": "yapyon has no tuples, so a comma inside parentheses is refused"
+}

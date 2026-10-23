@@ -158,6 +158,19 @@ c0: "w"
 xs: [y"{a}", "s"]
 n: -2
 ''',
+    # SPEC §5.6: copies wait as holes do, whichever way round they are written.
+    '''top: (mid.inner)
+mid:
+  inner: [(leaf), y"{name}", (__ROOT__.k)]
+  name: y"{leaf.x}!"
+leaf:
+  x: y"{k}"
+k: "K"
+pick: (table[key])
+table:
+  K: (leaf)
+key: (k)
+''',
 ]
 
 

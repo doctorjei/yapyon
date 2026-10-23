@@ -1,0 +1,6 @@
+{
+  "expect": "akan",
+  "loader": "record",
+  "rule": "SPEC §12.2",
+  "why": "parentheses mark computation, so a record admits none, even around a literal"
+}

@@ -49,6 +49,7 @@ from .lexer import (AkanError, Lexer, Ref, RefError, Yakamashiwa, fold_name,
                     is_dunder, parse_ref)
 from .multimap import OrderedMultimap
 from .parser import (Mapping, MultiMap, Pair, Parser, ResolvedTemplate,
+                     deferred_message,
                      Scalar, Sequence, YString)
 from .serializers import ENV_BUILTIN
 from .resolver import (REFUSE_DEPTH, REFUSE_SIZE, Resolver, _Site, resolve,
@@ -159,11 +160,13 @@ def load(fp, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
 # --------------------------------------------------------------------------- #
 # The yapyon record — every leaf element has a literal value
 # --------------------------------------------------------------------------- #
-# `parser.py`'s scalar kinds are eight: five literals (STRING, BYTES, INT,
-# FLOAT, KEYWORD) and exactly these three. So the y-family *is* the
-# non-literal set, and "every leaf is a literal" is testable as "no token
-# carries a y-family prefix" — the definition and the test coincide.
-_DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR"})
+# `parser.py`'s scalar kinds are nine: five literals (STRING, BYTES, INT,
+# FLOAT, KEYWORD), the three y-family kinds, and COPY (§5.6). The last four
+# are the non-literal set, so "every leaf is a literal" is testable as "no
+# token is one of them" — the definition and the test coincide. LPAREN joins
+# them because a record admits no parentheses at all, `(1)` included
+# (operator, 2026-10-23: "parentheses suggest processing / computation").
+_DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR", "COPY", "LPAREN"})
 
 
 def _name_of(fp, source: str | None) -> str | None:
@@ -181,11 +184,8 @@ def _refuse_deferred(tokens, source: str | None = None) -> None:
     """
     for tok in tokens:
         if tok.kind in _DEFERRED_KINDS:
-            raise AkanError(
-                f"a record's leaves must all be literals; a "
-                f"{tok.prefix}-string defers its value (load with "
-                f"yapyon.loads for the full form)", tok.line, tok.col,
-                source)
+            raise AkanError(deferred_message(tok.kind, tok.prefix),
+                            tok.line, tok.col, source)
 
 
 def is_record(text: str, *, source: str | None = None) -> bool:

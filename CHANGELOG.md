@@ -13,10 +13,31 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ### Added
 
+- **§5.6: copies.** In value position, a reference in parentheses is a
+  copy of the value it names, kept typed: `supported: (wanted)` gives a
+  list where `y"{wanted}"` is akan. The lookup is a hole's; the value is
+  resolved where it is written and then copied, and the copy is a
+  separate object. Parentheses around a literal only group it (`(1)` is
+  `1`); `()` and a comma inside parentheses are akan, as yapyon has no
+  tuples. A copy of a call's result is reserved (§9). A document using
+  parentheses is a ledger, and a record admits none (§12). GRAMMAR §G4.8
+  and §G6. Requested by persona-grata.
+
 - **§12: two styles of document.** Records and ledgers are **basic** —
   finished by their own bytes, the base case every document reduces
   toward. Templates and assemblies are **extra** — finished by something
   outside them. Names only; nothing changes in what any document means.
+
+### Changed
+
+- **§1: ehmon 6 no longer says that everything yapyon-native is spelled in
+  the `y` namespace.** It was not true — `0q`/`0z`, the stream literals,
+  `+` and `{+}`, the dunders, and `{$NAME}` are yapyon-native too. The rule
+  it stood for, that the string prefixes which splice are spelled with
+  `y`, is unchanged. Ehmon 1 and 2 gain a line each for copies.
+- **The README is a front page**, and the long form moved to
+  `docs/DETAILS.md`, which the suite executes as it does the README.
+  Typos, table examples, and the showcase fence were fixed on the way.
 
 ## 0.4.0 — 2026-10-21
 
