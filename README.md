@@ -53,6 +53,15 @@ $ python -m yapyon tier   examples/gateway.yap   # tier 3 — it carries a yt
 $ python -m yapyon expand examples/bridge.yap    # a ledger in, a record out
 ```
 
+## Read More
+
+- [Tutorial](https://github.com/doctorjei/yapyon/blob/main/docs/TUTORIAL.md) — learn the format by example
+- [Details](https://github.com/doctorjei/yapyon/blob/main/docs/DETAILS.md) — the long-form guide: every feature, the API, and the CLI
+- [Specification](https://github.com/doctorjei/yapyon/blob/main/docs/SPEC.md) — what yapyon bytes mean (normative)
+- [Grammar](https://github.com/doctorjei/yapyon/blob/main/docs/GRAMMAR.md) — which bytes are well-formed yapyon (normative)
+- [Conformance corpus](https://github.com/doctorjei/yapyon/tree/main/docs/conformance) — portable test cases for a second implementation
+- [Changelog](https://github.com/doctorjei/yapyon/blob/main/CHANGELOG.md)
+
 ## Diagnostic Terminology
 
 `shiran:` (warning) → `akan:` (error) → `yakamashiwa:` (internal bug).
@@ -60,17 +69,17 @@ Verbose success prints `ええやん`.
 
 ## Document Variants
 
-A document is one of four kinds (discoverable via `yapyon.tier_of()`:
+A document is one of four kinds (discoverable via `yapyon.tier_of()`):
 - **record**: literals only (no resolver / resolution process)
 - **ledger**: splices & calls built-ins; resolves internally
 - **template**: incorporates external data (e.g., environment variables)
-- **assembly**: calls functions that a **contract** declares; can be assembly from multiple files
+- **assembly**: calls functions that a **contract** declares; can be assembled from multiple files
 
 Yapyon has no ambient scope nor includes and is built to be completely auditable / verifiable.
 
 ## Element References
 
-A hole names a value. The shortcut style `a.b` is syntactic sugar for`(equivalent to) a["b"]`.
+A hole names a value. The shortcut style `a.b` is syntactic sugar for (equivalent to) `a["b"]`.
 
 ```yapyon
 protocol: "messenger"
