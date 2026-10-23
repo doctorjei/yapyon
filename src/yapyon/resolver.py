@@ -356,8 +356,9 @@ class Resolver:
 
     # -- §5.6, copies ----------------------------------------------------------
     def _copy(self, site: _Site):
-        """`(ref)`: the value `ref` names, copied once it is wholly resolved,
-        or None to defer.
+        """`(ref)`: the value `ref` names — or a call returns, through the
+        one call path — copied once it is wholly resolved, or None to
+        defer.
 
         Resolve first, then copy: the copy holds finished values, so nothing
         in it depends on where it lands. It is a copy, never the node itself

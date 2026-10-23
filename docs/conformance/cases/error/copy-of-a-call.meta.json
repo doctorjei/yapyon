@@ -1,5 +1,0 @@
-{
-  "expect": "akan",
-  "rule": "SPEC §5.6",
-  "why": "a call's result cannot be copied yet; calls as whole values are reserved (§9)"
-}

@@ -1344,10 +1344,6 @@ class Lexer:
                 self._akan(f"{e}; a comma in parentheses would make a tuple, "
                            f"and yapyon has no tuples")
             self._akan(str(e))
-        if ref.call is not None:
-            self._akan(f"({text}): a call's result cannot be copied; calls "
-                       f"as values are reserved (§9) -- splice it in a "
-                       f"y-string instead")
         if ref.bare_anchor:
             self._akan(f"({text}): a copy of an anchor would contain itself, "
                        f"since the copy sits inside it; name a block that "

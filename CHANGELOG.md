@@ -19,8 +19,9 @@ before it needed `pip install yapyon --pre` to be seen.
   resolved where it is written and then copied, and the copy is a
   separate object. Parentheses around a literal only group it (`(1)` is
   `1`); `()` and a comma inside parentheses are akan, as yapyon has no
-  tuples. A copy of a call's result is reserved (§9). A document using
-  parentheses is a ledger, and a record admits none (§12). GRAMMAR §G4.8
+  tuples. A call's result can be copied, typed as its declaration says:
+  `(__ENV__("X"))` keeps `None` where a y-string would write `"None"`.
+  A document using parentheses is a ledger, and a record admits none (§12). GRAMMAR §G4.8
   and §G6. Requested by persona-grata.
 
 - **§12: two styles of document.** Records and ledgers are **basic** —

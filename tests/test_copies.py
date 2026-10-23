@@ -11,7 +11,7 @@ document using them is a ledger.
 import pytest
 
 from yapyon import (AkanError, OrderedMultimap, Template, expand_record,
-                    loads, loads_record, tier_of)
+                    loads, loads_contract, loads_record, tier_of)
 
 
 def test_a_copy_keeps_the_type():
@@ -105,11 +105,38 @@ def test_a_copy_cannot_contain_itself(text):
         loads(text)
 
 
-@pytest.mark.parametrize("text", ["a: (f(x))\n",
-                                  "a: (b.__AS_JSON__())\nb: 1\n"])
-def test_a_calls_result_cannot_be_copied_yet(text):
-    with pytest.raises(AkanError, match="cannot be copied"):
-        loads(text)
+def test_a_builtins_result_can_be_copied():
+    d = loads("b: {x: 1}\na: (b.__AS_JSON__())\n")
+    assert d["a"] == '{"x": 1}'
+    d = loads('a: (__ENV__("X"))\nb: (__ENV__("X", fallback=c))\nc: [1]\n',
+              env={})
+    assert d["a"] is None and d["b"] == [1]           # typed, not "None"
+
+
+PAIRS = """
+pairs:
+  params:
+    n: "int"
+  returns: "list[dict[str, int]]"
+  impl:
+    python:
+      symbol: "pairs"
+"""
+
+
+def test_a_declared_functions_result_can_be_copied():
+    shared = [{"a": 1}]
+    d = loads("x: (pairs(2))\ny: (pairs(n=1))\n",
+              contract=loads_contract(PAIRS),
+              provide={"pairs": lambda n: shared * n})
+    assert d["x"] == [{"a": 1}, {"a": 1}] and d["y"] == [{"a": 1}]
+    assert d["x"][0] is not d["x"][1] and d["x"][0] is not shared[0]
+    assert tier_of("x: (pairs(2))\n") == 4
+
+
+def test_a_call_in_a_copy_waits_for_its_arguments():
+    d = loads('a: (b.__AS_JSON__())\nb: {x: y"{c}"}\nc: "z"\n')
+    assert d["a"] == '{"x": "z"}'
 
 
 @pytest.mark.parametrize("text,value", [

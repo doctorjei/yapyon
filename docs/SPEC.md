@@ -784,9 +784,12 @@ is — a list stays a list, a mapping a mapping.
 - **A copy cannot contain itself.** `a: [(__ROOT__.a)]`, `(__PARENT__)`,
   and `(__ROOT__)` are akan; two copies naming each other are §5.3's
   cycle.
-- **What a copy cannot name.** A call's result cannot be copied yet (§9):
-  `(f(x))` and `(a.__AS_JSON__())` are akan, and a y-string splices one
-  instead.
+- **A call's result can be copied.** `(f(x))` is the value the call
+  returns, typed by its declaration (§13.4) and rebuilt as a fresh value,
+  so it is owned where it lands; a document copying a declared function's
+  result is an assembly, as one splicing it is. A built-in's result is
+  copied the same way: `(__ENV__("X"))` is `None` when `X` is unset,
+  where `y"{__ENV__('X')}"` is the text `None`.
 - **Limits.** A copy is one link of a dependency chain, and adds what it
   copies to the rendered size — the length of each string and bytes value
   in it, and one for each other value — so copies that double their input
@@ -980,7 +983,6 @@ is built, §7.1); format
 specs and conversions in holes; list interpolation; **default and variadic
 parameters** for declared functions (§13.7); positional access to a multimap's entries
 (`{mm[0]}`);
-a call's result as a whole value (`(f(x))`, §5.6);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
 round-tripper needs a design v0.4 does not have).
@@ -1386,8 +1388,8 @@ and never discovered.
 
 ### 13.7 Not in this version
 
-Bare calls as values; returning a node; a key or index after a call
-(`{f(x)[0]}`); default or variadic parameters; a template in a signature; contracts a document can
+Bare calls as values (`foo: f(x)`; a copy of a result, `(f(x))`, is
+§5.6); returning a node; a key or index after a call (`{f(x)[0]}`); default or variadic parameters; a template in a signature; contracts a document can
 name.
 
 ---

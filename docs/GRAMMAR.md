@@ -401,14 +401,13 @@ follows it — skipping whitespace, newlines included:
 
   ```ebnf
   COPY      ::= "(" copy_ref ")"
-  copy_ref  ::= key_ref | path       (§G5), where path is not a bare anchor
+  copy_ref  ::= ref                  (§G5), where a path is not a bare anchor
   ```
 
   So `(a)`, `(mind.dialects[protocol])`, `(__ROOT__.x)`,
-  `(__PARENT__.__KEY__)`, and `($HOME)` are copies, and whitespace may
-  surround any token inside one, as in a hole: `( a . b )`. A call is not
-  a `path`: `(f(x))` and `(a.__AS_JSON__())` are akan. A **bare anchor** is
-  akan — `(__ROOT__)`, `(__PARENT__)` — because a copy sits inside every
+  `(__PARENT__.__KEY__)`, `($HOME)`, `(f(x))`, and `(a.__AS_JSON__())`
+  are copies, and whitespace may surround any token inside one, as in a
+  hole: `( a . b )`. A **bare anchor** is akan — `(__ROOT__)`, `(__PARENT__)` — because a copy sits inside every
   anchor that can name it.
 - **A grouping parenthesis**, the token `LPAREN`, otherwise: `(1)`,
   `("x")`, `(True)`, `(y"{a}")`, `([1, 2])`, `((a))`. Its `)` is the token
