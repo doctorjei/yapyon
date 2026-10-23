@@ -7,7 +7,7 @@ loader, emitter, the four serializers, and contracts are done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1850 tests** on the current tree; the number here tracks the tree,
+suite is **1865 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 **The normative specification is published, in two documents under
@@ -17,7 +17,7 @@ not a release.
 |---|---|
 | [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 81 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 86 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -81,6 +81,46 @@ False
 The lookup is a hole's, the value is resolved where it is written and then
 copied, and the copy is a separate object. Parentheses around a literal only
 group it, as in Python. SPEC §5.6 has the rules.
+
+## Trees and slots
+
+`yapyon.parse` reads a document **without resolving it** and returns a
+`Tree`: holes still unresolved, every value keeping its spelling and its
+place. A consumer walks it, combines trees with `merge`, and resolves once.
+*(New in `0.5.0`; `parse` returned the parser's nodes before.)*
+
+```python
+>>> base = yapyon.parse('mind:\n  model: "m1"\n  endpoint: "e"\nv: 3.10\n')
+>>> base["v"].value, base["v"].lexeme
+(3.1, '3.10')
+>>> user = yapyon.parse('mind:\n  model: "m2"\nsay: y"{mind.model} at {mind.endpoint}"\n')
+>>> yapyon.merge(base, user).resolve()
+{'mind': {'model': 'm2', 'endpoint': 'e'}, 'v': 3.1, 'say': 'm2 at e'}
+```
+
+A merge recurses only where both sides are mappings; anywhere else the later
+value wins whole, and `None` is a value like any other. Holes resolve where
+their values end up, so a layer can refer to keys another layer brings.
+
+A **slot** marks a place the consumer fills. `persona<llamacpp>:` makes
+`persona`'s value a slot labeled `llamacpp`; the mapping under it holds
+**overrides** that win over whatever fills it (`{}` for none):
+
+```python
+>>> agent = yapyon.parse('name: "local"\npersona<llamacpp>:\n  mind:\n    endpoint: "http://localhost:9931"\n')
+>>> [(slot.key, slot.label) for slot in agent.slots()]
+[('persona', ('llamacpp',))]
+>>> agent["persona"].fill(yapyon.parse('mind:\n  endpoint: "remote"\n  model: "q4"\ndesc: y"{name}"\n'))
+>>> agent.resolve()
+{'name': 'local', 'persona': {'mind': {'endpoint': 'http://localhost:9931', 'model': 'q4'}, 'desc': 'local'}}
+```
+
+The label says *what* fills the slot; finding it is the consumer's job, so
+yapyon never reads a file on a slot's behalf. A label may reach into its
+filler — `agent<base.agent>` fills with `base`'s `agent` branch — and an
+empty label, `harness<>`, is abstract: whoever fills from that document must
+give `harness` a value. A slot still unfilled when the tree resolves is akan.
+SPEC §15 has the rules.
 
 ## Records
 

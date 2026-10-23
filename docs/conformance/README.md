@@ -77,6 +77,11 @@ it binds, and that code is per-language — a corpus case could not carry it
 portably. Calls to the **built-ins** are covered (`full/19-calls`), and a
 call to an undeclared name with no contract is covered as an error.
 
+**Filling slots is not in the corpus either.** A slot (SPEC §15) is filled
+by its consumer, through an implementation's own API, so a case cannot
+say how to fill one portably. What a document alone determines is
+covered: how a slot is written, and that one left unfilled is akan.
+
 ---
 
 ## Running it

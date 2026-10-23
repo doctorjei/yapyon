@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a715.5",
+  "why": "an abstract slot left without a value cannot resolve"
+}

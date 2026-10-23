@@ -1,0 +1,6 @@
+{
+  "expect": "akan",
+  "loader": "record",
+  "rule": "SPEC \u00a712",
+  "why": "a slot is finished by something outside the document, so a record holds none"
+}

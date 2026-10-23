@@ -9,6 +9,47 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## Unreleased
+
+Built to specification and grammar **v0.5** (to be retitled at release):
+slots, and trees a consumer assembles before resolving. **Breaking** for
+code that used `yapyon.parse` or the stage-level names; every document
+that loaded in 0.4.1 loads the same.
+
+### Added
+
+- **§15: slots.** `persona<llamacpp>: {overrides}` makes `persona`'s value
+  a slot, which the consumer fills: the filler is merged under the
+  overrides, which win. A label says what fills the slot and may reach
+  into the filler (`agent<base.agent>`); `harness<>` is an abstract slot,
+  which a document filling from this one must give a value — a label,
+  `<>` again to pass it on, or a plain value that replaces it. The meaning
+  of any assembly is that of filling to literal, merging, and repeating,
+  whatever order the fills are made in. A slot makes a document a template
+  (tier 3) and a record holds none; one left unfilled is akan. GRAMMAR
+  §G4.9 (the `LABEL` token), §G6, §G7. Designed with persona-grata, whose
+  templates are among the tests.
+- **`yapyon.Tree`**: `parse` and `parse_file` read a document without
+  resolving it. Live handles walk it — each value's kind, value, lexeme,
+  and source, line, and column; `merge` layers trees (later wins, mappings
+  recurse, `None` kept); `fill`, `replace`, and `remove` edit it; and
+  `resolve()` resolves once, as `loads` would. Holes bind where their
+  values land, and diagnostics name the document each value came from.
+- Y-strings and copies keep their lexeme, as literals already did.
+
+### Changed (breaking)
+
+- **`yapyon.parse` returns a `Tree`**, not the parser's root node.
+- **The parser's nodes and the stages leave the top-level namespace**:
+  `Lexer`, `Token`, `tokenize`, `Parser`, `parse_tokens`, `dump`,
+  `Resolver`, `resolve`, `build`, and the node classes (`Node`, `Scalar`,
+  `YString`, `ResolvedTemplate`, `Pair`, `Mapping`, `Sequence`,
+  `MultiMap`). They remain importable from their modules
+  (`yapyon.parser`, …) as internals, with no promise of stability.
+- `yapyon.emit` takes a `Tree` as well as a parsed node.
+
+---
+
 ## 0.4.1 — 2026-10-23
 
 Built to specification and grammar **v0.4**, amended: a value may be a

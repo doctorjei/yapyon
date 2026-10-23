@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC \u00a715.6",
+  "why": "a slot is filled by its consumer; loaded alone, nothing fills it"
+}

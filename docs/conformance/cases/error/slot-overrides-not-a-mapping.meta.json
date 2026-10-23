@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR \u00a7G7",
+  "why": "a slot's value is its overrides, a mapping; {} says there are none"
+}
