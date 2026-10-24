@@ -404,6 +404,34 @@ def _find_copy_end(s: str, start: int) -> int:
     return -1
 
 
+def _find_chain_end(s: str, start: int) -> int:
+    """End of a bare reference chain starting at `start` (SPEC §5.6): name
+    characters, `.`, `?`, `$`, and bracketed or parenthesized runs — inside
+    which strings may hold anything, as in `_find_copy_end`. Whitespace
+    ends the chain unless it is inside brackets."""
+    depth, i, quote = 0, start, ""
+    while i < len(s):
+        ch = s[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif depth and ch in "\"'":
+            quote = ch
+        elif ch in "[(":
+            depth += 1
+        elif ch in "])":
+            if depth == 0:
+                return i
+            depth -= 1
+        elif depth == 0 and not (_id_continue(ch) or ch in ".?$"):
+            return i
+        i += 1
+    return i
+
+
 def parse_ref(text: str) -> Ref:
     """Parse a hole's interior. **The one implementation of the grammar.**
 
@@ -1300,6 +1328,8 @@ class Lexer:
                 self._lex_string(name, line, col)
             elif name in KEYWORDS:
                 self._emit("KEYWORD", KEYWORDS[name], line, col, lexeme=name)
+            elif self._peek() in (".", "(", "[", "?") and self._peek():
+                self._lex_bare_call(self.pos - len(name), line, col)
             else:
                 # The token carries the name's identity; the lexeme keeps
                 # what was written, for diagnostics.
@@ -1323,6 +1353,11 @@ class Lexer:
         if ch in "-+" and self._peek(1) in (" ", "\n", ""):
             self._akan(f"{ch!r} opens a block frame only at the start of a "
                        f"line's content")
+        if ch == "$" and _env_start(self._peek(1)):
+            # `$HOME.__str__()`: a bare call on an environment variable
+            # (SPEC §5.6); `$HOME` alone is a path, refused there.
+            self._lex_bare_call(self.pos, line, col)
+            return
         if ch == "<":
             self._akan("'<' opens a slot's label only after a key, as in "
                        "persona<llamacpp>: (SPEC §15)")
@@ -1388,6 +1423,38 @@ class Lexer:
                    parts=[("hole", text)],
                    lexeme=self.text[self.pos:end + 1])
         self._advance(end + 1 - self.pos)
+
+    def _lex_bare_call(self, start: int, line: int, col: int):
+        """SPEC §5.6, GRAMMAR §G4.8: a reference chain ending in a call may
+        stand bare as a value — `persona.mind.models.__get__(0)` — and
+        means what its copy, in parentheses, means. A call's result is
+        owned by nobody (for now), so it may land here; a bare **path**
+        names a value owned elsewhere and stays akan, with the two
+        spellings it might have meant."""
+        end = _find_chain_end(self.text, start)
+        text = self.text[start:end]
+        if "(" not in text:
+            try:
+                parse_ref(text)
+                copy = f", or ({text}) for a copy of that value"
+            except RefError:
+                copy = ""
+            self._akan(f"{text!r} is a bare word, and yapyon has no plain "
+                       f"scalars: write \"{text}\" for the text{copy}",
+                       line, col)
+        try:
+            ref = parse_ref(text)
+        except RefError as e:
+            self._akan(str(e), line, col)
+        if ref.call is None:
+            self._akan(f"{text}: only a value ending in a call may stand "
+                       f"bare; a path names a value owned elsewhere, so copy "
+                       f"it as ({text})", line, col)
+        for message in ref.shirans:
+            self._shiran(message, line, col)
+        self._emit("COPY", text, line, col, prefix="(",
+                   parts=[("hole", text)], lexeme=text)
+        self._advance(end - self.pos)
 
     def _lex_label(self):
         """GRAMMAR §G4.9: a `LABEL` after a name — `<llamacpp>`,
