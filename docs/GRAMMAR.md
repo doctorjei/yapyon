@@ -1,4 +1,4 @@
-# yapyon — grammar v0.4
+# yapyon — grammar v0.5
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*

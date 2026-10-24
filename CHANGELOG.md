@@ -9,10 +9,10 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## Unreleased
+## 0.5.0 — 2026-10-24
 
-Built to specification and grammar **v0.5** (to be retitled at release):
-slots, and trees a consumer assembles before resolving. **Breaking** for
+Built to specification and grammar **v0.5**: slots, and trees a consumer
+assembles before resolving. **Breaking** for
 code that used `yapyon.parse` or the stage-level names; every document
 that loaded in 0.4.1 loads the same.
 
@@ -47,6 +47,13 @@ that loaded in 0.4.1 loads the same.
   `MultiMap`). They remain importable from their modules
   (`yapyon.parser`, …) as internals, with no promise of stability.
 - `yapyon.emit` takes a `Tree` as well as a parsed node.
+
+### Documentation
+
+- The README links the tutorial, the long-form guide, the specification,
+  the grammar, the conformance corpus, and this changelog, with absolute
+  links so they work on PyPI too.
+- `docs/DETAILS.md` describes copies (§5.6) and trees and slots (§15).
 
 ---
 

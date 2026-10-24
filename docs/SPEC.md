@@ -1,4 +1,4 @@
-# yapyon — draft specification v0.4
+# yapyon — draft specification v0.5
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -26,7 +26,7 @@ cites `GRAMMAR §Gn` and moves on. Sections below that consist only of such a
 citation are kept at their original numbers on purpose, so that existing
 references to them still land in the right place.
 
-Sections marked *(reserved)* name syntax deliberately akan in v0.4 but held
+Sections marked *(reserved)* name syntax deliberately akan in v0.5 but held
 for future versions.
 
 A yapyon document is one of **four tiers** (ehmon 2): a **record**, in
@@ -270,7 +270,7 @@ only layout and comments**. The property an implementation must satisfy is
 that **reloading its output yields data equal to reloading its input.**
 
 **Comments do not survive**, and a conforming emitter is not required to
-preserve them: comment-preserving round-trip is not specified in v0.4. An
+preserve them: comment-preserving round-trip is not specified in v0.5. An
 emitter is a normalizer, not a round-tripper. *(Reserved: comment retention —
 see §9.)*
 
@@ -979,7 +979,7 @@ other token a value can begin with is a grouping parenthesis.
 
 ## 9. Reserved for future versions
 
-Syntax that is akan in v0.4 with the door explicitly open: `yb64` and `ytb`
+Syntax that is akan in v0.5 with the door explicitly open: `yb64` and `ytb`
 prefixes; **quoted keys** (the key side of the grammar's `a["b.c"]`, whose
 reference side is built); a flow spelling for multimaps with entries (`{+ a: 1}`; the empty `{+}`
 is built, §7.1); format
@@ -988,7 +988,7 @@ parameters** for declared functions (§13.7); positional access to a multimap's 
 (`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
-round-tripper needs a design v0.4 does not have); **filling slots from
+round-tripper needs a design v0.5 does not have); **filling slots from
 files** (§15.1 leaves finding a filler to the consumer); slot labels with
 subscripts (`<base.items[0]>`); slots in multimap entries.
 
@@ -1023,7 +1023,7 @@ it in the message ("write `{{` for a literal brace"; "use rb").
 where it is unusual, and shiran whose suggested fix would change what a
 document means is not a warning but a trap.
 
-v0.4 specifies **five**, and none of their fixes changes what a document
+v0.5 specifies **five**, and none of their fixes changes what a document
 means. The avoidable bracket is about spelling alone. §5.3's two warn
 thresholds and §3.1's long decimal assert nothing about what the author
 intended — they report that a document is costly and may be refused

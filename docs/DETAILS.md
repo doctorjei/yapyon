@@ -2,8 +2,9 @@
 
 ## Status
 
-**`0.4.1`**, built to specification **v0.4**. Lexer, parser, resolver,
-loader, emitter, the four serializers, and contracts are done and tested,
+**`0.5.0`**, built to specification **v0.5**. Lexer, parser, resolver,
+loader, emitter, the four serializers, contracts, and trees with slots are
+done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
