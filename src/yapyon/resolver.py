@@ -568,14 +568,32 @@ class Resolver:
         level of nesting and every link of a chain**, and two calls waiting
         on each other stall the fixpoint and are reported as §5.3's cycle.
         A new path into the fixpoint must be able to reach every outcome it
-        defines, not only success (trap 9)."""
+        defines, not only success (trap 9).
+
+        A `?.` link whose receiver is `None` ends its whole chain as `None`
+        (§13.1): `_link` raises `_Short` up the receiver links, and the
+        chain's outermost call — here — turns it into `None`. An argument
+        is a chain of its own, so it stops there too."""
+        try:
+            return self._link(call, ref, site)
+        except _Short:
+            return Scalar(site.node.line, site.node.col, "none", None)
+
+    def _link(self, call: Call, ref: str, site: _Site) -> Node:
+        """One link of a chain: `_call` without the `?.` boundary."""
         builtin = self._call_shape(call, ref, site)
         args = []
-        for arg in call.args:
-            node = self._argument(arg, call, ref, site)
+        for i, arg in enumerate(call.args):
+            if (i == 0 and call.receiver and isinstance(arg, Ref)
+                    and arg.call is not None):
+                node = self._link(arg.call, ref, site)   # the same chain
+            else:
+                node = self._argument(arg, call, ref, site)
             if isinstance(node, YString):
                 return node
             args.append(node)
+        if call.safe and isinstance(args[0], Scalar) and args[0].type == "none":
+            raise _Short
         kwargs = {}
         for name, arg in call.kwargs:
             node = self._argument(arg, call, ref, site)
@@ -1117,6 +1135,10 @@ def _template_in(node: Node) -> ResolvedTemplate | None:
 
 
 _SIGNATURES: dict[str, tuple] = {}
+
+
+class _Short(Exception):
+    """A `?.` met `None`: the rest of its chain is skipped (§13.1)."""
 
 
 _INT_TEXT = re.compile(r"[+-]?[0-9]+", re.ASCII)

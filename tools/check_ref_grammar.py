@@ -88,7 +88,7 @@ _NUM = (r"0[xXoObBqQzZ]_?[0-9A-Za-z]+(?:_[0-9A-Za-z]+)*"     # §G4.3, no sign
 _ENV = r"\$[A-Za-z_][A-Za-z0-9_]*"
 TOK = re.compile(rf"[ \t\n]*(?:(?P<str>{_STR})|(?P<num>{_NUM})(?![A-Za-z0-9_])"
                  rf"|(?P<env>{_ENV})"
-                 rf"|(?P<name>[^\W\d]\w*)|(?P<p>[.\[\](),=+-]))")
+                 rf"|(?P<name>[^\W\d]\w*)|(?P<p>\?\.|[.\[\](),=+-]))")
 
 
 # §G4.3's digit table and §G4.6's alphabet table, transcribed from the text
@@ -226,7 +226,7 @@ value_ref.p = alt(path, applied)
 path.p      = alt(seq(alt(anchor, SEG), star(step)), kind("ENV"))
 applied.p   = alt(seq(receiver, plus(suffix)), seq(call, star(suffix)))
 receiver.p  = alt(seq(anchor, plus(step)), seq(SEG, star(step)), kind("ENV"))
-suffix.p    = seq(lit("."), call)
+suffix.p    = seq(alt(lit("."), lit("?.")), call)
 call.p      = alt(seq(callee, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
                   seq(callee, lit("("), opt(seq(args, lit(","))), kwargs,
                       opt(lit(",")), lit(")")))
@@ -266,7 +266,9 @@ steps = ["", ".b", "[0]", "[-1]", "[-0]", "[+1]", '["b.c"]', "[p]", ".b[0]", "[p
 tails = ([""] + [f".{n}()" for n in SERIALIZER_NAMES]
          + [".__as_bogus__()", ".__KEY__", "()", ".f()", ".f(x).g()",
             ".f()[0]", ".f().b", "(x)", ".f(lexemes=False)",
-            ".__as_json__(lexemes=False)"])
+            ".__as_json__(lexemes=False)", "?.f()", ".f()?.g()",
+            " ?. f()", "?.b", "?[0]", "?f()", "? .f()", "?.__KEY__",
+            ".__get__(0)?.__str__()", "?.f().g()"])
 
 _S = SERIALIZER_NAMES[0]      # any built-in will do: the corpus tests shapes
 callees = ["f", _S, "__as_bogus__", "__ROOT__", "__KEY__", "True",
@@ -284,7 +286,8 @@ arglists = ["", "x", "x, y", "x,", ",x", ",", "x,,", "x, y ,", "lexemes=False,",
             "oct'320'", "c32'D1MG'", "0q13", "0z7Z", "-0Z_7z", "0zU", "hex'6g'",
             "HEX'68'", "rhex'68'", "$HOME", "x, $HOME", "fallback=$HOME",
             "$HOME.x", "$HOME[0]", "$ HOME", "$1X", "$HOME.g()", "x, k=$Y"]
-calltails = ["", ".g()", "[0]", ".b", ".g(y)", " . g ( y ) "]
+calltails = ["", ".g()", "[0]", ".b", ".g(y)", " . g ( y ) ", "?.g()",
+             "?.b", "?g()"]
 
 loose = [" a . b ", "f( a , b )", "f (a)", "xs[ - 1 ]", "a .f()", "a. f()",
          "a\n.b", "a\t.b", "a #c", 'f("#x")', "a:b", "a!r", "x:>3", "{a}",

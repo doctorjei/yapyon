@@ -293,22 +293,25 @@ class Call:
     `receiver` only remembers the spelling, for messages.
 
     `args` holds `Ref`s and `Literal`s; `kwargs` is `[(name, arg), ...]` in
-    the order written (GRAMMAR §G5).
+    the order written (GRAMMAR §G5). `safe` marks a call written after
+    `?.` (SPEC §13.1): a `None` receiver ends the chain as `None`.
     """
 
-    __slots__ = ("name", "args", "kwargs", "receiver")
+    __slots__ = ("name", "args", "kwargs", "receiver", "safe")
 
     def __init__(self, name: str, args: list, kwargs: list,
-                 receiver: bool = False):
+                 receiver: bool = False, safe: bool = False):
         self.name, self.args, self.kwargs = name, list(args), list(kwargs)
-        self.receiver = receiver
+        self.receiver, self.safe = receiver, safe
 
     def __eq__(self, other):
         return (isinstance(other, Call) and self.name == other.name
-                and self.args == other.args and self.kwargs == other.kwargs)
+                and self.args == other.args and self.kwargs == other.kwargs
+                and self.safe == other.safe)
 
     def __hash__(self):
-        return hash((self.name, tuple(self.args), tuple(self.kwargs)))
+        return hash((self.name, tuple(self.args), tuple(self.kwargs),
+                     self.safe))
 
     def __repr__(self):
         return f"Call({self.name!r}, {self.args!r}, {self.kwargs!r})"
@@ -477,7 +480,7 @@ class _RefParser:
         start = self.i
         if not id_start(self.s[start:start + 1]):
             j = start
-            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}":
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}?":
                 j += 1
             seg = self.s[start:j]
             if not seg:
@@ -493,12 +496,12 @@ class _RefParser:
             self.i += 1
         name = self.s[start:self.i]
         glued = self.s[self.i:self.i + 1]
-        if glued and glued not in _HOLE_SPACE + ".[](),=}:!#'\"":
+        if glued and glued not in _HOLE_SPACE + ".[](),=}:!#'\"?":
             # Something that is not a name character, written as part of
             # one: judge the whole run as the name it was meant to be, so
             # the message can say *why* (invisible, too new, a `$`).
             j = self.i
-            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}":
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}?":
                 j += 1
             _check_segment(self.s[start:j])
         reserved = reserved_fold(name)
@@ -565,7 +568,8 @@ class _RefParser:
             self.i = save
             break
         ref = Ref(root, [], source, parents=parents)
-        if self.peek() == "." and self._dot_calls():
+        if (self.peek() == "." and self._dot_calls()) or (
+                self.peek() == "?" and self.s[self.i + 1:self.i + 2] == "."):
             anchor = "__ROOT__" if root else "__PARENT__"
             raise RefError(
                 f"{anchor} contains this hole, so calling a function on it "
@@ -591,9 +595,9 @@ class _RefParser:
                 self.i += 1
         name = self.s[start:self.i]
         glued = self.s[self.i:self.i + 1]
-        if not name or (glued and glued not in _HOLE_SPACE + ".[](),=}"):
+        if not name or (glued and glued not in _HOLE_SPACE + ".[](),=}?"):
             j = self.i
-            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}":
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}?":
                 j += 1
             spelled = self.s[start:j]
             raise RefError(
@@ -603,15 +607,35 @@ class _RefParser:
                 f"letters, digits, and '_', not starting with a digit; "
                 f"{{__env__({spelled!r})}} reaches any other name")
         ref = Ref(False, [], source, env=name)
-        if self.peek() == "." and self._dot_calls():
-            self.i += 1
+        safe = self._suffix()
+        if safe is not None:
             call_name = self.name()
-            return self._chain(self._call(call_name, [ref], receiver=True),
-                               source)
+            return self._chain(self._call(call_name, [ref], receiver=True,
+                                          safe=safe), source)
         if self.peek() in (".", "["):
             raise RefError(f"${name} is a string, so it has no keys or "
                            f"positions; only a call may follow it")
         return ref
+
+    def _suffix(self):
+        """At `.` or `?.`: a call suffix (GRAMMAR §G5, `suffix`)? Consumes
+        the dot and returns whether it was `?.`; returns None, consuming
+        nothing, at a `.` that begins a step. `?` is never anything but the
+        first half of `?.`, and `?.` never anything but a call's."""
+        if self.peek() == "?":
+            if self.s[self.i + 1:self.i + 2] != ".":
+                raise RefError("'?' is only ever part of '?.', which comes "
+                               "before a call: x?.f()")
+            self.i += 1
+            if not self._dot_calls():
+                raise RefError("'?.' comes only before a call — x?.f() — "
+                               "never before a key or a position")
+            self.i += 1
+            return True
+        if self.peek() == "." and self._dot_calls():
+            self.i += 1
+            return False
+        return None
 
     def _dot_calls(self) -> bool:
         """At a `.`: is it `.name(` — a call suffix rather than a step?"""
@@ -640,11 +664,11 @@ class _RefParser:
                     step = ("key", step[1])
                 ref.steps.append(step)
                 self.expect("]", "to close the subscript")
-            elif ch == ".":
-                if self._dot_calls():
-                    self.i += 1
+            elif ch and ch in ".?":                   # trap 1
+                safe = self._suffix()
+                if safe is not None:
                     name = self.name()
-                    call = self._call(name, [ref], receiver=True)
+                    call = self._call(name, [ref], receiver=True, safe=safe)
                     return self._chain(call, source, ref.shirans)
                 self.i += 1
                 if not self.peek():
@@ -660,15 +684,15 @@ class _RefParser:
         """After a call, nothing but another call: `suffix ::= "." call`."""
         found = list(shirans)            # the receiver's, passed separately
         found.extend(_arg_shirans(call, skip_first=call.receiver))
-        while self.peek() == ".":
-            if not self._dot_calls():
+        while self.peek() and self.peek() in ".?":     # trap 1: "" is in any str
+            safe = self._suffix()
+            if safe is None:
                 raise RefError("nothing follows a call but another call, as "
                                ".name(); a call's result cannot be indexed "
                                "or traversed")
-            self.i += 1
             name = self.name()
             call = self._call(name, [Ref(False, [], source, call=call)],
-                              receiver=True)
+                              receiver=True, safe=safe)
             found.extend(_arg_shirans(call, skip_first=True))
         if self.peek() == "[":
             raise RefError("nothing follows a call but another call, as "
@@ -677,7 +701,8 @@ class _RefParser:
         return Ref(False, [], source, found, call=call)
 
     # -- call ::= name "(" [args] ")" ------------------------------------------
-    def _call(self, name: str, args: list, receiver: bool = False) -> Call:
+    def _call(self, name: str, args: list, receiver: bool = False,
+              safe: bool = False) -> Call:
         dunder = is_dunder(name)
         if name in KEYWORDS:
             raise RefError(f"{name!r} cannot be called")
@@ -689,7 +714,7 @@ class _RefParser:
         self.expect("(", f"after {name}")
         kwargs: list = []
         if self.eat(")"):
-            return Call(fold_name(name), args, kwargs, receiver)
+            return Call(fold_name(name), args, kwargs, receiver, safe)
         while True:
             if self._at_keyword():
                 key = self.name()
@@ -702,10 +727,10 @@ class _RefParser:
             else:
                 args.append(self.arg())
             if self.eat(")"):
-                return Call(fold_name(name), args, kwargs, receiver)
+                return Call(fold_name(name), args, kwargs, receiver, safe)
             self.expect(",", "between arguments")
             if self.eat(")"):                  # a trailing comma, as in Python
-                return Call(fold_name(name), args, kwargs, receiver)
+                return Call(fold_name(name), args, kwargs, receiver, safe)
             if self.peek() == ",":
                 raise RefError("two commas in a row; a comma follows an "
                                "argument")
