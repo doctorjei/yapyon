@@ -9,7 +9,7 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## Unreleased
+## 0.5.1 — 2026-10-24
 
 Built to specification and grammar **v0.5**, amended. **Breaking**: the
 built-in functions are renamed. Released as a patch because nothing yet
