@@ -41,9 +41,10 @@ hands the consumer the parts with their resolved values.
 
 from __future__ import annotations
 
+import re
 from typing import NamedTuple
 
-from ._digits import REFUSE_DIGITS, decimal_text
+from ._digits import REFUSE_DIGITS, decimal_text, int_from_decimal
 from .contract import (BindError, Declared, Lender, ResultError,
                        float_misfit, result_node)
 from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
@@ -52,7 +53,8 @@ from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
 from .parser import (Copy, Mapping, MultiMap, Node, Pair, ResolvedTemplate,
                      Scalar, Sequence, Slot, YString, children)
-from .serializers import BUILTIN_NAMES, ENV_BUILTIN, SERIALIZERS, YEETED_YT
+from .serializers import (BUILTIN_NAMES, CASTERS, ENV_BUILTIN, GET_BUILTIN,
+                          SERIALIZERS, YEETED_YT)
 from .typespec import check, parse_type, show
 
 # §5.3 defines two tiers, and they are not the same number.
@@ -584,6 +586,10 @@ class Resolver:
                     default=0)
         if builtin is ENV_BUILTIN:
             result = self._env_call(args, kwargs, ref, site)
+        elif builtin is GET_BUILTIN:
+            result = self._get(call, args, kwargs, ref, site)
+        elif isinstance(builtin, str) and builtin in CASTERS:
+            result = self._cast(call.name, args[0], ref, site)
         elif isinstance(builtin, Declared):
             # §13.1: keywords fill parameters by name, and the function
             # receives every argument in declared order.
@@ -608,6 +614,16 @@ class Resolver:
             return self._declared_shape(call, ref, site)
         if call.name == ENV_BUILTIN:
             return self._env_shape(call, ref, site)
+        if call.name == GET_BUILTIN:
+            return self._get_shape(call, ref, site)
+        if call.name in CASTERS:
+            if len(call.args) != 1 or call.kwargs:
+                self._akan(f"{{{ref}}}: {call.name}() takes one value and no "
+                           f"keywords, not {len(call.args)} argument"
+                           f"{'' if len(call.args) == 1 else 's'}"
+                           f"{' and keywords' if call.kwargs else ''}",
+                           site.node)
+            return call.name
         builtin = SERIALIZERS.get(call.name)
         if builtin is None:
             self._akan(f"{{{ref}}}: there is no built-in named {call.name}(); "
@@ -624,6 +640,136 @@ class Resolver:
                 self._akan(f"{{{ref}}}: {call.name}() has no keyword "
                            f"argument {name}; {offer}", site.node)
         return builtin
+
+    # -- §5.1.5 casters and the getter ------------------------------------------
+    def _cast(self, name: str, node: Node, ref: str, site: _Site) -> Node:
+        """`__str__`, `__int__`, `__float__`, `__bool__` — Python's names,
+        yapyon's own parsing (§5.1.5). A value the cast cannot take is akan
+        at the call; `None` is too, unless `?.` skipped the call."""
+        at = site.node
+
+        def refuse(why: str):
+            self._akan(f"{{{ref}}}: {name}() {why}", at)
+
+        if not isinstance(node, Scalar):
+            if isinstance(node, ResolvedTemplate):
+                refuse("cannot take a template")
+            refuse(f"takes a single value, not a "
+                   f"{type(node).__name__.lower()}")
+        kind, value = node.type, node.value
+        if kind == "none":
+            refuse("cannot take None (write ?. before the call to pass None "
+                   "through)")
+        if kind == "bytes":
+            refuse("cannot take bytes: text from bytes needs a named "
+                   "encoding")
+        target = CASTERS[name]
+        if target == "str":
+            return Scalar(at.line, at.col, "str",
+                          value if kind == "str" else _text(node))
+        if target == "int":
+            if kind == "int":
+                return node if not node.lexeme else Scalar(
+                    at.line, at.col, "int", value)
+            if kind == "bool":
+                return Scalar(at.line, at.col, "int", int(value))
+            if kind == "float":
+                return Scalar(at.line, at.col, "int", int(value))
+            if _INT_TEXT.fullmatch(value) is None:
+                refuse(f"cannot read {value!r} as an int: it takes decimal "
+                       f"digits with an optional sign, and nothing else")
+            digits = value.lstrip("+-")
+            if len(digits.lstrip("0")) > self.max_digits:
+                refuse(f"would read a {len(digits)}-digit int, past this "
+                       f"implementation's ceiling of {self.max_digits}")
+            number = int_from_decimal(digits)
+            return Scalar(at.line, at.col, "int",
+                          -number if value.startswith("-") else number)
+        if target == "float":
+            if kind == "float":
+                return Scalar(at.line, at.col, "float", value)
+            if kind in ("int", "bool"):
+                try:
+                    return Scalar(at.line, at.col, "float", float(value))
+                except OverflowError:
+                    refuse("cannot take an int this large: it is outside "
+                           "the float range")
+            if _FLOAT_TEXT.fullmatch(value) is None:
+                refuse(f"cannot read {value!r} as a float: it takes a decimal "
+                       f"number, with an optional exponent, and nothing else")
+            number = float(value)
+            if number in (float("inf"), float("-inf")):
+                refuse(f"cannot read {value!r}: it is outside the float range")
+            return Scalar(at.line, at.col, "float", number)
+        # bool
+        if kind == "bool":
+            return Scalar(at.line, at.col, "bool", value)
+        if kind in ("int", "float"):
+            if value in (0, 1):
+                return Scalar(at.line, at.col, "bool", bool(value))
+            refuse(f"takes 0 or 1 as a number, not {_text(node)}")
+        word = value.lower() if value.isascii() else None
+        if word in _TRUE_WORDS:
+            return Scalar(at.line, at.col, "bool", True)
+        if word in _FALSE_WORDS:
+            return Scalar(at.line, at.col, "bool", False)
+        refuse(f"cannot read {value!r} as a bool: it takes true/false, "
+               f"yes/no, on/off, or 1/0, in any case")
+
+    def _get_shape(self, call: Call, ref: str, site: _Site) -> str:
+        """`__get__(container, key, default=None)`: two or three positional
+        arguments, and `default` by keyword if not by position."""
+        for name, _ in call.kwargs:
+            if name != "default":
+                self._akan(f"{{{ref}}}: __get__() has no keyword argument "
+                           f"{name}; it takes default", site.node)
+            if len(call.args) > 2:
+                self._akan(f"{{{ref}}}: __get__()'s default is given by "
+                           f"position and again by keyword", site.node)
+        given = len(call.args) + len(call.kwargs)
+        if len(call.args) < 2 or given > 3:
+            self._akan(f"{{{ref}}}: __get__() takes a container, a key or "
+                       f"index, and an optional default, not {given} "
+                       f"argument{'' if given == 1 else 's'}", site.node)
+        return GET_BUILTIN
+
+    def _get(self, call: Call, args: list, kwargs: dict, ref: str,
+             site: _Site) -> Node:
+        """The value at a key or index, or the default when there is none
+        (§5.1.5) — `dict.get`, for sequences too. A multimap gives the list
+        view of the key, as `{mm.k}` does, so it is never absent."""
+        at = site.node
+        container, key = args[0], args[1]
+        default = args[2] if len(args) > 2 else kwargs.get("default")
+        if default is None:
+            default = Scalar(at.line, at.col, "none", None)
+        if isinstance(container, MultiMap):
+            if not (isinstance(key, Scalar) and key.type == "str"):
+                self._akan(f"{{{ref}}}: __get__() on a multimap takes a str "
+                           f"key", key)
+            name = fold_name(key.value)
+            return self._clone(Sequence(at.line, at.col, [
+                entry.value for entry in container.entries
+                if entry.key == name]))
+        if isinstance(container, Mapping):
+            if not (isinstance(key, Scalar) and key.type == "str"):
+                self._akan(f"{{{ref}}}: __get__() on a mapping takes a str "
+                           f"key", key)
+            found = container.by_key.get(fold_name(key.value))
+            return default if found is None else self._clone(found)
+        if isinstance(container, Sequence):
+            if not (isinstance(key, Scalar) and key.type == "int"):
+                self._akan(f"{{{ref}}}: __get__() on a list takes an int "
+                           f"index", key)
+            n = len(container.items)
+            if -n <= key.value < n:
+                return self._clone(container.items[key.value])
+            return default
+        if isinstance(container, Scalar) and container.type == "none":
+            self._akan(f"{{{ref}}}: __get__() cannot take None (write ?. "
+                       f"before the call to pass None through)", at)
+        self._akan(f"{{{ref}}}: __get__() takes a mapping, list, or "
+                   f"multimap", container)
 
     # -- §5.1.3 the environment ------------------------------------------------
     def _env_shape(self, call: Call, ref: str, site: _Site) -> str:
@@ -971,6 +1117,13 @@ def _template_in(node: Node) -> ResolvedTemplate | None:
 
 
 _SIGNATURES: dict[str, tuple] = {}
+
+
+_INT_TEXT = re.compile(r"[+-]?[0-9]+", re.ASCII)
+_FLOAT_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+                         r"(?:[eE][+-]?[0-9]+)?", re.ASCII)
+_TRUE_WORDS = frozenset({"true", "yes", "on", "1"})
+_FALSE_WORDS = frozenset({"false", "no", "off", "0"})
 
 
 def _signature(text: str):

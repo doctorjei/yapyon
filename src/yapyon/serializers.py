@@ -88,5 +88,15 @@ SERIALIZER_NAMES = tuple(SERIALIZERS)
 #: the same lookup (`environment.Environment.get`).
 ENV_BUILTIN = "__env__"
 
-#: Every built-in a dunder call may name (SPEC §5.1.2, §5.1.3).
-BUILTIN_NAMES = SERIALIZER_NAMES + (ENV_BUILTIN,)
+#: SPEC §5.1.5's casters: Python's names, yapyon's own parsing. Each takes
+#: one value and returns the named type; `None` is akan unless the call is
+#: reached through `?.` (§13.1). The resolver applies them.
+CASTERS = {"__str__": "str", "__int__": "int", "__float__": "float",
+           "__bool__": "bool"}
+
+#: SPEC §5.1.5's getter: `__get__(container, key, default=None)`.
+GET_BUILTIN = "__get__"
+
+#: Every built-in a dunder call may name (SPEC §5.1.2, §5.1.3, §5.1.5).
+BUILTIN_NAMES = (SERIALIZER_NAMES + (ENV_BUILTIN,) + tuple(CASTERS)
+                 + (GET_BUILTIN,))
