@@ -178,6 +178,19 @@ class Tree:
                 continue
             self._replace(path, merge_nodes(self._node(path), node))
 
+    def to_source(self) -> str:
+        """Write unfinished yapyon without resolving or changing this tree.
+
+        Expressions and unfilled slots stay deferred. Potentially matching
+        computed keys across merged dictionaries, a completed fill's
+        undecided abstract-slot obligations, and pending overrides that
+        would lose replacement boundaries are akan at save time (§15.8).
+        Layout/comments and original diagnostic positions do not survive
+        reloading the text; literal and expression spellings do.
+        """
+        from ._source import to_source
+        return to_source(self._root, source=self.source)
+
     def resolve(self, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
                 max_depth: int = REFUSE_DEPTH, max_size: int = REFUSE_SIZE,
                 max_digits: int = REFUSE_DIGITS, contract=None,

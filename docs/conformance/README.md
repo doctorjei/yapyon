@@ -82,6 +82,12 @@ by its consumer, through an implementation's own API, so a case cannot
 say how to fill one portably. What a document alone determines is
 covered: how a slot is written, and that one left unfilled is akan.
 
+**Saving an unfinished tree (§15.8)** is also an implementation API operation,
+not a fourth kind of loading case. The Python source-writer tests reuse every
+successful input here for source/parse/idempotence and eventual-value checks;
+consumer fills, later edits, and the three save-time refusals have dedicated
+continuation tests rather than being disguised as loader refusals.
+
 ---
 
 ## Running it

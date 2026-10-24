@@ -9,6 +9,34 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## 0.5.2 — 2026-10-24
+
+Built to specification **v0.5**, amended. **No breaking changes.** Adds
+non-evaluating source persistence for partially composed Trees; existing
+in-memory merging, filling, and resolution keep their behavior.
+
+### Added
+
+- **`Tree.to_source()` (§15.8): save partially composed documents.** Write
+  unresolved yapyon source, preserving expressions, computed keys, and
+  remaining named/abstract slots without consulting the environment or
+  invoking functions. Reload the text to continue filling and editing.
+  Saving leaves the original Tree unchanged. Layout is normalized, comments
+  are lost, and reloaded diagnostics refer to the saved document.
+- Save-time akan for potentially matching computed keys across merged
+  dictionaries, and for a completed fill's still-undecided abstract-slot
+  obligation. Pending slot overrides that would lose a replacement boundary
+  when flattened are also refused, rather than changing what a later filler
+  inherits. Empty and provably disjoint dictionary contributions do not
+  trigger the collision refusal, and harmless override chains remain valid.
+  In-memory merge/fill/resolve behavior and record-only `emit()` remain
+  unchanged.
+
+### Fixed
+
+- Record `emit()` reports record-rule akan for an unfilled slot instead of
+  raising an internal-invariant exception.
+
 ## 0.5.1 — 2026-10-24
 
 Built to specification and grammar **v0.5**, amended. **Breaking**: the

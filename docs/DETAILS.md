@@ -2,13 +2,13 @@
 
 ## Status
 
-**`0.5.1`**, built to specification **v0.5**. Lexer, parser, resolver,
+**`0.5.2`**, built to specification **v0.5**. Lexer, parser, resolver,
 loader, emitter, the four serializers, contracts, and trees with slots are
 done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **2176 tests** on the current tree; the number here tracks the tree,
+suite is **2323 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 **The normative specification is published, in two documents under
@@ -191,6 +191,61 @@ filler — `agent<base.agent>` fills with `base`'s `agent` branch — and an
 empty label, `harness<>`, is abstract: whoever fills from that document must
 give `harness` a value. A slot still unfilled when the tree resolves is akan.
 SPEC §15 has the rules.
+
+### Save now, finish later
+
+`Tree.to_source()` writes the current unfinished tree as yapyon text. Fill
+only the slots you choose, save the text using ordinary file I/O, and parse
+it again to continue. No expression is evaluated while saving: environment
+variables, contract calls, copies, serializers, and computed keys stay as
+written. The original tree is unchanged.
+
+```python
+>>> draft = yapyon.parse('agent<base.agent>: {name: "local"}\n')
+>>> definition = yapyon.parse('agent:\n  name: "base"\n  desc: y"{name}"\n  harness<chosen>: {}\n')
+>>> draft["agent"].fill(definition)
+>>> saved = draft.to_source()
+>>> print(saved, end="")
+agent:
+  name: "local"
+  desc: y"{name}"
+  harness<chosen>: {}
+>>> resumed = yapyon.parse(saved, source="saved-agent.yap")
+>>> resumed["agent"]["harness"].fill(yapyon.parse('mode: "cli"'))
+>>> resumed.resolve()
+{'agent': {'name': 'local', 'desc': 'local', 'harness': {'mode': 'cli'}}}
+```
+
+A conservative recipe is: **use literal keys in dictionaries you combine,
+and fill a slot before stacking further overrides onto it. Values may remain
+computed.** These are things an author can inspect in their definitions and
+composition steps. This is sufficient guidance, not a broader restriction:
+safe exceptions below remain accepted.
+
+There are three save-time refusals (SPEC §15.8). A dictionary merge cannot be
+saved if a computed key could match a key in another contributing dictionary;
+flattening would turn a merge into a possible duplicate. Empty dictionaries
+cannot conflict, and fixed literal text can prove keys disjoint without
+looking up their holes. This check is local to each merged dictionary,
+including slot overrides. Computed keys in an unmerged dictionary are fine.
+Separately, a completed fill whose abstract-slot obligation still depends on
+a computed key cannot be saved: ordinary source has no way to preserve that
+prior fill's obligation. Finally, saving refuses pending override chains
+whose collapse would lose a replacement boundary: replacing a field with
+`None` and then with a dictionary, for example, must discard inherited keys,
+not merge them back in when a later filler arrives. Replacing one slot with
+another can have the same problem with inherited overrides. Fill that slot
+before saving, or retain the composition in memory. Harmless override chains
+and boundaries already discarded by a later whole-value replacement remain
+accepted. None of these refusals changes in-memory merging or resolution,
+and no expression is evaluated to make saving possible.
+
+Remaining named and abstract slots can otherwise be saved and filled later.
+`resolve()` still requires every slot to be filled; `emit()` and the `record`
+command still accept records only. Source writing normalizes layout and
+loses comments. Reloaded diagnostics use the saved file's positions, not the
+original template files', and handles/key-location tokens belong to their
+original tree, not to its reloaded copy.
 
 ## Records
 

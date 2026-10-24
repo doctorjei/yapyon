@@ -39,7 +39,7 @@ from __future__ import annotations
 from ._digits import decimal_text
 from ._width import text_width
 from .parser import (AkanError, Copy, Mapping, MultiMap, Node, Pair, Scalar,
-                     Sequence, YString, Yakamashiwa, deferred_message)
+                     Sequence, Slot, YString, Yakamashiwa, deferred_message)
 
 INDENT = "  "
 WIDTH = 100          # §14.1: a container fits if its line is this wide or less
@@ -184,14 +184,24 @@ def _is_empty(node: Node) -> bool:
             or (isinstance(node, MultiMap) and not node.entries))
 
 
-def _inline(node: Node, level: int, source: str | None) -> list[str] | None:
+def _inline(node: Node, level: int, source: str | None, *,
+            unresolved: bool = False) -> list[str] | None:
     """The value as it appears after `key: ` or `- `, or None if it needs a
     block of its own. A list, because a block string spans lines."""
     if isinstance(node, YString):
+        if unresolved:
+            if not node.lexeme:
+                raise Yakamashiwa("an unresolved expression has no source lexeme")
+            return _lexeme_lines(node.lexeme, level)
         raise AkanError(
             deferred_message("COPY" if isinstance(node, Copy) else "",
                              node.prefix),
             node.line, node.col, source)
+    if isinstance(node, Slot):
+        message = ("a slot must be attached to a dictionary key; it cannot "
+                   "be written as a standalone value (GRAMMAR §G6)"
+                   if unresolved else deferred_message("LABEL", ""))
+        raise AkanError(message, node.line, node.col, node.source or source)
     if isinstance(node, Scalar):
         if node.lexeme:
             return _lexeme_lines(node.lexeme, level)
@@ -213,7 +223,7 @@ def flat(node: Node) -> bool:
     return True
 
 
-def _flow(node: Node, source: str | None) -> str | None:
+def _flow(node: Node, source: str | None, *, unresolved: bool = False) -> str | None:
     """A flat, non-empty sequence on one line, or None where it has no
     one-line form (a multi-line lexeme, a mapping somewhere inside)."""
     if not (isinstance(node, Sequence) and node.items and flat(node)):
@@ -221,9 +231,9 @@ def _flow(node: Node, source: str | None) -> str | None:
     parts = []
     for item in node.items:
         if isinstance(item, Sequence):
-            text = "[]" if not item.items else _flow(item, source)
+            text = "[]" if not item.items else _flow(item, source, unresolved=unresolved)
         else:
-            lines = _inline(item, 0, source)
+            lines = _inline(item, 0, source, unresolved=unresolved)
             text = lines[0] if lines is not None and len(lines) == 1 else None
         if text is None:
             return None
@@ -235,9 +245,10 @@ def _fits(line: str) -> bool:
     return text_width(line) <= WIDTH
 
 
-def _lines(node: Node, level: int, source: str | None) -> list[str]:
+def _lines(node: Node, level: int, source: str | None, *,
+           unresolved: bool = False) -> list[str]:
     pad = INDENT * level
-    flow = _flow(node, source)
+    flow = _flow(node, source, unresolved=unresolved)
     if flow is not None and _fits(pad + flow):
         return [pad + flow]
     if _is_empty(node):
@@ -246,26 +257,30 @@ def _lines(node: Node, level: int, source: str | None) -> list[str]:
         # document, which is akan.
         return [pad + _empty(node)]
     if isinstance(node, Mapping):
-        return _pairs(node.pairs, pad, level, source, marker="")
+        return _pairs(node.pairs, pad, level, source, marker="", unresolved=unresolved)
     if isinstance(node, MultiMap):
-        return _pairs(node.entries, pad, level, source, marker="+ ")
+        return _pairs(node.entries, pad, level, source, marker="+ ", unresolved=unresolved)
     if isinstance(node, Sequence):
         out = []
         for item in node.items:
-            out.extend(_marked(item, pad, level, source, marker="- "))
+            out.extend(_marked(item, pad, level, source, marker="- ", unresolved=unresolved))
         return out
-    inline = _inline(node, level, source)
+    inline = _inline(node, level, source, unresolved=unresolved)
     if inline is None:
         raise Yakamashiwa(f"cannot emit node {type(node).__name__}")
     return [pad + inline[0]] + inline[1:]
 
 
 def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
-           marker: str) -> list[str]:
+           marker: str, *, unresolved: bool = False) -> list[str]:
     out = []
     for pair in pairs:
-        inline = _inline(pair.value, level, source)
-        if isinstance(pair.key, YString):
+        value, label = pair.value, ""
+        if unresolved and isinstance(value, Slot):
+            label = value.lexeme or "<" + ".".join(value.label) + ">"
+            value = value.layers[0]
+        inline = _inline(value, level, source, unresolved=unresolved)
+        if isinstance(pair.key, YString) and not unresolved:
             raise AkanError(deferred_message("YKEY", pair.key.prefix),
                             pair.line, pair.col, pair.source or source)
         spelling = pair.lexeme or (pair.key if pair.named else
@@ -274,10 +289,10 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
         if len(key_lines) > 1:
             out.append(f"{pad}{marker}{key_lines[0]}")
             out.extend(key_lines[1:-1])
-            head = key_lines[-1] + ":"
+            head = key_lines[-1] + label + ":"
         else:
-            head = f"{pad}{marker}{key_lines[0]}:"
-        flow = _flow(pair.value, source)
+            head = f"{pad}{marker}{key_lines[0]}{label}:"
+        flow = _flow(value, source, unresolved=unresolved)
         if flow is not None and _fits(f"{head} {flow}"):
             inline = [flow]
         if inline is None:                       # a block of its own
@@ -285,8 +300,8 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
             # A `+ ` marker pushes its key to marker column + 2 (GRAMMAR §G3 anchors
             # the frame there), so a block under that key must clear the
             # key's column, not the multimap's own indentation.
-            out.extend(_lines(pair.value, level + (2 if marker else 1),
-                              source))
+            out.extend(_lines(value, level + (2 if marker else 1),
+                              source, unresolved=unresolved))
         else:
             out.append(f"{head} {inline[0]}")
             out.extend(inline[1:])
@@ -294,16 +309,16 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
 
 
 def _marked(item: Node, pad: str, level: int, source: str | None,
-            marker: str) -> list[str]:
+            marker: str, *, unresolved: bool = False) -> list[str]:
     """A `- ` item. A container opens on the marker line and its remaining
     lines align at marker column + 2, which is where GRAMMAR §G3 anchors the frame."""
-    inline = _inline(item, level, source)
-    flow = _flow(item, source)
+    inline = _inline(item, level, source, unresolved=unresolved)
+    flow = _flow(item, source, unresolved=unresolved)
     if flow is not None and _fits(f"{pad}{marker}{flow}"):
         inline = [flow]
     if inline is not None:
         return [f"{pad}{marker}{inline[0]}"] + inline[1:]
-    inner = _lines(item, level + 1, source)
+    inner = _lines(item, level + 1, source, unresolved=unresolved)
     shift = len(pad) + len(marker)
     first = inner[0][len(INDENT) * (level + 1):]
     return [f"{pad}{marker}{first}"] + [" " * shift + line[len(INDENT) * (level + 1):]

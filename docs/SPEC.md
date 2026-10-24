@@ -1891,6 +1891,71 @@ tier offers a consumer a way to **parse** a document without resolving it,
 place — **merge** trees, **fill** a slot, **remove** a value, and
 **resolve** once. Their names and shapes are the implementation's.
 
+### 15.8 Saving an unfinished document
+
+An implementation may offer a **source writer** for an unresolved tree.
+It writes a single parseable yapyon document, without resolving any part of
+it: no hole lookup, environment access, contract call, cast, or serializer
+runs, even when its inputs appear available. Selected slots have already
+been filled through §15.3; any others remain slots. Strings, copies, calls,
+and computed keys remain expressions, not their results. Saving does not
+change the input tree or relax §15.6's requirement for filled slots at
+resolution.
+
+**Saving preserves later behavior without evaluation.** The output preserves
+the behavior of subsequent equivalent fills, merges, edits, and eventual
+resolution. An unfilled slot's overrides must therefore act on any future
+filler in the same way before and after saving, not merely produce the same
+mapping when merged with an empty one. There are three **save-time refusals**:
+
+- **Potentially matching computed keys across merged dictionaries.** When a
+  dictionary contribution has a computed key and another contribution to the
+  same dictionary has a key that could match it, saving is akan. The other
+  key may be named, literal quoted, or computed. Empty dictionaries cannot
+  conflict. Known keys merge normally under §15.2, and an unmerged dictionary
+  may have computed keys. Apply this check locally at each merged dictionary,
+  including dictionaries in slot overrides, not to unrelated dictionaries
+  elsewhere in the document. For this structural check, a computed key's
+  literal text stays fixed and each hole is an unknown, possibly empty
+  string; refuse when the two resulting string patterns overlap. Do not
+  evaluate a hole or compare expression spellings as key identities. Literal
+  text may prove that the patterns cannot match, in which case this refusal
+  does not apply.
+- **A completed fill's still-undecided abstract-slot obligation (§15.5).**
+  Ordinary slot syntax does not retain the fact that an earlier fill's own
+  overrides were obliged to give a key a value. If that obligation still
+  needs a computed key's value, saving is akan at the fill. Do not silently
+  replace it with an ordinary abstract slot or evaluate the key to settle it.
+- **Pending override chains that lose a replacement boundary.** An unfilled
+  slot can retain several ordered override mappings. Combining them into one
+  mapping is not always equivalent to applying each to a future filler in
+  turn. For example, replacing a field with `None` and then with a mapping
+  discards that field's inherited keys; a single mapping override would
+  instead merge with them. Slot replacements can likewise discard inherited
+  overrides that a single slot would retain. If collapsing the pending chain
+  changes how any future filler is merged, saving is akan at the unfilled
+  slot, naming the field and contributing locations. A later whole-value
+  replacement that discards the problematic history is safe. This refusal
+  applies to pending slot overrides, not to an already-applied merge of
+  concrete trees, and it does not forbid harmless combinations of overrides.
+
+These refusals do not change in-memory merging, filling, or resolution. In
+particular, a refused tree may still be resolved in memory under §15.2–§15.6.
+A diagnostic explains why saving cannot preserve the state and names the
+computed key or prior fill responsible.
+
+The writer preserves literal and expression spellings, re-indenting as
+needed; layout and comments need not survive (§4.4). Redundant grouping
+parentheses need not survive. Reloading the saved document gives it the new
+source name and positions; it does not retain the former files' diagnostic
+locations. The original in-memory tree retains its provenance (§15.6).
+Opaque handles and key-location tokens belong to their original tree and do
+not transfer to the reparsed tree; subsequent operations use corresponding
+locations in that tree instead.
+
+*Reference implementation: `Tree.to_source()` returns newline-terminated
+source text. It does not write a file. Record `emit()` remains record-only.*
+
 ---
 
 *Mascot: an Osaka rabbit. Severities escalate as indifference, refusal, and
