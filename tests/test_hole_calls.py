@@ -44,13 +44,13 @@ def test_a_chain_nests_inside_out():
 
 
 def test_keyword_arguments_keep_their_order_after_positionals():
-    c = call("__AS_JSON__(cfg, lexemes=False)")
+    c = call("__as_json__(cfg, lexemes=False)")
     assert [a.steps for a in c.args] == [[("key", "cfg")]]
     assert [(k, v.value) for k, v in c.kwargs] == [("lexemes", False)]
 
 
 def test_a_keyword_takes_anything_an_argument_can():
-    c = call("cfg.__AS_JSON__(lexemes=opts.keep)")
+    c = call("cfg.__as_json__(lexemes=opts.keep)")
     (key, value), = c.kwargs
     assert key == "lexemes" and value.steps == [("key", "opts"), ("key", "keep")]
 
@@ -68,7 +68,7 @@ def test_names_are_folded_like_any_name():
 
 
 @pytest.mark.parametrize("ref,needle", [
-    ("__AS_JSON__(lexemes=False, x)", "positional argument cannot follow"),
+    ("__as_json__(lexemes=False, x)", "positional argument cannot follow"),
     ("f(x,,)", "two commas in a row"),
     ("f(,)", "expected a name"),
     ("f(x", "expected ','"),
@@ -80,7 +80,7 @@ def test_names_are_folded_like_any_name():
     ("__PARENT__.__PARENT__.f()", "contains this hole"),
     ("f(__ROOT__)", "contains this hole"),
     ("f(__PARENT__.__PARENT__)", "contains this hole"),
-    ("__AS_JSON__", "reserved name"),
+    ("__as_json__", "reserved name"),
 ])
 def test_malformed_calls_are_akan(ref, needle):
     akan(ref, needle)
@@ -89,7 +89,7 @@ def test_malformed_calls_are_akan(ref, needle):
 @pytest.mark.parametrize("trailing,plain", [
     ("f(x,)", "f(x)"),
     ("f(x, y ,)", "f(x, y)"),
-    ("__AS_JSON__(x, lexemes=False,)", "__AS_JSON__(x, lexemes=False)"),
+    ("__as_json__(x, lexemes=False,)", "__as_json__(x, lexemes=False)"),
 ])
 def test_a_trailing_comma_is_allowed(trailing, plain):
     # operator, 2026-10-17: as in Python
@@ -160,7 +160,7 @@ def test_a_literal_is_never_the_whole_hole_or_a_receiver():
     ("a .f( )", "a.f()"),
     ("a\n.b", "a.b"),
     ("a\t[ 'b' ]", "a['b']"),
-    ("__AS_JSON__(x , lexemes = False)", "__AS_JSON__(x,lexemes=False)"),
+    ("__as_json__(x , lexemes = False)", "__as_json__(x,lexemes=False)"),
 ])
 def test_whitespace_between_tokens_means_nothing(spaced, plain):
     assert parse_ref(spaced) == parse_ref(plain)
@@ -221,8 +221,8 @@ def test_an_unclosed_hole_does_not_swallow_the_document(doc, needle):
 
 
 def test_the_receiver_form_and_the_call_form_resolve_alike():
-    assert loads('a:\n  x: 1\nu: y"{__AS_JSON__(a)}"\n')["u"] == \
-        loads('a:\n  x: 1\nu: y"{a.__AS_JSON__()}"\n')["u"]
+    assert loads('a:\n  x: 1\nu: y"{__as_json__(a)}"\n')["u"] == \
+        loads('a:\n  x: 1\nu: y"{a.__as_json__()}"\n')["u"]
 
 
 def test_a_hole_string_in_a_raw_literal_is_not_raw():

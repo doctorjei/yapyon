@@ -357,21 +357,21 @@ def test_a_container_crosses_into_text_when_the_author_names_the_encoding():
     # law 5's extension: §5.5 bars a bare container, and this is the named
     # bridge, exactly as b64"..." is the named bridge for bytes
     d = loads('cfg:\n  name: "gw"\n  port: 8080\n'
-              'u: y"{cfg.__AS_JSON__()}"\n')
+              'u: y"{cfg.__as_json__()}"\n')
     assert d["u"] == '{"name": "gw", "port": 8080}'     # fits: one line (§14.1)
 
 
 def test_json_keeps_document_order_and_leaves_utf8_alone():
     # order is data in yapyon, so it is never sorted; and the output is UTF-8
     d = loads('cfg:\n  z: 1\n  a: "café"\n  t: True\n  n: None\n'
-              'u: y"{cfg.__AS_JSON__()}"\n')
+              'u: y"{cfg.__as_json__()}"\n')
     assert d["u"] == '{"z": 1, "a": "café", "t": true, "n": null}'
 
 
 def test_toml_nests_mappings_into_tables():
     d = loads('store:\n  model: "m1"\n  providers:\n    codex:\n'
               '      wire_api: "responses"\n'
-              'u: y"{store.__AS_TOML__()}"\n')
+              'u: y"{store.__as_toml__()}"\n')
     assert d["u"] == ('model = "m1"\n\n[providers.codex]\n'
                       'wire_api = "responses"\n')
 
@@ -379,7 +379,7 @@ def test_toml_nests_mappings_into_tables():
 def test_toml_value_types_and_quoting():
     d = loads('s:\n  i: 3\n  f: 1.5\n  yes: True\n  no: False\n'
               '  xs: ["x", "y"]\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     out = d["u"]
     assert "i = 3" in out and "f = 1.5" in out
     assert "yes = true" in out and "no = false" in out
@@ -389,16 +389,16 @@ def test_toml_value_types_and_quoting():
 def test_toml_has_no_null_so_none_is_left_out_and_recorded():
     # SPEC §14.5: the one omission the format makes, recorded so nothing is
     # lost; in an array a stand-in keeps every later index where it was
-    d = loads('s:\n  a: None\n  b: 1\n  xs: [None, 2]\nu: y"{s.__AS_TOML__()}"\n')
+    d = loads('s:\n  a: None\n  b: 1\n  xs: [None, 2]\nu: y"{s.__as_toml__()}"\n')
     assert d["u"] == ('b = 1\nxs = ["None", 2]\n'
                       '"@_lexemes" = {a = "None", "xs/0" = "None"}\n')
 
 
 def test_a_toml_document_is_a_table():
-    # SPEC §5.1.2: __AS_TOML__ refuses by signature
-    akan('xs: [1, 2]\nu: y"{xs.__AS_TOML__()}"\n',
-         "__AS_TOML__() takes dict[str, Any] | multimap[str, Any], not list")
-    akan('n: 5\nu: y"{n.__AS_TOML__()}"\n', "a TOML document is a table")
+    # SPEC §5.1.2: __as_toml__ refuses by signature
+    akan('xs: [1, 2]\nu: y"{xs.__as_toml__()}"\n',
+         "__as_toml__() takes dict[str, Any] | multimap[str, Any], not list")
+    akan('n: 5\nu: y"{n.__as_toml__()}"\n', "a TOML document is a table")
 
 
 # --------------------------------------------------------------------------- #
@@ -414,7 +414,7 @@ def test_a_toml_document_is_a_table():
 def test_toml_writes_a_list_of_mappings_as_an_array_of_tables():
     d = loads('s:\n  gate:\n    - name: "check"\n      on: True\n'
               '    - name: "parity"\n      on: False\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == ('[[gate]]\nname = "check"\non = true\n\n'
                       '[[gate]]\nname = "parity"\non = false\n')
 
@@ -423,13 +423,13 @@ def test_toml_gives_a_super_table_no_header_above_an_array_of_tables():
     # `[[a.b]]` already says `a` exists, so a `[a]` header would name a
     # second, redundant table.
     d = loads('s:\n  a:\n    b:\n      - k: 1\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == "[[a.b]]\nk = 1\n"
 
 
 def test_toml_keeps_a_super_table_header_when_it_has_pairs_of_its_own():
     d = loads('s:\n  a:\n    x: 1\n    b:\n      - k: 2\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == "[a]\nx = 1\n\n[[a.b]]\nk = 2\n"
 
 
@@ -439,7 +439,7 @@ def test_toml_nests_an_array_of_tables_inside_an_array_of_tables():
     # every `[[fruit]]` header first would hang all the varieties off one.
     d = loads('s:\n  fruit:\n    - name: "apple"\n      variety:\n'
               '        - n: "red"\n        - n: "gold"\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == ('[[fruit]]\nname = "apple"\n\n[[fruit.variety]]\n'
                       'n = "red"\n\n[[fruit.variety]]\nn = "gold"\n')
 
@@ -450,7 +450,7 @@ def test_toml_writes_a_mixed_list_with_inline_tables():
     # mappings faithful *and* keep the non-mappings, where headers would
     # have forced a choice.
     d = loads('s:\n  a:\n    - x: 1\n    - 2\n    - "s"\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == 'a = [{x = 1}, 2, "s"]\n'
 
 
@@ -458,7 +458,7 @@ def test_toml_writes_an_empty_list_inline_rather_than_losing_the_key():
     # An empty list has no element to give a header, and no header means no
     # key at all. `a = []` is how TOML says empty.
     d = loads('s:\n  a: []\n  b:\n    - {}\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == "a = []\n\n[[b]]\n"
 
 
@@ -468,13 +468,13 @@ def test_toml_quotes_a_non_ascii_key_in_an_array_header():
     # make a header need quoting is a non-ASCII one. TOML's bare-key set is
     # ASCII-only, so it goes out quoted, which keeps it literal.
     d = loads('s:\n  日本:\n    - k: 1\n'
-              'u: y"{s.__AS_TOML__()}"\n')
+              'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == '[["日本"]]\nk = 1\n'
 
 
 def test_yaml_is_block_style_in_declaration_order():
     d = loads('store:\n  GOOSE_PROVIDER: "openai"\n  GOOSE_MODEL: "nav-m1"\n'
-              'u: y"{store.__AS_YAML__()}"\n')
+              'u: y"{store.__as_yaml__()}"\n')
     # declaration order, not alphabetical -- GOOSE_MODEL would sort first
     assert d["u"] == "GOOSE_PROVIDER: openai\nGOOSE_MODEL: nav-m1\n"
 
@@ -484,7 +484,7 @@ def test_yaml_quotes_anything_yaml_would_guess_at():
     # quoting unless the scalar is provably inert
     d = loads('s:\n  a: "no"\n  b: "3"\n  c: "true"\n  d: "plain"\n'
               '  e: "with space"\n  f: ""\n'
-              'u: y"{s.__AS_YAML__()}"\n')
+              'u: y"{s.__as_yaml__()}"\n')
     assert d["u"] == ('a: "no"\nb: "3"\nc: "true"\nd: plain\n'
                       'e: "with space"\nf: ""\n')
 
@@ -492,23 +492,23 @@ def test_yaml_quotes_anything_yaml_would_guess_at():
 def test_yaml_does_not_wrap_a_long_scalar():
     # a folded URL is valid YAML but no longer greppable in the file it lands in
     url = "https://api.example.com/" + "x" * 120
-    d = loads(f's:\n  OPENAI_HOST: "{url}"\nu: y"{{s.__AS_YAML__()}}"\n')
+    d = loads(f's:\n  OPENAI_HOST: "{url}"\nu: y"{{s.__as_yaml__()}}"\n')
     assert d["u"] == f"OPENAI_HOST: {url}\n"
 
 
 def test_yaml_nests_and_takes_lists():
     d = loads('s:\n  a:\n    b: 1\n  xs: ["p", "q"]\n'
-              'u: y"{s.__AS_YAML__()}"\n')
+              'u: y"{s.__as_yaml__()}"\n')
     assert d["u"] == "a:\n  b: 1\nxs: [p, q]\n"      # a flat list that fits
 
 
 def test_a_serialized_container_may_be_carried_by_a_template():
-    t = loads('cfg: {x: 1}\nt: yt"{cfg.__AS_JSON__()}"\n')["t"]
+    t = loads('cfg: {x: 1}\nt: yt"{cfg.__as_json__()}"\n')["t"]
     assert t.values == ('{"x": 1}',)
 
 
 def test_a_serializer_follows_the_anchors_like_any_reference():
-    d = loads('a:\n  cfg: {x: 1}\n  u: y"{__PARENT__.cfg.__AS_JSON__()}"\n')
+    d = loads('a:\n  cfg: {x: 1}\n  u: y"{__PARENT__.cfg.__as_json__()}"\n')
     assert d["a"]["u"] == '{"x": 1}'
 
 
@@ -521,7 +521,7 @@ def test_a_serializer_follows_the_anchors_like_any_reference():
              "- k: 1\n- k: 2\n"),
 ])
 def test_a_multimap_is_marked_in_every_format(fmt, expected):
-    assert loads(f'm:\n  + k: 1\n  + k: 2\nu: y"{{m.__AS_{fmt}__()}}"\n')["u"] \
+    assert loads(f'm:\n  + k: 1\n  + k: 2\nu: y"{{m.__as_{fmt.lower()}__()}}"\n')["u"] \
         == expected
 
 
@@ -531,7 +531,7 @@ def test_a_multimap_is_marked_in_every_format(fmt, expected):
     ("YAML", 'b: !!binary "aGk="\n'),
 ])
 def test_bytes_are_text_with_their_spelling_beside_them(fmt, expected):
-    assert loads(f"c:\n  b: b64'aGk='\nu: y\"{{c.__AS_{fmt}__()}}\"\n")["u"] \
+    assert loads(f"c:\n  b: b64'aGk='\nu: y\"{{c.__as_{fmt.lower()}__()}}\"\n")["u"] \
         == expected
 
 
@@ -540,22 +540,22 @@ def test_yapyon_does_not_prune():
     # "not sent if unset" rule. That is a consumer policy: dropping a key the
     # document wrote would be a silent reinterpretation (law 7).
     d = loads('s:\n  kept: "v"\n  blank: ""\n  unset: None\n'
-              'u: y"{s.__AS_JSON__()}"\n')
+              'u: y"{s.__as_json__()}"\n')
     assert '"blank": ""' in d["u"] and '"unset": null' in d["u"]
 
 
 def test_serializing_a_single_value_writes_it_plain():
     # SPEC §5.1.2 v0.3 (operator: "this is minimal code, isn't it? Why not
     # just do it so our edge cases are fewer?") -- never wrapped
-    assert loads('n: 5\nu: y"{n.__AS_JSON__()}"\n')["u"] == "5"
-    assert loads('n: "x"\nu: y"{n.__AS_JSON__()}"\n')["u"] == '"x"'
+    assert loads('n: 5\nu: y"{n.__as_json__()}"\n')["u"] == "5"
+    assert loads('n: "x"\nu: y"{n.__as_json__()}"\n')["u"] == '"x"'
 
 
 @pytest.mark.parametrize("ref", [
-    "cfg.__AS_XML__()",     # an unknown built-in is akan when resolved
+    "cfg.__as_xml__()",     # an unknown built-in is akan when resolved
     "cfg.foo()",            # a declared function (SPEC §13)
-    "__AS_JSON__()",        # arity is the specification's, not the grammar's
-    "__AS_JSON__(cfg)",     # the receiver form is sugar for this one
+    "__as_json__()",        # arity is the specification's, not the grammar's
+    "__as_json__(cfg)",     # the receiver form is sugar for this one
 ])
 def test_the_grammar_admits_any_call(ref):
     # GRAMMAR §G5: "which ones exist, and how many arguments each takes, are
@@ -564,17 +564,17 @@ def test_the_grammar_admits_any_call(ref):
 
 
 def test_the_receiver_form_is_sugar():
-    assert parse_ref("cfg.__AS_JSON__()") == parse_ref("__AS_JSON__(cfg)")
+    assert parse_ref("cfg.__as_json__()") == parse_ref("__as_json__(cfg)")
 
 
 def test_an_unknown_built_in_is_akan_naming_those_that_exist():
-    akan('cfg:\n  a: 1\nu: y"{cfg.__AS_XML__()}"\n',
-         "there is no built-in named __AS_XML__()")
+    akan('cfg:\n  a: 1\nu: y"{cfg.__as_xml__()}"\n',
+         "there is no built-in named __as_xml__()")
 
 
 def test_nothing_follows_a_key():
     with pytest.raises(RefError) as e:
-        parse_ref("__KEY__.__AS_JSON__()")
+        parse_ref("__KEY__.__as_json__()")
     assert "a key is already text" in str(e.value)
 
 
@@ -590,10 +590,10 @@ def test_nothing_follows_a_key():
 # legal and is covered below, so the bar costs nothing.
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("ref", [
-    "__ROOT__.__AS_JSON__()",
-    "__PARENT__.__AS_JSON__()",
-    "__PARENT__.__PARENT__.__AS_YAML__()",
-    "__ROOT__.__AS_TOML__()",
+    "__ROOT__.__as_json__()",
+    "__PARENT__.__as_json__()",
+    "__PARENT__.__PARENT__.__as_yaml__()",
+    "__ROOT__.__as_toml__()",
 ])
 def test_a_serializer_on_a_bare_anchor_is_circular(ref):
     with pytest.raises(RefError) as e:
@@ -606,25 +606,25 @@ def test_a_serializer_on_a_bare_anchor_is_circular(ref):
 
 
 @pytest.mark.parametrize("ref", [
-    "__ROOT__.blk.__AS_JSON__()",
-    "__PARENT__.blk.__AS_JSON__()",
-    "__PARENT__.__PARENT__.blk.__AS_YAML__()",
-    "__ROOT__[p].__AS_JSON__()",
-    "cfg.__AS_JSON__()",
+    "__ROOT__.blk.__as_json__()",
+    "__PARENT__.blk.__as_json__()",
+    "__PARENT__.__PARENT__.blk.__as_yaml__()",
+    "__ROOT__[p].__as_json__()",
+    "cfg.__as_json__()",
 ])
 def test_an_anchor_with_a_step_may_be_serialized(ref):
     # what the bar above does *not* cost: naming a block through an anchor
-    assert parse_ref(ref).call.name.startswith("__AS_")
+    assert parse_ref(ref).call.name.startswith("__as_")
 
 
 def test_the_circular_akan_lands_in_a_document_at_the_hole():
-    akan('blk:\n  a: 1\n  me: y"{__PARENT__.__AS_JSON__()}"\n',
+    akan('blk:\n  a: 1\n  me: y"{__PARENT__.__as_json__()}"\n',
          "contains this hole")
 
 
 def test_serializing_a_sibling_block_through_an_anchor_works():
     # the shape the bar leaves intact, end to end
-    d = loads('blk:\n  a: 1\n  b: "two"\nout: y"j={__ROOT__.blk.__AS_JSON__()}"\n')
+    d = loads('blk:\n  a: 1\n  b: "two"\nout: y"j={__ROOT__.blk.__as_json__()}"\n')
     assert d["out"] == 'j={"a": 1, "b": "two"}'
 
 
@@ -665,21 +665,21 @@ SERIALIZER_CORPUS = (
 @pytest.mark.parametrize("src", SERIALIZER_CORPUS)
 def test_emitted_toml_reads_back_as_the_same_data(src):
     import tomllib
-    text = loads(src + 'u: y"{s.__AS_TOML__()}"\n')["u"]
+    text = loads(src + 'u: y"{s.__as_toml__()}"\n')["u"]
     assert tomllib.loads(text) == loads(src)["s"]
 
 
 @pytest.mark.parametrize("src", SERIALIZER_CORPUS)
 def test_emitted_yaml_reads_back_as_the_same_data(src):
     yaml = pytest.importorskip("yaml")
-    text = loads(src + 'u: y"{s.__AS_YAML__()}"\n')["u"]
+    text = loads(src + 'u: y"{s.__as_yaml__()}"\n')["u"]
     assert yaml.safe_load(text) == loads(src)["s"]
 
 
 @pytest.mark.parametrize("src", SERIALIZER_CORPUS)
 def test_emitted_json_reads_back_as_the_same_data(src):
     import json
-    text = loads(src + 'u: y"{s.__AS_JSON__()}"\n')["u"]
+    text = loads(src + 'u: y"{s.__as_json__()}"\n')["u"]
     assert json.loads(text) == loads(src)["s"]
 
 
@@ -698,17 +698,17 @@ def test_emitted_json_reads_back_as_the_same_data(src):
 def test_serializer_defers_to_a_resolvable_inner_ystring():
     # the ordinary case: the inner y-string resolves first, then the encode
     d = loads('base: "x"\ncfg:\n  p: y"{base}/1"\n  q: 8080\n'
-              'out: y"j={cfg.__AS_JSON__()}"\n')
+              'out: y"j={cfg.__as_json__()}"\n')
     assert d["out"] == 'j={"p": "x/1", "q": 8080}'
 
 
 @pytest.mark.parametrize("src", [
     # two calls, each encoding the block the other sits in
-    'b1:\n  m: y"{__ROOT__.b2.__AS_JSON__()}"\nb2:\n  m: y"{__ROOT__.b1.__AS_JSON__()}"\n',
+    'b1:\n  m: y"{__ROOT__.b2.__as_json__()}"\nb2:\n  m: y"{__ROOT__.b1.__as_json__()}"\n',
     # and a three-way ring, so the fix is not special-cased to pairs
-    'a:\n  m: y"{__ROOT__.b.__AS_JSON__()}"\n'
-    'b:\n  m: y"{__ROOT__.c.__AS_JSON__()}"\n'
-    'c:\n  m: y"{__ROOT__.a.__AS_JSON__()}"\n',
+    'a:\n  m: y"{__ROOT__.b.__as_json__()}"\n'
+    'b:\n  m: y"{__ROOT__.c.__as_json__()}"\n'
+    'c:\n  m: y"{__ROOT__.a.__as_json__()}"\n',
 ])
 def test_mutually_referencing_serializers_report_a_cycle(src):
     with pytest.raises(AkanError) as e:
@@ -720,10 +720,10 @@ def test_mutually_referencing_serializers_report_a_cycle(src):
 
 
 @pytest.mark.parametrize("src,needle", [
-    ('xs: [y"{base}"]\nbase: "x"\nout: y"{xs.__AS_TOML__()}"\n',
+    ('xs: [y"{base}"]\nbase: "x"\nout: y"{xs.__as_toml__()}"\n',
      "a TOML document is a table"),
     ('base: "x"\ns:\n  p: y"{base}"\n  t: yt"{base}"\n'
-     'out: y"{s.__AS_JSON__()}"\n', "yeeted yt"),
+     'out: y"{s.__as_json__()}"\n', "yeeted yt"),
 ])
 def test_refusals_survive_deferral(src, needle):
     # v0.3 serializers approximate rather than refuse, so the refusals left

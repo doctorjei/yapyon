@@ -2,4 +2,4 @@
 blk:
   a: 1
   b: "two"
-out: y"j={__ROOT__.blk.__AS_JSON__()}"
+out: y"j={__ROOT__.blk.__as_json__()}"

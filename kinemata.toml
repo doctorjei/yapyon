@@ -71,23 +71,23 @@ name = "serializers"
 kind = "code-patterns"
 
   [[registry.entry]]
-  id = "__AS_JSON__"
-  antipatterns = ['''["']__AS_JSON__["']''']
+  id = "__as_json__"
+  antipatterns = ['''["']__as_json__["']''']
   home = ["src/yapyon/serializers.py"]
 
   [[registry.entry]]
-  id = "__AS_TOML__"
-  antipatterns = ['''["']__AS_TOML__["']''']
+  id = "__as_toml__"
+  antipatterns = ['''["']__as_toml__["']''']
   home = ["src/yapyon/serializers.py"]
 
   [[registry.entry]]
-  id = "__AS_YAML__"
-  antipatterns = ['''["']__AS_YAML__["']''']
+  id = "__as_yaml__"
+  antipatterns = ['''["']__as_yaml__["']''']
   home = ["src/yapyon/serializers.py"]
 
   [[registry.entry]]
-  id = "__AS_YAPYON__"
-  antipatterns = ['''["']__AS_YAPYON__["']''']
+  id = "__as_yapyon__"
+  antipatterns = ['''["']__as_yapyon__["']''']
   home = ["src/yapyon/serializers.py"]
 
 # The declaration above against what the code actually holds. `tools/
@@ -97,7 +97,7 @@ kind = "code-patterns"
 [[parity]]
 registry = "serializers"
 command = ["{python}", "-c", 'import yapyon.serializers as s; print("\n".join(s.SERIALIZER_NAMES))']
-extract = '(?m)^(__AS_\w+__)$'
+extract = '(?m)^(__as_\w+__)$'
 
 # ---------------------------------------------------------------------------
 # Documentation claims.

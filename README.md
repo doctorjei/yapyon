@@ -132,7 +132,7 @@ picking one would be guessing. Naming the encoding is how it crosses:
 store:
   model: "m1"
   host: "https://api.example.com/v1"
-body: y"{store.__AS_TOML__()}"
+body: y"{store.__as_toml__()}"
 ```
 
 ```toml
@@ -140,7 +140,7 @@ model = "m1"
 host = "https://api.example.com/v1"
 ```
 
-`__AS_JSON__()`, `__AS_TOML__()`, `__AS_YAML__()`, and `__AS_YAPYON__()` are
+`__as_json__()`, `__as_toml__()`, `__as_yaml__()`, and `__as_yapyon__()` are
 the format's built-in functions, all written without a runtime dependency, and
 their output is fixed exactly by SPEC §14 — layout included, so every
 implementation writes the same text. Keys stay in document order and nothing
@@ -152,18 +152,18 @@ node, TOML dotted keys, or YAML `!!pairs` under a `%TAG` handle; TOML leaves
 out a `None` and records it. A reader that knows the conventions gets the
 yapyon value back; one that does not still gets correct plain data. YAML
 scalars are quoted unless every reader would read them as strings, so `"no"`
-and `"3"` survive as strings. `{cfg.__AS_JSON__(lexemes=False)}` writes the
+and `"3"` survive as strings. `{cfg.__as_json__(lexemes=False)}` writes the
 plain values alone.
 
-`__AS_YAPYON__()` writes the block as a yapyon **record**, every value as
+`__as_yapyon__()` writes the block as a yapyon **record**, every value as
 written: `3.10` still spelled `3.10`, multimaps and bytes as themselves. The
 only thing any serializer refuses is a `yt`, which has no record form, and
-`__AS_TOML__()` refuses what is not a table, since TOML has no top-level form
+`__as_toml__()` refuses what is not a table, since TOML has no top-level form
 for anything else.
 
 A serializer names the value it encodes, so it cannot name a *bare* anchor:
-`{__PARENT__.__AS_JSON__()}` would have to encode the string it is computing,
-and is akan. Reach past the anchor — `{__ROOT__.blk.__AS_JSON__()}` — which is
+`{__PARENT__.__as_json__()}` would have to encode the string it is computing,
+and is akan. Reach past the anchor — `{__ROOT__.blk.__as_json__()}` — which is
 the shape you want anyway.
 
 ## Functions and contracts

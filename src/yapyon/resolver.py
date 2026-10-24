@@ -4,7 +4,7 @@ YAMLちゃうで。やぴょんやぴょん。
 
 Replacement without computation (law 2): every hole names a value that is
 already in the document, a variable of the loading process's environment
-(`{$NAME}`, `__ENV__`, §5.1.3), or a declared function's result (§13), and
+(`{$NAME}`, `__env__`, §5.1.3), or a declared function's result (§13), and
 the only things that happen are substitution, the format's named encodings
 (§5.1.2), and those calls — no operators, no control flow.
 
@@ -627,18 +627,18 @@ class Resolver:
 
     # -- §5.1.3 the environment ------------------------------------------------
     def _env_shape(self, call: Call, ref: str, site: _Site) -> str:
-        """`__ENV__(var_name, fallback=None)`: one or two positional
+        """`__env__(var_name, fallback=None)`: one or two positional
         arguments, and `fallback` by keyword if not by position."""
         given = len(call.args) + len(call.kwargs)
         for name, _ in call.kwargs:
             if name != "fallback":
-                self._akan(f"{{{ref}}}: __ENV__() has no keyword argument "
+                self._akan(f"{{{ref}}}: __env__() has no keyword argument "
                            f"{name}; it takes fallback", site.node)
             if len(call.args) > 1:
-                self._akan(f"{{{ref}}}: __ENV__()'s fallback is given by "
+                self._akan(f"{{{ref}}}: __env__()'s fallback is given by "
                            f"position and again by keyword", site.node)
         if not call.args or given > 2:
-            self._akan(f"{{{ref}}}: __ENV__() takes a variable name and an "
+            self._akan(f"{{{ref}}}: __env__() takes a variable name and an "
                        f"optional fallback, not {given} argument"
                        f"{'' if given == 1 else 's'}", site.node)
         return ENV_BUILTIN
@@ -649,7 +649,7 @@ class Resolver:
         fallback was resolved with the other arguments, used or not."""
         miss = check(args[0], _signature("str"))
         if miss is not None:
-            self._akan(f"{{{ref}}}: __ENV__()'s var_name takes str, not "
+            self._akan(f"{{{ref}}}: __env__()'s var_name takes str, not "
                        f"{miss.found}", miss.node)
         fallback = args[1] if len(args) > 1 else kwargs.get("fallback")
         if fallback is None:
@@ -658,7 +658,7 @@ class Resolver:
         return fallback if found is None else found
 
     def _env(self, name: str, ref: str, site: _Site, *, strict: bool):
-        """The one lookup behind `{$NAME}` and `__ENV__` (§5.1.3). Not found
+        """The one lookup behind `{$NAME}` and `__env__` (§5.1.3). Not found
         is akan when strict and None otherwise; access off is akan always —
         a fallback answers "not set", never "not allowed"."""
         if self.environment is None:

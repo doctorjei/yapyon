@@ -1,3 +1,3 @@
 blk:
   a: 1
-  me: y"{blk.__AS_JSON__()}"
+  me: y"{blk.__as_json__()}"

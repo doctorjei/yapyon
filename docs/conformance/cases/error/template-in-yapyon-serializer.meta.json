@@ -1,5 +1,5 @@
 {
   "expect": "akan",
   "rule": "SPEC §5.1.2",
-  "why": "a yt in the target of __AS_YAPYON__() has no record form"
+  "why": "a yt in the target of __as_yapyon__() has no record form"
 }

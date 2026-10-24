@@ -4,9 +4,9 @@
 cfg:
   name: "gw"
   port: 0x50
-a: y"{cfg.__AS_JSON__()}"
-b: y"{__AS_JSON__(cfg)}"
-plain: y"{ cfg.__AS_JSON__( lexemes = False , ) }"
-nested: y"{__AS_JSON__(cfg.__AS_JSON__(lexemes=False))}"
-key: y"{__AS_JSON__("k\"q")}"
-me: y"{__AS_JSON__(__KEY__)}"
+a: y"{cfg.__as_json__()}"
+b: y"{__as_json__(cfg)}"
+plain: y"{ cfg.__as_json__( lexemes = False , ) }"
+nested: y"{__as_json__(cfg.__as_json__(lexemes=False))}"
+key: y"{__as_json__("k\"q")}"
+me: y"{__as_json__(__KEY__)}"

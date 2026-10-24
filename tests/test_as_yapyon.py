@@ -1,4 +1,4 @@
-"""`__AS_YAPYON__()` — SPEC §5.1.2.
+"""`__as_yapyon__()` — SPEC §5.1.2.
 
 The fourth serializer, and different from the other three in two ways that
 are the whole of its design: it emits from the resolved **AST** (its output is
@@ -35,13 +35,13 @@ CORPUS = [
 
 @pytest.mark.parametrize("src", CORPUS)
 def test_as_yapyon_round_trips_through_a_record(src):
-    d = loads(src + 'out: y"{cfg.__AS_YAPYON__()}"\n')
+    d = loads(src + 'out: y"{cfg.__as_yapyon__()}"\n')
     assert loads_record(d["out"]) == d["cfg"]
 
 
 @pytest.mark.parametrize("src", CORPUS)
 def test_as_yapyon_writes_a_canonical_record(src):
-    out = loads(src + 'out: y"{cfg.__AS_YAPYON__()}"\n')["out"]
+    out = loads(src + 'out: y"{cfg.__as_yapyon__()}"\n')["out"]
     assert is_record(out)
     # canonical: normalizing it again changes nothing (SPEC §4.4)
     assert expand_record(out) == out
@@ -50,8 +50,8 @@ def test_as_yapyon_writes_a_canonical_record(src):
 def test_as_yapyon_keeps_the_number_lexeme():
     # the reason it reads the AST: inside JSON `3.10` is the number 3.1, but
     # this output is yapyon source, where §5.4 says the lexeme survives
-    d = loads('cfg:\n  v: 3.10\nj: y"{cfg.__AS_JSON__()}"\n'
-              'y: y"{cfg.__AS_YAPYON__()}"\n')
+    d = loads('cfg:\n  v: 3.10\nj: y"{cfg.__as_json__()}"\n'
+              'y: y"{cfg.__as_yapyon__()}"\n')
     assert d["j"] == '{"v": 3.1}'
     assert d["y"] == "v: 3.10\n"
 
@@ -60,7 +60,7 @@ def test_as_yapyon_keeps_the_bytes_prefix():
     # a value-based writer would have to pick an encoding for bytes and
     # respell every b"..." as base64
     out = loads('cfg:\n  a: b"hi"\n  b: b64"aGk="\n'
-                'out: y"{cfg.__AS_YAPYON__()}"\n')["out"]
+                'out: y"{cfg.__as_yapyon__()}"\n')["out"]
     assert out == 'a: b"hi"\nb: b64"aGk="\n'
 
 
@@ -70,24 +70,24 @@ def test_as_yapyon_keeps_the_bytes_prefix():
     'cfg:\n  v: None\n',               # akan in TOML
 ])
 def test_as_yapyon_is_faithful_where_the_others_refuse(src):
-    d = loads(src + 'out: y"{cfg.__AS_YAPYON__()}"\n')
+    d = loads(src + 'out: y"{cfg.__as_yapyon__()}"\n')
     assert loads_record(d["out"]) == d["cfg"]
 
 
 def test_as_yapyon_splices_into_text_like_any_serializer():
-    d = loads('cfg:\n  a: 1\nout: y"head\\n{cfg.__AS_YAPYON__()}tail"\n')
+    d = loads('cfg:\n  a: 1\nout: y"head\\n{cfg.__as_yapyon__()}tail"\n')
     assert d["out"] == "head\na: 1\ntail"
 
 
 def test_as_yapyon_encodes_a_list():
-    out = loads('xs:\n  - 1\n  - 2\nout: y"{xs.__AS_YAPYON__()}"\n')["out"]
+    out = loads('xs:\n  - 1\n  - 2\nout: y"{xs.__as_yapyon__()}"\n')["out"]
     assert out == "[1, 2]\n"
     assert loads_record(out) == [1, 2]
 
 
 def test_as_yapyon_carries_another_serializers_output():
-    d = loads('inner:\n  a: 1\ncfg:\n  j: y"{__ROOT__.inner.__AS_JSON__()}"\n'
-              'out: y"{cfg.__AS_YAPYON__()}"\n')
+    d = loads('inner:\n  a: 1\ncfg:\n  j: y"{__ROOT__.inner.__as_json__()}"\n'
+              'out: y"{cfg.__as_yapyon__()}"\n')
     assert loads_record(d["out"]) == {"j": '{"a": 1}'}
 
 
@@ -97,13 +97,13 @@ def test_as_yapyon_carries_another_serializers_output():
 def test_as_yapyon_refuses_a_template_in_its_target():
     # a record's leaves are literals; joining the parts would render what §6
     # leaves to the consumer, and make `yt` silently mean `y`
-    akan('who: "x"\ncfg:\n  t: yt"hi {who}"\nout: y"{cfg.__AS_YAPYON__()}"\n',
+    akan('who: "x"\ncfg:\n  t: yt"hi {who}"\nout: y"{cfg.__as_yapyon__()}"\n',
          "yeeted yt; a record cannot hold a template's unjoined parts")
 
 
 def test_a_template_outside_the_target_is_untouched():
     d = loads('who: "x"\nt: yt"hi {who}"\ncfg:\n  a: 1\n'
-              'out: y"{cfg.__AS_YAPYON__()}"\n')
+              'out: y"{cfg.__as_yapyon__()}"\n')
     assert d["out"] == "a: 1\n"
 
 
@@ -114,20 +114,20 @@ def test_a_template_outside_the_target_is_untouched():
 def test_as_yapyon_defers_to_a_resolvable_inner_ystring():
     # the inner y-string appears *after* the call, so it is unresolved on the
     # first visit and the encoding must wait rather than refuse
-    d = loads('out: y"{cfg.__AS_YAPYON__()}"\ncfg:\n  p: y"{base}/1"\n'
+    d = loads('out: y"{cfg.__as_yapyon__()}"\ncfg:\n  p: y"{base}/1"\n'
               'base: "x"\n')
     assert d["out"] == 'p: "x/1"\n'
 
 
 def test_mutually_referencing_as_yapyon_reports_a_cycle():
     with pytest.raises(AkanError) as e:
-        loads('b1:\n  m: y"{__ROOT__.b2.__AS_YAPYON__()}"\n'
-              'b2:\n  m: y"{__ROOT__.b1.__AS_YAPYON__()}"\n')
+        loads('b1:\n  m: y"{__ROOT__.b2.__as_yapyon__()}"\n'
+              'b2:\n  m: y"{__ROOT__.b1.__as_yapyon__()}"\n')
     assert "form a cycle" in str(e.value)
 
 
-@pytest.mark.parametrize("ref", ["__ROOT__.__AS_YAPYON__()",
-                                 "__PARENT__.__AS_YAPYON__()"])
+@pytest.mark.parametrize("ref", ["__ROOT__.__as_yapyon__()",
+                                 "__PARENT__.__as_yapyon__()"])
 def test_as_yapyon_on_a_bare_anchor_is_circular(ref):
     with pytest.raises(AkanError):
         loads(f'blk:\n  a: 1\n  me: y"{{{ref}}}"\n')
@@ -135,4 +135,4 @@ def test_as_yapyon_on_a_bare_anchor_is_circular(ref):
 
 def test_as_yapyon_of_a_single_value_is_that_value_as_written():
     # SPEC §5.1.2 v0.3: single values are accepted (operator, 2026-10-14)
-    assert loads('n: 0x05\nu: y"{n.__AS_YAPYON__()}"\n')["u"] == "0x05\n"
+    assert loads('n: 0x05\nu: y"{n.__as_yapyon__()}"\n')["u"] == "0x05\n"

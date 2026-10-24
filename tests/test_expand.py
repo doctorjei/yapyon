@@ -26,11 +26,11 @@ CORPUS = [
     'name: "gw"\nbanner: y"{name} v1"\n',
     'version: 3.10\nline: y"v{version}"\n',
     'a: "A"\nb: y"{a}B"\nc: y"{b}C"\n',
-    'cfg:\n  a: 1\n  b: "x"\njs: y"{cfg.__AS_JSON__()}"\n',
+    'cfg:\n  a: 1\n  b: "x"\njs: y"{cfg.__as_json__()}"\n',
     'm:\n  + a: 1\n  + a: 2\nfirst: y"{m.a[1]}"\n',
     'n: 8080\nu: y"http://host:{n}/api"\n',
     'a:\n  - "x"\n  - "q"\nsecond: y"{a[1]}y"\n',
-    'x: b"raw"\nl:\n  - 1\n  - 2\nn: y"{l.__AS_YAML__()}"\n',
+    'x: b"raw"\nl:\n  - 1\n  - 2\nn: y"{l.__as_yaml__()}"\n',
     'a: "1"\nb: "2"\nc: y"{a}{b}{a}"\n',
 ]
 

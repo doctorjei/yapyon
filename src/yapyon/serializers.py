@@ -1,6 +1,6 @@
 """Named serializers — SPEC §5.1.2, the format's built-in functions.
 
-`{cfg.__AS_JSON__()}` is the author naming a container's encoding, exactly as
+`{cfg.__as_json__()}` is the author naming a container's encoding, exactly as
 `b64"..."` names bytes→text: ehmon 5's bridge, for containers.
 
 **Serializers are the format's built-in functions** (SPEC §5.1.2, §13.1):
@@ -60,13 +60,13 @@ class Builtin:
 
 
 SERIALIZERS = {
-    "__AS_JSON__": Builtin(to_json, "Any", {"lexemes": ("bool", True)}),
-    "__AS_TOML__": Builtin(to_toml, "dict[str, Any] | multimap[str, Any]",
+    "__as_json__": Builtin(to_json, "Any", {"lexemes": ("bool", True)}),
+    "__as_toml__": Builtin(to_toml, "dict[str, Any] | multimap[str, Any]",
                            {"lexemes": ("bool", True)},
                            note="a TOML document is a table, with no "
                                 "top-level form for a list or a single value"),
-    "__AS_YAML__": Builtin(to_yaml, "Any"),
-    "__AS_YAPYON__": Builtin(to_yapyon, "Any"),
+    "__as_yaml__": Builtin(to_yaml, "Any"),
+    "__as_yapyon__": Builtin(to_yapyon, "Any"),
 }
 
 #: §5.1.2's one message for a `yt` reaching a record writer — every
@@ -82,11 +82,11 @@ YEETED_YT = ("yeeted yt; a record cannot hold a template's unjoined parts. "
 #: `tools/check_ref_grammar.py` checks it against SPEC §5.1.2's table.
 SERIALIZER_NAMES = tuple(SERIALIZERS)
 
-#: SPEC §5.1.3's one built-in that is not a serializer: `__ENV__(var_name,
+#: SPEC §5.1.3's one built-in that is not a serializer: `__env__(var_name,
 #: fallback=None)`. It reads the environment rather than writing a value, so
 #: it has no writer here; the resolver applies it beside `{$NAME}`, through
 #: the same lookup (`environment.Environment.get`).
-ENV_BUILTIN = "__ENV__"
+ENV_BUILTIN = "__env__"
 
 #: Every built-in a dunder call may name (SPEC §5.1.2, §5.1.3).
 BUILTIN_NAMES = SERIALIZER_NAMES + (ENV_BUILTIN,)

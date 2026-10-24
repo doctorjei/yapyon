@@ -436,7 +436,7 @@ def test_root_is_valid_first_segment_only():
 def test_other_dunders_are_reserved():
     # __ROOT__, __PARENT__ and __KEY__ are defined; the rest of the namespace
     # is still yapyon's and still akan
-    akan('x: y"{__AS_JSON__}"', "reserved")
+    akan('x: y"{__as_json__}"', "reserved")
     akan('x: y"{__FUTURE__.a}"', "reserved")
 
 

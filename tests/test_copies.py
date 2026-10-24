@@ -90,8 +90,8 @@ def test_a_copy_of_a_template_is_a_template():
 
 def test_a_copy_keeps_lexemes():
     assert expand_record("a: (b)\nb: 0xff\n") == "a: 0xff\nb: 0xff\n"
-    d = loads('b: 0xff\na: (b)\nj: y"{a.__AS_JSON__()}"\n')
-    assert d["j"] == loads('b: 0xff\nj: y"{b.__AS_JSON__()}"\n')["j"]
+    d = loads('b: 0xff\na: (b)\nj: y"{a.__as_json__()}"\n')
+    assert d["j"] == loads('b: 0xff\nj: y"{b.__as_json__()}"\n')["j"]
 
 
 @pytest.mark.parametrize("text", [
@@ -106,9 +106,9 @@ def test_a_copy_cannot_contain_itself(text):
 
 
 def test_a_builtins_result_can_be_copied():
-    d = loads("b: {x: 1}\na: (b.__AS_JSON__())\n")
+    d = loads("b: {x: 1}\na: (b.__as_json__())\n")
     assert d["a"] == '{"x": 1}'
-    d = loads('a: (__ENV__("X"))\nb: (__ENV__("X", fallback=c))\nc: [1]\n',
+    d = loads('a: (__env__("X"))\nb: (__env__("X", fallback=c))\nc: [1]\n',
               env={})
     assert d["a"] is None and d["b"] == [1]           # typed, not "None"
 
@@ -135,7 +135,7 @@ def test_a_declared_functions_result_can_be_copied():
 
 
 def test_a_call_in_a_copy_waits_for_its_arguments():
-    d = loads('a: (b.__AS_JSON__())\nb: {x: y"{c}"}\nc: "z"\n')
+    d = loads('a: (b.__as_json__())\nb: {x: y"{c}"}\nc: "z"\n')
     assert d["a"] == '{"x": "z"}'
 
 

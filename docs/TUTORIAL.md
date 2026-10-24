@@ -391,14 +391,14 @@ cfg:
   name: "gw"
   port: 0x1F90
   tags: ["a", "b"]
-as_json: y"{cfg.__AS_JSON__()}"
-as_toml: y"{cfg.__AS_TOML__()}"
-as_yaml: y"{cfg.__AS_YAML__()}"
-as_yapyon: y"{cfg.__AS_YAPYON__()}"
+as_json: y"{cfg.__as_json__()}"
+as_toml: y"{cfg.__as_toml__()}"
+as_yaml: y"{cfg.__as_yaml__()}"
+as_yapyon: y"{cfg.__as_yapyon__()}"
 ```
 
 ```pycon
->>> doc = 'cfg:\n  name: "gw"\n  port: 0x1F90\n  tags: ["a", "b"]\nj: y"{cfg.__AS_JSON__()}"\nt: y"{cfg.__AS_TOML__()}"\n'
+>>> doc = 'cfg:\n  name: "gw"\n  port: 0x1F90\n  tags: ["a", "b"]\nj: y"{cfg.__as_json__()}"\nt: y"{cfg.__as_toml__()}"\n'
 >>> print(yapyon.loads(doc)["j"])
 {"name": "gw", "port": 8080, "tags": ["a", "b"], "@_lexemes": {"port": "0x1F90"}}
 >>> print(yapyon.loads(doc)["t"])
@@ -415,12 +415,12 @@ directly, the serializer **approximates rather than refuses**: here the
 port is written as its value, `8080`, and the spelling `0x1F90` is recorded
 beside it in `@_lexemes`, where a yapyon-aware reader can restore it and
 any other reader still sees correct plain data. Bytes and multimaps are
-handled the same way. `{cfg.__AS_JSON__(lexemes=False)}` writes the plain
+handled the same way. `{cfg.__as_json__(lexemes=False)}` writes the plain
 values alone.
 
-`{cfg.__AS_JSON__()}` and `{__AS_JSON__(cfg)}` mean the same thing. A
+`{cfg.__as_json__()}` and `{__as_json__(cfg)}` mean the same thing. A
 serializer cannot encode the block it sits in — that would need its own
-result to compute its own result — so `{__PARENT__.__AS_JSON__()}` is akan;
+result to compute its own result — so `{__PARENT__.__as_json__()}` is akan;
 name a sibling block instead.
 
 ## 8. Four kinds of document
@@ -501,16 +501,16 @@ comments are normalized.
 ### Reading the environment
 
 A hole can read the environment of the program loading the document. `$NAME`
-is strict, and `__ENV__` takes a fallback (§5.1.3):
+is strict, and `__env__` takes a fallback (§5.1.3):
 
 ```yapyon
 home: y"{$HOME}"
-config: y"{__ENV__('XDG_CONFIG_HOME', default_config)}/app"
+config: y"{__env__('XDG_CONFIG_HOME', default_config)}/app"
 default_config: y"{$HOME}/.config"
 ```
 
 ```pycon
->>> doc = 'home: y"{$HOME}"\nconfig: y"{__ENV__(\'XDG_CONFIG_HOME\', default_config)}/app"\ndefault_config: y"{$HOME}/.config"\n'
+>>> doc = 'home: y"{$HOME}"\nconfig: y"{__env__(\'XDG_CONFIG_HOME\', default_config)}/app"\ndefault_config: y"{$HOME}/.config"\n'
 >>> yapyon.loads(doc, env={"HOME": "/home/ana"})
 {'home': '/home/ana', 'config': '/home/ana/.config/app', 'default_config': '/home/ana/.config'}
 >>> yapyon.loads(doc, env={"HOME": "/home/ana", "XDG_CONFIG_HOME": "/cfg"})["config"]

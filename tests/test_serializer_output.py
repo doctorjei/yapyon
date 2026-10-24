@@ -26,7 +26,7 @@ def out(doc, call, name="s"):
 # --------------------------------------------------------------------------- #
 def test_json_scalars_and_no_trailing_newline():
     text, _ = out('s:\n  t: True\n  n: None\n  i: -7\n  f: 1e16\n  g: 1e-5\n'
-                  '  z: -0.0\n  big: 9007199254740993\n', "__AS_JSON__()")
+                  '  z: -0.0\n  big: 9007199254740993\n', "__as_json__()")
     assert text == ('{"t": true, "n": null, "i": -7, "f": 1e+16, "g": 1e-05, '
                     '"z": -0.0, "big": 9007199254740993}')
     assert json.loads(text)["big"] == 9007199254740993
@@ -39,34 +39,34 @@ def test_json_scalars_and_no_trailing_newline():
     ('"café 日本 \\u2028"', '"café 日本 \u2028"'),     # everything else itself
 ])
 def test_json_string_escapes(value, written):
-    text, _ = out(f"s: {value}\n", "__AS_JSON__()")
+    text, _ = out(f"s: {value}\n", "__as_json__()")
     assert text == written
 
 
 def test_a_broken_json_container():
     long = '"' + "x" * 90 + '"'
-    text, _ = out(f's:\n  a: {long}\n  b:\n    c: [1, 2]\n', "__AS_JSON__()")
+    text, _ = out(f's:\n  a: {long}\n  b:\n    c: [1, 2]\n', "__as_json__()")
     assert text == ('{\n  "a": ' + long + ',\n  "b": {"c": [1, 2]}\n}')
 
 
 def test_breaking_is_outermost_first_and_closers_sit_at_the_opening_indent():
     long = '"' + "y" * 95 + '"'
-    text, _ = out(f's:\n  a:\n    b: {long}\n', "__AS_JSON__()")
+    text, _ = out(f's:\n  a:\n    b: {long}\n', "__as_json__()")
     assert text == '{\n  "a": {\n    "b": ' + long + '\n  }\n}'
 
 
 def test_width_counts_wide_characters_twice():
     narrow = "x" * 40                                 # {"a": [...]} is 95 wide
     wide = "中" * 40                                  # same length, 175 wide
-    assert out(f's:\n  a: ["{narrow}", "{narrow}"]\n', "__AS_JSON__()")[0] \
+    assert out(f's:\n  a: ["{narrow}", "{narrow}"]\n', "__as_json__()")[0] \
         .count("\n") == 0
-    assert out(f's:\n  a: ["{wide}", "{wide}"]\n', "__AS_JSON__()")[0] \
+    assert out(f's:\n  a: ["{wide}", "{wide}"]\n', "__as_json__()")[0] \
         .count("\n") > 0
 
 
 def test_lexemes_are_the_last_member_keyed_by_path():
     text, _ = out("s:\n  port: 0xff\n  ports: [0x50, 443]\n"
-                  "  matrix: [[1, 0b11]]\n  data: hex'6869'\n", "__AS_JSON__()")
+                  "  matrix: [[1, 0b11]]\n  data: hex'6869'\n", "__as_json__()")
     data = json.loads(text)
     assert list(data)[-1] == "@_lexemes"
     assert data["@_lexemes"] == {"port": "0xff", "ports/0": "0x50",
@@ -75,16 +75,16 @@ def test_lexemes_are_the_last_member_keyed_by_path():
 
 
 def test_bytes_are_padded_base64url_with_a_lexeme_or_a_canonical_form():
-    text, _ = out("s:\n  a: b\"\\xfb\\xff\"\n", "__AS_JSON__()")
+    text, _ = out("s:\n  a: b\"\\xfb\\xff\"\n", "__as_json__()")
     assert json.loads(text) == {"a": "-_8=",
                                 "@_lexemes": {"a": 'b"\\xfb\\xff"'}}
     # a call's result has no lexeme: its canonical spelling is recorded
-    text, _ = out("x: b64'aGk='\ns:\n  a: y\"{x}\"\n", "__AS_JSON__()")
+    text, _ = out("x: b64'aGk='\ns:\n  a: y\"{x}\"\n", "__as_json__()")
     assert json.loads(text)["a"] == "b'hi'"            # a y-string is text
 
 
 def test_a_multimap_node_is_json_ld_and_keys_its_lexemes_by_entry():
-    text, _ = out("s:\n  + k: [1, 0x02]\n  + j: 0x03\n", "__AS_JSON__()")
+    text, _ = out("s:\n  + k: [1, 0x02]\n  + j: 0x03\n", "__as_json__()")
     assert json.loads(text) == {
         "@type": "multimap",
         "entries": {"@list": [{"k": [1, 2]}, {"j": 3}]},
@@ -92,20 +92,20 @@ def test_a_multimap_node_is_json_ld_and_keys_its_lexemes_by_entry():
 
 
 def test_a_root_list_is_never_wrapped_and_its_lexemes_are_dropped_with_shiran():
-    text, seen = out("s: [0xff, 1]\n", "__AS_JSON__()")
+    text, seen = out("s: [0xff, 1]\n", "__as_json__()")
     assert text == "[255, 1]"
     assert len(seen) == 1 and "lexemes=False" in seen[0] and "0xff" in seen[0]
 
 
 def test_lexemes_false_writes_none_and_says_nothing():
-    text, seen = out("s: [0xff]\n", "__AS_JSON__(lexemes=False)")
+    text, seen = out("s: [0xff]\n", "__as_json__(lexemes=False)")
     assert text == "[255]" and seen == []
-    text, _ = out("s:\n  a: 0xff\n  b: {c: hex'68'}\n", "__AS_JSON__(lexemes=False)")
+    text, _ = out("s:\n  a: 0xff\n  b: {c: hex'68'}\n", "__as_json__(lexemes=False)")
     assert "@_lexemes" not in text
 
 
 def test_a_value_beside_no_lexemes_needs_no_record():
-    text, _ = out("s:\n  a: 1_000\n  b: 3.10\n  c: 'x'\n", "__AS_JSON__()")
+    text, _ = out("s:\n  a: 1_000\n  b: 3.10\n  c: 'x'\n", "__as_json__()")
     assert text == '{"a": 1000, "b": 3.1, "c": "x"}'
 
 
@@ -113,14 +113,14 @@ def test_a_value_beside_no_lexemes_needs_no_record():
 # YAML (§14.4)
 # --------------------------------------------------------------------------- #
 def test_yaml_with_no_marker_has_no_header():
-    text, _ = out('s:\n  a: 1\n  b: "x"\n', "__AS_YAML__()")
+    text, _ = out('s:\n  a: 1\n  b: "x"\n', "__as_yaml__()")
     assert text == "a: 1\nb: x\n"
 
 
 def test_yaml_handles_are_declared_in_order_of_first_use():
     text, _ = out("s:\n  data: hex'6869'\n  port: 0xff\n  bits: 0b101\n"
                   "  raw: b\"hi\"\n  mm:\n    + registry: \"a\"\n",
-                  "__AS_YAML__()")
+                  "__as_yaml__()")
     assert text == ("%TAG !hex! tag:yaml.org,2002:\n"
                     "%TAG !x! tag:yaml.org,2002:\n"
                     "%TAG !b! tag:yaml.org,2002:\n"
@@ -150,13 +150,13 @@ def test_yaml_handles_are_declared_in_order_of_first_use():
     ("rb'\\d'", '!rb!str "\\\\d"', "\\d"),
 ])
 def test_yaml_scalars(literal, written, read):
-    text, _ = out(f"s:\n  a: {literal}\n", "__AS_YAML__()")
+    text, _ = out(f"s:\n  a: {literal}\n", "__as_yaml__()")
     assert text.splitlines()[-1] == f"a: {written}"
     assert yaml.safe_load(text)["a"] == read
 
 
 def test_bytes_with_no_lexeme_are_binary():
-    text, _ = out("x: b\"hi\"\ns:\n  a: y\"{x}\"\n  b: yb\"{x}\"\n", "__AS_YAML__()")
+    text, _ = out("x: b\"hi\"\ns:\n  a: y\"{x}\"\n  b: yb\"{x}\"\n", "__as_yaml__()")
     assert text == 'a: "b\'hi\'"\nb: !!binary "aGk="\n'
 
 
@@ -164,24 +164,24 @@ def test_bytes_with_no_lexeme_are_binary():
                                    "", "a b", "a: b", "-x", "#x", "日本",
                                    "tab\there", "line\nbreak", "\x85"])
 def test_yaml_quotes_what_any_reader_might_misread(value):
-    text, _ = out(f"s:\n  a: {json.dumps(value)}\n", "__AS_YAML__()")
+    text, _ = out(f"s:\n  a: {json.dumps(value)}\n", "__as_yaml__()")
     assert text.startswith('a: "')
     assert yaml.safe_load(text)["a"] == value
 
 
 def test_a_flow_sequence_quotes_flow_indicators():
-    text, _ = out('s:\n  a: ["x", "a,b", "c]", "d:e"]\n', "__AS_YAML__()")
+    text, _ = out('s:\n  a: ["x", "a,b", "c]", "d:e"]\n', "__as_yaml__()")
     assert text == 'a: [x, "a,b", "c]", "d:e"]\n'
     assert yaml.safe_load(text)["a"] == ["x", "a,b", "c]", "d:e"]
 
 
 def test_yaml_sequences_holding_mappings_are_block():
-    text, _ = out('s:\n  a: [{x: 1}, 2]\n  b: [[1, 2], [3]]\n', "__AS_YAML__()")
+    text, _ = out('s:\n  a: [{x: 1}, 2]\n  b: [[1, 2], [3]]\n', "__as_yaml__()")
     assert text == "a:\n  - x: 1\n  - 2\nb: [[1, 2], [3]]\n"
 
 
 def test_a_root_multimap_in_yaml():
-    text, _ = out("s:\n  + k: 1\n  + k: 2\n", "__AS_YAML__()")
+    text, _ = out("s:\n  + k: 1\n  + k: 2\n", "__as_yaml__()")
     assert text == ("%TAG !multimap! tag:yaml.org,2002:\n---\n"
                     "!multimap!pairs\n- k: 1\n- k: 2\n")
     assert yaml.safe_load(text) == [("k", 1), ("k", 2)]
@@ -191,7 +191,7 @@ def test_a_root_multimap_in_yaml():
 # TOML (§14.5)
 # --------------------------------------------------------------------------- #
 def toml(doc):
-    text, _ = out(doc, "__AS_TOML__()")
+    text, _ = out(doc, "__as_toml__()")
     return text, tomllib.loads(text)
 
 
@@ -199,7 +199,7 @@ def test_toml_reads_as_json_s_tree_but_for_null_and_64_bits():
     doc = ("s:\n  a: 1\n  n: None\n  big: 0x8000000000000000\n"
            "  sub:\n    b: hex'6869'\n")
     text, data = toml(doc)
-    tree = json.loads(out(doc, "__AS_JSON__()")[0])
+    tree = json.loads(out(doc, "__as_json__()")[0])
     del tree["n"]
     tree["big"] = str(tree["big"])
     tree["@_lexemes"]["n"] = "None"
@@ -257,7 +257,7 @@ def test_keys_are_bare_only_when_toml_allows():
 
 
 def test_toml_lexemes_false():
-    text, _ = out("s:\n  a: 0xff\n  n: None\n", "__AS_TOML__(lexemes=False)")
+    text, _ = out("s:\n  a: 0xff\n  n: None\n", "__as_toml__(lexemes=False)")
     assert text == "a = 255\n"
 
 
@@ -266,5 +266,5 @@ def test_toml_lexemes_false():
 # --------------------------------------------------------------------------- #
 def test_yapyon_output_keeps_every_lexeme_and_lays_out_by_14_1():
     text, _ = out("s:\n  v: 3.10\n  xs:\n    - 0xff\n    - 'q'\n  mm:\n    + k: 1\n",
-                  "__AS_YAPYON__()")
+                  "__as_yapyon__()")
     assert text == "v: 3.10\nxs: [0xff, 'q']\nmm:\n  + k: 1\n"

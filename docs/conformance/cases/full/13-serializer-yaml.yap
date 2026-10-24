@@ -3,4 +3,4 @@
 cfg:
   GOOSE_MODEL: "nav-m1"
   flag: "no"
-out: y"{cfg.__AS_YAML__()}"
+out: y"{cfg.__as_yaml__()}"

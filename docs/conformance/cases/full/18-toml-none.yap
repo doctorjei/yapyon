@@ -4,4 +4,4 @@ s:
   a: None
   b: 1
   xs: [None, 2]
-out: y"{s.__AS_TOML__()}"
+out: y"{s.__as_toml__()}"

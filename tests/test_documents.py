@@ -3,7 +3,7 @@
 **Any value is a valid document** — a file holding just `42` loads as `42`
 (keep: operator, 2026-10-19, "it's important for some applications"). A tool
 wanting a mapping at the top level enforces that itself. YAML and JSON agree;
-TOML does not, which is why `__AS_TOML__()` refuses a single value — a fact
+TOML does not, which is why `__as_toml__()` refuses a single value — a fact
 about serializer output, not about yapyon files.
 
 Two edges differ from YAML, both by the grammar: a document must hold a
@@ -44,10 +44,10 @@ def test_a_single_literal_is_a_record(text, value):
 
 @pytest.mark.parametrize("text,value", SINGLE_VALUES)
 def test_a_single_value_round_trips_through_every_writer(text, value):
-    # the emitter, the record bridge, and __AS_YAPYON__ share one writer
+    # the emitter, the record bridge, and __as_yapyon__ share one writer
     assert loads_record(emit(parse(text + "\n"))) == value
     assert loads_record(expand_record(text + "\n")) == value
-    wrapped = loads(f"a: {text}\nu: y\"{{a.__AS_YAPYON__()}}\"\n")["u"]
+    wrapped = loads(f"a: {text}\nu: y\"{{a.__as_yapyon__()}}\"\n")["u"]
     assert loads_record(wrapped) == value
 
 

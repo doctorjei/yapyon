@@ -9,7 +9,7 @@ WHY THIS EXISTS
     generates is accepted. A claim like that is indistinguishable from a false
     one unless something executes it -- which is trap 6, and it is how the
     pre-split spec came to carry a production that could not generate
-    `{cfg.__AS_JSON__()}` at all.
+    `{cfg.__as_json__()}` at all.
 
 WHAT IT DOES
     Transcribes GRAMMAR §G5's EBNF into a recognizer -- literally, production
@@ -260,18 +260,18 @@ steps = ["", ".b", "[0]", "[-1]", "[-0]", "[+1]", '["b.c"]', "[p]", ".b[0]", "[p
          ".__KEY__", ".__PARENT__", "[a[b]]", "..b", ".0", ".True", "[__KEY__]",
          "[ - 1 ]", " . b", "[f(x)]", "['b\\'c']", '[b"x"]', "[1.5]", "[0x1]",
          "[01]", "[__ROOT__]", "[a.f()]", "[]", "[$U]", "[ $U ]", "[$U.x]",
-         "[$U.__AS_JSON__()]", "[$]"]
+         "[$U.__as_json__()]", "[$]"]
 # Derived from the code, not listed by hand: a serializer the implementation
 # gains must be exercised here without anyone remembering to add it.
 tails = ([""] + [f".{n}()" for n in SERIALIZER_NAMES]
-         + [".__AS_BOGUS__()", ".__KEY__", "()", ".f()", ".f(x).g()",
+         + [".__as_bogus__()", ".__KEY__", "()", ".f()", ".f(x).g()",
             ".f()[0]", ".f().b", "(x)", ".f(lexemes=False)",
-            ".__AS_JSON__(lexemes=False)"])
+            ".__as_json__(lexemes=False)"])
 
 _S = SERIALIZER_NAMES[0]      # any built-in will do: the corpus tests shapes
-callees = ["f", _S, "__AS_BOGUS__", "__ROOT__", "__KEY__", "True",
-           "a.f", "__ROOT__.x.f", "__PARENT__.f", "__PARENT__.__PARENT__.x.__AS_JSON__",
-           "a[0].__AS_YAML__", "f()."]
+callees = ["f", _S, "__as_bogus__", "__ROOT__", "__KEY__", "True",
+           "a.f", "__ROOT__.x.f", "__PARENT__.f", "__PARENT__.__PARENT__.x.__as_json__",
+           "a[0].__as_yaml__", "f()."]
 arglists = ["", "x", "x, y", "x,", ",x", ",", "x,,", "x, y ,", "lexemes=False,",
             "x, lexemes=False ,", "x y", "1", "-1", "- 1", "+1.5", "--1",
             "-True", "-x", "True", "None", '"s"', "'s'", 'b"s"', 'b64"aGk="',
@@ -279,7 +279,7 @@ arglists = ["", "x", "x, y", "x,", ",x", ",", "x,,", "x, y ,", "lexemes=False,",
             "x, lexemes=False", "lexemes=False, x", "lexemes=opts.keep",
             "k=v=1", "k == 1", "__ROOT__", "__PARENT__", "__PARENT__.x",
             "__ROOT__.x", "__KEY__", "__PARENT__.__KEY__", "g(x)", "x.g()",
-            "__AS_JSON__(x)", "[0]", "x[0]", "x[0].g(1)", "1.5e3", "0x1F",
+            "__as_json__(x)", "[0]", "x[0]", "x[0].g(1)", "1.5e3", "0x1F",
             "1_000", "x.0", "f(g(h(1)))", "hex'6869'", "bin'01'", "dna'GA'",
             "oct'320'", "c32'D1MG'", "0q13", "0z7Z", "-0Z_7z", "0zU", "hex'6g'",
             "HEX'68'", "rhex'68'", "$HOME", "x, $HOME", "fallback=$HOME",
@@ -289,11 +289,11 @@ calltails = ["", ".g()", "[0]", ".b", ".g(y)", " . g ( y ) "]
 loose = [" a . b ", "f( a , b )", "f (a)", "xs[ - 1 ]", "a .f()", "a. f()",
          "a\n.b", "a\t.b", "a #c", 'f("#x")', "a:b", "a!r", "x:>3", "{a}",
          "", " ", "a b", "a[b c]", _S, f"{_S} ()",
-         "__AS_JSON__(lexemes = False)", "a.__AS_JSON__(lexemes=False, x)",
-         "a.__AS_JSON__(x=1, x=2)", "8080", '"x"', '"x".f()', "f(x)(y)",
+         "__as_json__(lexemes = False)", "a.__as_json__(lexemes=False, x)",
+         "a.__as_json__(x=1, x=2)", "8080", '"x"', '"x".f()', "f(x)(y)",
          "$HOME", "a.$b", "a-b", "-1", "f(-)", "f(1,,2)", "$", "$ HOME",
-         "$1X", "$HOMEé", "$ＨＯＭＥ", " $HOME . __AS_JSON__ ( ) ", "d[$U].x",
-         "$HOME$X", "__ENV__('HOME')", "__ENV__('HOME', $X)", "$HOME.__KEY__"]
+         "$1X", "$HOMEé", "$ＨＯＭＥ", " $HOME . __as_json__ ( ) ", "d[$U].x",
+         "$HOME$X", "__env__('HOME')", "__env__('HOME', $X)", "$HOME.__KEY__"]
 
 
 def corpus():

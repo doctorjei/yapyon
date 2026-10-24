@@ -26,7 +26,7 @@ def akan_of(text, **kw):
 
 
 # --------------------------------------------------------------------------- #
-# {$NAME} is strict; __ENV__ falls back
+# {$NAME} is strict; __env__ falls back
 # --------------------------------------------------------------------------- #
 def test_a_dollar_reference_splices_the_variable():
     assert loads('h: y"{$HOME}/x"\n', env=HOME) == {"h": "/home/ana/x"}
@@ -38,56 +38,56 @@ def test_a_dollar_reference_to_an_unset_variable_is_akan():
 
 
 def test_env_returns_the_variable_when_it_is_set():
-    assert loads('h: y"{__ENV__(\'HOME\', \'/\')}"\n', env=HOME)["h"] \
+    assert loads('h: y"{__env__(\'HOME\', \'/\')}"\n', env=HOME)["h"] \
         == "/home/ana"
 
 
 def test_env_returns_the_fallback_when_it_is_unset():
-    assert loads('h: y"{__ENV__(\'HOME\', \'/\')}"\n', env={})["h"] == "/"
+    assert loads('h: y"{__env__(\'HOME\', \'/\')}"\n', env={})["h"] == "/"
 
 
 def test_env_with_one_argument_returns_none_which_splices_as_none():
     # as f"{os.getenv('X')}" does; the author asked for it
-    assert loads('h: y"{__ENV__(\'HOME\')}/x"\n', env={})["h"] == "None/x"
+    assert loads('h: y"{__env__(\'HOME\')}/x"\n', env={})["h"] == "None/x"
 
 
 def test_the_fallback_may_be_given_by_keyword():
-    assert loads('h: y"{__ENV__(\'HOME\', fallback=\'/\')}"\n',
+    assert loads('h: y"{__env__(\'HOME\', fallback=\'/\')}"\n',
                  env={})["h"] == "/"
 
 
 def test_the_fallback_may_be_a_reference():
-    doc = 'd: "/tmp"\nh: y"{__ENV__(\'HOME\', d)}"\n'
+    doc = 'd: "/tmp"\nh: y"{__env__(\'HOME\', d)}"\n'
     assert loads(doc, env={})["h"] == "/tmp"
 
 
 def test_the_fallback_is_resolved_even_when_it_is_not_used():
     # like any argument (§13.1), and like os.getenv's default
-    doc = 'h: y"{__ENV__(\'XDG_CONFIG_HOME\', d)}"\nd: y"{$HOME}/.config"\n'
+    doc = 'h: y"{__env__(\'XDG_CONFIG_HOME\', d)}"\nd: y"{$HOME}/.config"\n'
     assert "$HOME is not set" in akan_of(doc, env={"XDG_CONFIG_HOME": "/c"})
 
 
 def test_the_variable_name_may_be_a_reference():
-    doc = 'n: "HOME"\nh: y"{__ENV__(n)}"\n'
+    doc = 'n: "HOME"\nh: y"{__env__(n)}"\n'
     assert loads(doc, env=HOME)["h"] == "/home/ana"
 
 
 def test_the_variable_name_must_be_a_string():
     assert "var_name takes str, not int" in akan_of(
-        'h: y"{__ENV__(1)}"\n', env=HOME)
+        'h: y"{__env__(1)}"\n', env=HOME)
 
 
 def test_env_reaches_a_name_dollar_cannot_spell():
     env = {"ProgramFiles(x86)": "C:\\PF86"}
-    doc = 'p: y"{__ENV__(\'ProgramFiles(x86)\')}"\n'
+    doc = 'p: y"{__env__(\'ProgramFiles(x86)\')}"\n'
     assert loads(doc, env=env, env_allow=ENV_ALL)["p"] == "C:\\PF86"
 
 
 @pytest.mark.parametrize("call,why", [
-    ("__ENV__()", "takes a variable name and an optional fallback, not 0"),
-    ("__ENV__('A', 'b', 'c')", "not 3 arguments"),
-    ("__ENV__('A', bogus=1)", "has no keyword argument bogus"),
-    ("__ENV__('A', 'b', fallback='c')", "by position and again by keyword"),
+    ("__env__()", "takes a variable name and an optional fallback, not 0"),
+    ("__env__('A', 'b', 'c')", "not 3 arguments"),
+    ("__env__('A', bogus=1)", "has no keyword argument bogus"),
+    ("__env__('A', 'b', fallback='c')", "by position and again by keyword"),
 ])
 def test_env_checks_its_shape(call, why):
     assert why in akan_of(f'h: y"{{{call}}}"\n', env={})
@@ -98,7 +98,7 @@ def test_env_checks_its_shape(call, why):
 # --------------------------------------------------------------------------- #
 def test_an_empty_value_is_a_value_not_unset():
     assert loads('h: y"[{$HOME}]"\n', env={"HOME": ""})["h"] == "[]"
-    assert loads('h: y"{__ENV__(\'HOME\', \'/\')}"\n',
+    assert loads('h: y"{__env__(\'HOME\', \'/\')}"\n',
                  env={"HOME": ""})["h"] == ""
 
 
@@ -106,7 +106,7 @@ def test_a_variable_not_exposed_is_indistinguishable_from_an_unset_one():
     env = {"API_KEY": "s3cret"}
     assert "$API_KEY is not set, or not exposed" in akan_of(
         'k: y"{$API_KEY}"\n', env=env)
-    assert loads('k: y"{__ENV__(\'API_KEY\', \'-\')}"\n', env=env)["k"] == "-"
+    assert loads('k: y"{__env__(\'API_KEY\', \'-\')}"\n', env=env)["k"] == "-"
 
 
 def test_env_allow_widens_the_standard_set():
@@ -126,7 +126,7 @@ def test_env_all_exposes_everything():
 
 def test_access_off_is_akan_for_both_forms_even_with_a_fallback():
     # a fallback answers "not set", never "not allowed"
-    for doc in ('h: y"{$HOME}"\n', 'h: y"{__ENV__(\'HOME\', \'/\')}"\n'):
+    for doc in ('h: y"{$HOME}"\n', 'h: y"{__env__(\'HOME\', \'/\')}"\n'):
         assert "environment access is off" in akan_of(doc, env=None)
 
 
@@ -181,12 +181,12 @@ def test_splicing_cannot_inject_structure():
 
 
 def test_a_call_may_follow_a_dollar_reference():
-    assert loads('j: y"{$HOME.__AS_JSON__()}"\n',
+    assert loads('j: y"{$HOME.__as_json__()}"\n',
                  env={"HOME": 'a"b'})["j"] == '"a\\"b"'
 
 
 def test_a_dollar_reference_may_be_an_argument():
-    assert loads('j: y"{__AS_JSON__($HOME)}"\n', env=HOME)["j"] \
+    assert loads('j: y"{__as_json__($HOME)}"\n', env=HOME)["j"] \
         == '"/home/ana"'
 
 
@@ -286,7 +286,7 @@ def test_the_cli_reads_standard_variables_by_default():
 
 
 def test_the_cli_env_allow_exposes_one_more_name():
-    doc = 'k: y"{__ENV__(\'API_KEY\', \'-\')}"\n'
+    doc = 'k: y"{__env__(\'API_KEY\', \'-\')}"\n'
     assert _expand_cli([], {"API_KEY": "s"}, doc).stdout == 'k: "-"\n'
     assert _expand_cli(["--env-allow", "API_KEY"], {"API_KEY": "s"},
                        doc).stdout == 'k: "s"\n'

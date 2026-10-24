@@ -47,7 +47,7 @@ def test_spec_builtins_match_code():
 def test_spec_builtins_are_actually_read_from_the_document():
     """A reader that silently found nothing would make the check above vacuous."""
     assert set(crg.builtins_from_spec()) == {
-        "__AS_JSON__", "__AS_TOML__", "__AS_YAML__", "__AS_YAPYON__",
+        "__as_json__", "__as_toml__", "__as_yaml__", "__as_yapyon__",
     }
 
 

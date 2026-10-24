@@ -112,7 +112,7 @@ def test_lookup_returns_containers_as_loaded():
 
 def test_lookup_runs_a_serializer():
     tree = loads(DOC)
-    out = lookup(tree, tree["harness"], "xs.__AS_YAPYON__()")
+    out = lookup(tree, tree["harness"], "xs.__as_yapyon__()")
     assert out == '["x0", "x1", "x2"]\n'
 
 

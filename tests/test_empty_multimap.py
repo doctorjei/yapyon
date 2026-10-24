@@ -48,8 +48,8 @@ def test_writers_spell_it_back(text, written):
 
 
 def test_as_yapyon_and_the_other_serializers():
-    d = loads("e: {+}\nj: y\"{e.__AS_JSON__()}\"\nt: y\"{x.__AS_TOML__()}\"\n"
-              "y: y\"{e.__AS_YAML__()}\"\np: y\"{e.__AS_YAPYON__()}\"\n"
+    d = loads("e: {+}\nj: y\"{e.__as_json__()}\"\nt: y\"{x.__as_toml__()}\"\n"
+              "y: y\"{e.__as_yaml__()}\"\np: y\"{e.__as_yapyon__()}\"\n"
               "x:\n  e: {+}\n")
     assert d["p"] == "{+}\n"
     assert d["j"] == '{"@type": "multimap", "entries": {"@list": []}}'

@@ -1,7 +1,7 @@
 """The environment a document may read — SPEC §5.1.3 and §5.1.4.
 
 A hole reads **the environment of the process loading the document** and no
-other: `{$NAME}` strictly, `{__ENV__("NAME", fallback)}` with a fallback.
+other: `{$NAME}` strictly, `{__env__("NAME", fallback)}` with a fallback.
 Both go through `Environment.get`, the one lookup.
 
 **Not every variable is exposed.** A load sees the standard variables of its

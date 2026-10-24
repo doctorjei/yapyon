@@ -435,14 +435,14 @@ def test_a_result_splices_by_value(returns, value, spliced):
 def test_a_result_has_no_lexeme_so_a_yapyon_writer_uses_canonical_form():
     # §13.4, §4.4: 3.10 from a function is the float 3.1, with no spelling
     run = make("dict[str, Any]", {"ｖ": 3.10, "n": 0xff, "s": 'say "hi"'})
-    assert run('u: y"{__AS_YAPYON__(f())}"\n')["u"] == \
+    assert run('u: y"{__as_yapyon__(f())}"\n')["u"] == \
         'v: 3.1\nn: 255\ns: "say \\"hi\\""\n'
 
 
 def test_a_container_result_reaches_a_serializer():
     import json
     run = make("dict[str, list[int]]", {"ｎａｍｅ": [1, 2]})
-    out = run('u: y"{__AS_JSON__(f())}"\n')["u"]
+    out = run('u: y"{__as_json__(f())}"\n')["u"]
     assert json.loads(out) == {"name": [1, 2]}            # keys folded
 
 
@@ -465,7 +465,7 @@ def test_a_bad_result_is_akan_naming_the_function(returns, value, needle):
 
 
 def test_returning_a_borrow_is_akan():
-    akan(lambda: loads('blk: {a: 1}\nu: y"{__AS_JSON__(spy(blk, 1))}"\n',
+    akan(lambda: loads('blk: {a: 1}\nu: y"{__as_json__(spy(blk, 1))}"\n',
                        contract=loads_contract(SPY.replace('"str"', '"Any"')),
                        provide={"spy": lambda a, b: a}),
          "returned a node of the document")
@@ -505,11 +505,11 @@ def test_unused_code_is_never_loaded():
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("doc,tier", [
     ('a: 1\n', 1),
-    ('a: {x: 1}\nu: y"{a.__AS_JSON__()}"\n', 2),
+    ('a: {x: 1}\nu: y"{a.__as_json__()}"\n', 2),
     ('u: y"{f()}"\n', 4),
-    ('u: y"{__AS_JSON__(f())}"\n', 4),
+    ('u: y"{__as_json__(f())}"\n', 4),
     ('d: {k: 1}\nu: y"{d[f()]}"\n', 4),
-    ('u: y"{a.__AS_JSON__(lexemes=f())}"\na: 1\n', 4),
+    ('u: y"{a.__as_json__(lexemes=f())}"\na: 1\n', 4),
 ])
 def test_a_document_that_calls_a_declared_function_is_an_assembly(doc, tier):
     assert tier_of(doc) == tier

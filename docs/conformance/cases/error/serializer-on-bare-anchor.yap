@@ -1,3 +1,3 @@
 blk:
   a: 1
-  me: y"{__PARENT__.__AS_JSON__()}"
+  me: y"{__PARENT__.__as_json__()}"

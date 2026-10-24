@@ -26,16 +26,16 @@ LEDGERS = [
     'n: "gw"\nb: y"{n} v1"\n',
     'a: ry"x"\n',
     'a: yb"x"\n',
-    'cfg:\n  a: 1\nj: y"{cfg.__AS_JSON__()}"\n',
+    'cfg:\n  a: 1\nj: y"{cfg.__as_json__()}"\n',
 ]
 
 TEMPLATES = [
     'a: yt"x"\n',
     'home: y"{$HOME}"\n',
-    'home: y"{__ENV__(\'HOME\')}"\n',
-    'j: y"{$HOME.__AS_JSON__()}"\n',
+    'home: y"{__env__(\'HOME\')}"\n',
+    'j: y"{$HOME.__as_json__()}"\n',
     'd:\n  x: 1\nv: y"{d[$USER]}"\n',
-    'v: y"{__AS_JSON__($HOME)}"\n',
+    'v: y"{__as_json__($HOME)}"\n',
 ]
 
 ASSEMBLIES = [
@@ -64,7 +64,7 @@ def test_y_yb_and_ry_make_a_ledger():
 
 
 def test_built_in_serializers_keep_a_document_a_ledger():
-    assert tier_of('cfg:\n  a: 1\nj: y"{cfg.__AS_YAML__()}"\n') == 2
+    assert tier_of('cfg:\n  a: 1\nj: y"{cfg.__as_yaml__()}"\n') == 2
 
 
 def test_a_yt_makes_a_template():

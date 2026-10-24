@@ -171,9 +171,9 @@ inert gate look identical from outside, and only the break tells them apart.
   duplicate keys including duplicates that appear only after folding, tab
   indentation, unknown escapes, reserved quoted keys, dunder keys,
   unbound holes, a serializer on a bare anchor, a multimap in a
-  serializer, `None` in TOML, bytes in JSON, a `yt` in `__AS_YAPYON__()`,
+  serializer, `None` in TOML, bytes in JSON, a `yt` in `__as_yapyon__()`,
   and a full document refused by `loads_record`.
-- **The environment (§5.1.3, §5.1.4)** — `{$NAME}`, `__ENV__` with and
+- **The environment (§5.1.3, §5.1.4)** — `{$NAME}`, `__env__` with and
   without a fallback, an empty value, a `$` reference as a receiver and as
   a bracket key, a variable that is not exposed, a widened exposure; and as
   errors, an unset variable, an unexposed one, a step after `$NAME`, a bad
@@ -184,5 +184,5 @@ delivered in parts (§6), and a record cannot express one — `expand_record`
 refuses it rather than joining it, because §6 puts rendering with the
 consumer. A corpus whose expectations are records therefore cannot carry a
 `yt`, and that is the rule working, not a gap. The same rule is why `yt`
-appears once, in `error/`: `__AS_YAPYON__()` writes a record, so a `yt` in
+appears once, in `error/`: `__as_yapyon__()` writes a record, so a `yt` in
 its target is refused.

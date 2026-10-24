@@ -364,7 +364,7 @@ the author saying which they mean:
 cfg:
   name: "gw"
   port: 8080
-body: y"payload={cfg.__AS_JSON__()}"
+body: y"payload={cfg.__as_json__()}"
 ```
 
 This is ehmon 5 (Visibility) — *containers cross into text only via a
@@ -381,22 +381,22 @@ call one from. The format defines:
 
 | name | signature |
 |---|---|
-| `__AS_JSON__` | `(Any) -> str` |
-| `__AS_TOML__` | `(dict[str, Any] \| multimap[str, Any]) -> str` — a TOML document is a table, with no top-level form for a list or a single value |
-| `__AS_YAML__` | `(Any) -> str` |
-| `__AS_YAPYON__` | `(Any) -> str` |
+| `__as_json__` | `(Any) -> str` |
+| `__as_toml__` | `(dict[str, Any] \| multimap[str, Any]) -> str` — a TOML document is a table, with no top-level form for a list or a single value |
+| `__as_yaml__` | `(Any) -> str` |
+| `__as_yapyon__` | `(Any) -> str` |
 
-`__AS_JSON__` and `__AS_TOML__` take one keyword argument, `lexemes`
+`__as_json__` and `__as_toml__` take one keyword argument, `lexemes`
 (default `True`); `lexemes=False` writes no `@_lexemes` (§14.2). A
 built-in's keyword arguments are its own and are listed here; it takes its
 positional argument by position only.
 
-`{cfg.__AS_JSON__()}` is the receiver spelling of `{__AS_JSON__(cfg)}`;
+`{cfg.__as_json__()}` is the receiver spelling of `{__as_json__(cfg)}`;
 both are legal (§13.1). A result is a `str`, and a chain is checked like
-any call: `{a.__AS_JSON__().__AS_YAML__()}` writes the JSON text as a YAML
-string, while `{a.__AS_JSON__().__AS_TOML__()}` is a type error at the
-second link, since `__AS_TOML__` takes a table. **A dunder call that names
-no built-in — these four, or `__ENV__` (§5.1.3) — is akan** at the call,
+any call: `{a.__as_json__().__as_yaml__()}` writes the JSON text as a YAML
+string, while `{a.__as_json__().__as_toml__()}` is a type error at the
+second link, since `__as_toml__` takes a table. **A dunder call that names
+no built-in — these four, or `__env__` (§5.1.3) — is akan** at the call,
 naming the built-ins that exist: a dunder call names a built-in or
 nothing.
 
@@ -413,9 +413,9 @@ Joining it would render what §6 leaves to the consumer and make `yt`
 silently mean `y`.
 
 **An argument may not contain the call site** (§13.1). For a serializer
-the commonest form is an anchor — `{__ROOT__.__AS_JSON__()}` and
-`{__PARENT__.__AS_JSON__()}` are **akan**, while
-`{__ROOT__.blk.__AS_JSON__()}` and `{a.__AS_JSON__()}` are legal. An anchor
+the commonest form is an anchor — `{__ROOT__.__as_json__()}` and
+`{__PARENT__.__as_json__()}` are **akan**, while
+`{__ROOT__.blk.__as_json__()}` and `{a.__as_json__()}` are legal. An anchor
 is always an ancestor of the hole that names it, so encoding one needs the
 value of the very y-string doing the encoding; no document resolves it.
 The mistake is visible in the reference, so ehmon 7 puts the akan there,
@@ -424,13 +424,13 @@ at parse.
 ```
 blk:
   a: 1
-  me: y"{__PARENT__.__AS_JSON__()}"     # akan: me = {"a":1,"me":<me>}
+  me: y"{__PARENT__.__as_json__()}"     # akan: me = {"a":1,"me":<me>}
 ```
 
 **Nothing useful is lost**: an anchor followed by any step leading away
 from the hole is the shape authors want. *(Encoding "my parent, excluding
 the pair I sit in" was considered and declined: it terminates, but makes
-`__AS_JSON__()` mean different things depending on where it is written.)*
+`__as_json__()` mean different things depending on where it is written.)*
 
 **A target that is not resolved yet is not an encoding failure.** The
 call defers to a later pass of §5.3's fixpoint (§13.1), so two serializers
@@ -464,7 +464,7 @@ no marker carries yapyon's name. In brief (§14 has the detail):
 value is `None` or `""` is a silent reinterpretation (ehmon 7), and "the
 same bytes mean the same data" has to survive a serializer. A consumer
 wanting that pruning does it to its own tree first. **The one omission the
-format makes is TOML's `None`:** TOML has no null, so `__AS_TOML__()`
+format makes is TOML's `None`:** TOML has no null, so `__as_toml__()`
 leaves the key out of its table and records it in that table's
 `@_lexemes` as `"None"`, from which a yapyon-aware reader restores it.
 Nothing is lost; a plain TOML reader sees the key absent, as TOML tools
@@ -476,14 +476,14 @@ nothing else could read it as another type — so `"no"`, `"3"`, and
 or open a flow collection is left plain. yapyon exists partly because YAML
 guesses; emitting into it must not hand that problem to the reader.
 
-**`__AS_YAPYON__()` writes yapyon source**, so yapyon's own rules govern
+**`__as_yapyon__()` writes yapyon source**, so yapyon's own rules govern
 it and it carries everything the data model has. Its output is the
 argument as a record (§12) in the spelling §4.4 gives every yapyon writer:
 each value as written — its lexeme, so `v: 3.10` stays `3.10` and
 `hex'6869'` stays `hex'6869'` — and a value with no lexeme (a resolved
 y-string, a function result) in its canonical form.
 
-### 5.1.3 The environment: `$NAME` and `__ENV__`
+### 5.1.3 The environment: `$NAME` and `__env__`
 
 A hole may read **the environment of the process loading the document** —
 its own, and no other. Two spellings, one lookup:
@@ -491,24 +491,24 @@ its own, and no other. Two spellings, one lookup:
 ```
 paths:
   home: y"{$HOME}"
-  config: y"{__ENV__('XDG_CONFIG_HOME', default_config)}/app"
+  config: y"{__env__('XDG_CONFIG_HOME', default_config)}/app"
   default_config: y"{$HOME}/.config"
 ```
 
 - **`{$NAME}` is strict** (`GRAMMAR §G5`): the variable's value, and
   **akan** when it is not found — as Python's `os.environ["NAME"]` raises.
-- **`__ENV__(var_name, fallback=None)` is a built-in**: the variable's
+- **`__env__(var_name, fallback=None)` is a built-in**: the variable's
   value, or `fallback` when it is not found — as Python's
   `os.getenv(key, default=None)`. With one argument the fallback is `None`,
   which splices as `None` (§5.4) exactly as `f"{os.getenv('X')}"` does; an
   author writing it has asked for that. `var_name` is any argument that is
   a `str` — a literal or a reference — and anything else is a type error
   at the call (§13.3). A name `GRAMMAR §G5`'s `ENVNAME` cannot spell is
-  reached only this way: `{__ENV__("ProgramFiles(x86)")}`. `fallback` may
+  reached only this way: `{__env__("ProgramFiles(x86)")}`. `fallback` may
   be given by position or as `fallback=`, and takes anything an argument
   can; like any argument it is resolved before the call (§13.1), whether
   or not it is used.
-- **One lookup.** `{$X}` is `__ENV__("X")` except that not found is akan
+- **One lookup.** `{$X}` is `__env__("X")` except that not found is akan
   rather than a fallback. An implementation has one implementation of it.
 
 What the lookup sees:
@@ -519,7 +519,7 @@ What the lookup sees:
   it says so.
 - **Not found means not set *or* not exposed** (§5.1.4). A variable the
   load does not expose is indistinguishable from one that is unset: `{$X}`
-  is akan and `__ENV__` returns its fallback. The akan says so — *"`$X` is
+  is akan and `__env__` returns its fallback. The akan says so — *"`$X` is
   not set, or not exposed by this application"* — because the author who
   meets it is often not the one who can change what is exposed.
 - **Names compare as the environment system compares them** (§5.1.4):
@@ -532,7 +532,7 @@ What the lookup sees:
   POSIX environment holds bytes, and a value that does not decode cannot be
   a `str` without inventing characters for it.
 - **If the loader has turned environment access off**, every environment
-  reference is akan — *"environment access is off"* — including `__ENV__`
+  reference is akan — *"environment access is off"* — including `__env__`
   with a fallback: the fallback answers "not set", not "not allowed".
 
 Where the value goes is the ordinary rules': it is a `str`, so it splices
@@ -791,8 +791,8 @@ is — a list stays a list, a mapping a mapping.
   returns, typed by its declaration (§13.4) and rebuilt as a fresh value,
   so it is owned where it lands; a document copying a declared function's
   result is an assembly, as one splicing it is. A built-in's result is
-  copied the same way: `(__ENV__("X"))` is `None` when `X` is unset,
-  where `y"{__ENV__('X')}"` is the text `None`.
+  copied the same way: `(__env__("X"))` is `None` when `X` is unset,
+  where `y"{__env__('X')}"` is the text `None`.
 - **Limits.** A copy is one link of a dependency chain, and adds what it
   copies to the rendered size — the length of each string and bytes value
   in it, and one for each other value — so copies that double their input
@@ -1080,7 +1080,7 @@ function. The record is the restricted form — records are implied to be
 fixed, and this one is. The tier a document needs is computable from its
 bytes: a `y`, `yb`, or `ry` literal, a copy, or any parenthesis makes it
 a ledger (§5.6), a `yt` literal, a slot (§15), or
-an environment reference (`$NAME` or a call to `__ENV__`) a template, and a call to a declared
+an environment reference (`$NAME` or a call to `__env__`) a template, and a call to a declared
 function an assembly.
 
 The tiers fall into two **styles**. **Basic** documents — records and
@@ -1166,9 +1166,9 @@ An implementation **must state which tier it implements**. There are four:
   document's §3, §7, §10, §11, and §12.
 - **Ledger** — all of the above, plus `GRAMMAR §G4.7`, `§G5` except
   `ENV`, and this document's §4.4, §5 except §5.1.3–§5.1.4, and §14, and
-  §13 as it applies to the built-ins other than `__ENV__`.
+  §13 as it applies to the built-ins other than `__env__`.
 - **Template** — all of the above, plus `yt` (§6), `ENV`,
-  §5.1.3–§5.1.4, `__ENV__`, `LABEL` (`GRAMMAR §G4.9`), and slots (§15).
+  §5.1.3–§5.1.4, `__env__`, `LABEL` (`GRAMMAR §G4.9`), and slots (§15).
 - **Assembly** — all of the above, plus the whole of §13: contracts, their
   types, and calls to declared functions.
 
@@ -1228,10 +1228,10 @@ literal rendering of it, and not ownership of it.
   the call, naming the parameters. The function receives its arguments in
   declared order however the call spelled them, so a binding's own
   parameter names never matter. A **built-in**'s keywords are its own
-  (§5.1.2): `{cfg.__AS_JSON__(lexemes=False)}`. A keyword a built-in does
+  (§5.1.2): `{cfg.__as_json__(lexemes=False)}`. A keyword a built-in does
   not define is akan at the call.
 - **Tier.** A document that calls a declared function is an **assembly**;
-  one that holds a `yt` or reads the environment (`$NAME` or `__ENV__`)
+  one that holds a `yt` or reads the environment (`$NAME` or `__env__`)
   and calls no declared function is a **template**; calls to the other built-ins alone
   leave it a **ledger**. A record holds no calls
   (§12).
@@ -1568,7 +1568,7 @@ differences TOML forces: it has no null, and its integers are 64-bit.
 | list of mappings, non-empty | an array of tables: `[[a.b]]` |
 | any other list | an inline array (`a = [{}]` for a mixed one) |
 | multimap | `foo."@type" = "multimap"` and `foo.entries = [{registry = "a"}, {file = "b"}]` — an array of single-entry inline tables |
-| list or single value as the argument | **akan** — TOML has no top-level form for either (operator, 2026-10-13); refused by `__AS_TOML__`'s signature |
+| list or single value as the argument | **akan** — TOML has no top-level form for either (operator, 2026-10-13); refused by `__as_toml__`'s signature |
 | multimap root | `"@type" = "multimap"` and `entries = [...]` at the top level |
 
 **Layout:** an array is one line if it fits (§14.1); otherwise `[` stays
@@ -1584,7 +1584,7 @@ otherwise.
 
 ### 14.6 yapyon
 
-`__AS_YAPYON__()` writes the argument as a **record** (§12), every value
+`__as_yapyon__()` writes the argument as a **record** (§12), every value
 in its lexeme as written, or in its canonical form when it has none
 (§4.4): a string as a double-quoted literal, a number in decimal, a float
 as JSON writes it, bytes as `b"..."`, `True` / `False` / `None` as

@@ -601,7 +601,7 @@ class _RefParser:
                 if not spelled else
                 f"${spelled} is not an environment variable name: write ASCII "
                 f"letters, digits, and '_', not starting with a digit; "
-                f"{{__ENV__({spelled!r})}} reaches any other name")
+                f"{{__env__({spelled!r})}} reaches any other name")
         ref = Ref(False, [], source, env=name)
         if self.peek() == "." and self._dot_calls():
             self.i += 1

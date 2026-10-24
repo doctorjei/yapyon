@@ -113,7 +113,7 @@ def loads(text: str, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
     `provide` maps a `symbol` to the code for each declared without `from`
     (SPEC §13.2).
 
-    `env` is the environment a document's `{$NAME}` and `__ENV__` read
+    `env` is the environment a document's `{$NAME}` and `__env__` read
     (SPEC §5.1.3) — the process's own by default, copied when the load
     starts; `None` turns access off. `env_allow` is which of its names are
     exposed: the standard variables of this environment system by default
@@ -234,7 +234,7 @@ def tier_of(text: str, *, source: str | None = None) -> int:
     **2** — a ledger: it splices and calls built-ins, and its own bytes
     finish it, so it reduces to the same record on any machine. **3** — a
     template: something outside the document finishes it — the environment
-    it reads (`$NAME`, `__ENV__`), the consumer joining a `yt`'s parts, or
+    it reads (`$NAME`, `__env__`), the consumer joining a `yt`'s parts, or
     the consumer filling a slot (§15).
     **4** — an assembly: it calls a function a contract declares (§13.1).
 

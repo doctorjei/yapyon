@@ -9,6 +9,6 @@ w:
   mm:
     + k: 1
     + k: 2
-j: y"{mm.__AS_JSON__()}"
-t: y"{__ROOT__.w.__AS_TOML__()}"
-y: y"{mm.__AS_YAML__()}"
+j: y"{mm.__as_json__()}"
+t: y"{__ROOT__.w.__as_toml__()}"
+y: y"{mm.__as_yaml__()}"

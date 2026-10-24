@@ -6,4 +6,4 @@ s:
   b: b64"aGk="
   h: hex'6869'
   port: 0xff
-out: y"{s.__AS_JSON__()}"
+out: y"{s.__as_json__()}"

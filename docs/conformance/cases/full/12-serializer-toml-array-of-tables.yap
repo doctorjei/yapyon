@@ -6,4 +6,4 @@ cfg:
       on: True
     - name: "parity"
       on: False
-out: y"{cfg.__AS_TOML__()}"
+out: y"{cfg.__as_toml__()}"

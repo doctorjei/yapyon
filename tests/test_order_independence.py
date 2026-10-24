@@ -177,7 +177,7 @@ key: (k)
 # A serializer writes keys in document order — order is data (§5.1.2) — so
 # its output legitimately follows a reorder; those documents are left out.
 CASES = [(name, text) for name, text in documents()
-         if '"""' not in text and "__AS_" not in text]
+         if '"""' not in text and "__as_" not in text]
 CASES += [(f"dense/{n}", text) for n, text in enumerate(DENSE)]
 
 

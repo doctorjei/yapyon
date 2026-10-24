@@ -4,4 +4,4 @@ cfg:
   name: "gw"
   port: 8080
   on: True
-out: y"{cfg.__AS_JSON__()}"
+out: y"{cfg.__as_json__()}"
