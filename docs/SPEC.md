@@ -51,14 +51,15 @@ Every rule in both documents follows from seven guiding principles, the
 1. **Precision.** A value's type is fixed by its syntax or by a declared
    contract (§13) — for a copy (§5.6), by the syntax of the value it
    copies; it is never inferred from bare text. There are no plain
-   scalars: an unquoted word in value position is akan, never a string,
+   scalars: an unquoted word in value position — other than a bare call
+   (§5.6) — is akan, never a string,
    never a boolean. (YAML's implicit typing — the Norway problem — is
    unrepresentable.)
 2. **Reducibility.** Computation is driven by data and yields a document. A
    **record** computes nothing: every leaf is a literal, and loading one
    needs no resolver (§12). A **ledger** — a record with references to
    itself — splices named values into strings, copies named values whole
-   (§5.6), and applies only the format's own encodings (§5.1.2), and reduces to a record that is the
+   (§5.6), and applies only the format's own built-ins — its encodings and casts (§5.1.2, §5.1.5) — and reduces to a record that is the
    same on every system. A **template** is finished by something outside
    the document: it may read the environment of the process loading it
    (§5.1.3), and reduces to a record given that environment, and it may

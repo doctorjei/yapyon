@@ -745,7 +745,9 @@ parse tree to do so.
 - **An empty document is akan.** `document ::= block_value EOF` admits no
   empty production, and a file of only comments is empty.
 - **An unquoted word in value position is akan**, always, and is never a
-  string and never a boolean. There are no plain scalars. *(This is the single
+  string and never a boolean — unless it begins a bare call, a reference
+  chain that ends in a call (§G4.8), which is a `COPY`. There are no plain
+  scalars. *(This is the single
   rule that makes YAML's implicit typing — the Norway problem —
   unrepresentable.)*
 
