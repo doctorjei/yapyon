@@ -1,0 +1,1 @@
+{"expect": "akan", "rule": "SPEC §7", "why": "computed keys beginning with @ are reserved too"}

@@ -163,13 +163,14 @@ inert gate look identical from outside, and only the break tells them apart.
   a port that has no resolver.
 - **`full/` — the core of the full tier.** The lexeme rule (§5.4),
   nearest-wins resolution and the `__ROOT__` escape hatch (§5.2), relative
-  references `__PARENT__` / `__KEY__` (§5.1.1), the dot as sugar for the
-  bracket, indirect keys, negative indices and the multimap list view
+  references `__PARENT__` / `__KEY__` (§5.1.1), named and subscript
+  traversal, computed keys, negative indices, and the multimap list view
   (§5.1), chained splices through the fixpoint (§5.3), and all four
   serializers including TOML arrays of tables (§5.1.2).
 - **`error/` — the major refusals.** Non-canonical base64, invalid base64,
   duplicate keys including duplicates that appear only after folding, tab
-  indentation, unknown escapes, reserved quoted keys, dunder keys,
+  indentation, unknown escapes, empty keys, dunder keys, computed duplicates,
+  non-name keys used as names, and key dependency cycles,
   unbound holes, a serializer on a bare anchor, a multimap in a
   serializer, `None` in TOML, bytes in JSON, a `yt` in `__as_yapyon__()`,
   and a full document refused by `loads_record`.

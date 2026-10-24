@@ -68,7 +68,9 @@ def test_tutorial_block(block):
         got = value
         for key in path:
             got = got[key]
-        assert got == expected and type(got) is type(expected), (path, got)
+        assert got == expected, (path, got)
+        assert (isinstance(got, dict) if type(expected) is dict
+                else type(got) is type(expected)), (path, got)
 
 
 def test_tutorial_console_matches_bridge():

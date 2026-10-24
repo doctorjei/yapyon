@@ -26,15 +26,41 @@ from __future__ import annotations
 
 import copy
 import os
+from dataclasses import dataclass, field
 
 from ._digits import REFUSE_DIGITS
+from ._keys import key_error, name_key
+from .assembly import FillCheck, MergedMapping, merge_nodes
 from .environment import STANDARD_ENV, environment
 from .lexer import AkanError, Lexer, Yakamashiwa, fold_name
 from .parser import (Copy, Mapping, MultiMap, Node, Pair, Parser, Scalar,
                      Sequence, Slot, YString, children)
 from .resolver import REFUSE_DEPTH, REFUSE_SIZE, resolve
 
-__all__ = ["Tree", "Handle", "parse", "parse_file", "merge"]
+__all__ = ["Tree", "Handle", "Key", "parse", "parse_file", "merge"]
+
+
+@dataclass(frozen=True)
+class Key:
+    """An unresolved key's location, returned by Tree.keys/items.
+
+    Use it to index the same mapping without evaluating the key. Its lexeme
+    is display information, not key equality. It never exposes an AST node.
+    """
+
+    identity: int
+    lexeme: str = field(compare=False)
+
+    def __repr__(self):
+        return f"<key {self.lexeme}>"
+
+
+def _keys_pairs(node):
+    return node.walk_pairs() if isinstance(node, MergedMapping) else node.pairs
+
+
+def _key(pair):
+    return Key(pair.identity, pair.lexeme) if isinstance(pair.key, YString) else pair.key
 
 
 # --------------------------------------------------------------------------- #
@@ -194,8 +220,11 @@ class Tree:
         step = path[-1]
         if isinstance(parent, Mapping):
             pair = _pair(parent, step, path[:-1])
-            pair.value = new
-            parent.by_key[pair.key] = new
+            if isinstance(parent, MergedMapping) and parent.layers:
+                parent.edit_pair(pair, new)
+            else:
+                pair.value = new
+                parent.reindex()
         elif isinstance(parent, Sequence):
             parent.items[_index(parent, step, path[:-1])] = new
         else:
@@ -203,11 +232,18 @@ class Tree:
 
     def _place(self, path: tuple, new: Node) -> None:
         parent = self._node(path[:-1])
-        key = fold_name(path[-1])
-        pair = Pair(new.line, new.col, key, new, path[-1])
+        text = path[-1]
+        why = key_error(text)
+        if why:
+            raise ValueError(why)
+        named = name_key(text)
+        key = fold_name(text) if named else text
+        pair = Pair(new.line, new.col, key, new, text if named else "", named=named)
         pair.source = new.source
+        if isinstance(parent, MergedMapping) and parent.layers:
+            parent.layers.append(Mapping(new.line, new.col, [pair]))
         parent.pairs.append(pair)
-        parent.by_key[key] = new
+        parent.reindex()
 
     def _remove(self, path: tuple) -> None:
         if not path:
@@ -216,8 +252,11 @@ class Tree:
         step = path[-1]
         if isinstance(parent, Mapping):
             pair = _pair(parent, step, path[:-1])
-            parent.pairs.remove(pair)
-            del parent.by_key[pair.key]
+            if isinstance(parent, MergedMapping) and parent.layers:
+                parent.edit_pair(pair, remove=True)
+            else:
+                parent.pairs.remove(pair)
+                parent.reindex()
         elif isinstance(parent, Sequence):
             del parent.items[_index(parent, step, path[:-1])]
         else:
@@ -325,12 +364,18 @@ class Handle:
 
     def __contains__(self, key) -> bool:
         node = self._node
-        return isinstance(node, Mapping) and fold_name(key) in node.by_key
+        if not isinstance(node, Mapping):
+            return False
+        try:
+            _pair(node, key, self.path)
+        except KeyError:
+            return False
+        return True
 
     def __len__(self) -> int:
         node = self._node
         if isinstance(node, Mapping):
-            return len(node.pairs)
+            return len(_keys_pairs(node))
         if isinstance(node, Sequence):
             return len(node.items)
         if isinstance(node, MultiMap):
@@ -341,7 +386,7 @@ class Handle:
         """A mapping's keys, or a sequence's items as handles."""
         node = self._node
         if isinstance(node, Mapping):
-            return iter([pair.key for pair in node.pairs])
+            return iter([_key(pair) for pair in _keys_pairs(node)])
         if isinstance(node, Sequence):
             return iter([self[i] for i in range(len(node.items))])
         raise TypeError(f"a {self.kind} cannot be iterated; "
@@ -351,7 +396,7 @@ class Handle:
         node = self._node
         if not isinstance(node, Mapping):
             raise TypeError(f"a {self.kind} has no keys")
-        return [pair.key for pair in node.pairs]
+        return [_key(pair) for pair in _keys_pairs(node)]
 
     def items(self) -> list:
         return [(key, self[key]) for key in self.keys()]
@@ -394,9 +439,12 @@ class Handle:
             self.tree._replace(self.path, moved)
             return
         layers = [layer for layer in slot.layers if layer.pairs]
-        self._oblige(node, layers, slot)
+        layers = copy.deepcopy(layers)
+        checks = self._oblige(node, layers, slot)
         for layer in layers:
-            node = merge_nodes(node, copy.deepcopy(layer))
+            node = merge_nodes(node, layer)
+        if checks:
+            node.fill_checks += tuple(checks)
         self.tree._replace(self.path, node)
 
     # -- filling, in detail --------------------------------------------------
@@ -435,19 +483,32 @@ class Handle:
                     f"slot not yet filled, and the label goes through it; "
                     f"fill that one first (SPEC §15.4)",
                     slot.line, slot.col, slot.source)
-            if not isinstance(node, Mapping) or step not in node.by_key:
+            pair = node.key_pair(step, named=True) if isinstance(node, Mapping) else None
+            if pair is None:
                 raise AkanError(
                     f"{_label(slot)}: what {slot.label[0]!r} stands for has "
                     f"no {'.'.join(slot.label[1:i + 2])!r} (SPEC §15.4)",
                     slot.line, slot.col, slot.source)
-            node = node.by_key[step]
+            node = pair.value
         return copy.deepcopy(node)
 
-    def _oblige(self, filler: Node, layers: list, slot: Slot) -> None:
-        """SPEC §15.5: every abstract slot a fill brings in must be given a
-        value, at its place, by the filling slot's overrides."""
+    def _oblige(self, filler: Node, layers: list, slot: Slot) -> list:
+        """SPEC §15.5: defer only the comparison of keys not yet known."""
+        checks = []
         for path, abstract in _abstracts(filler):
-            if not any(_gives_value(layer, path) for layer in layers):
+            node, steps = filler, []
+            for step in path:
+                if isinstance(node, Mapping):
+                    pair = _pair(node, step, ())
+                    steps.append(pair)
+                    node = pair.value
+                else:
+                    steps.append(step)
+                    node = _child(node, step, ())
+            check = FillCheck(steps, layers, slot)
+            try:
+                done = check.check()
+            except AkanError:
                 where = ".".join(str(step) for step in path)
                 raise AkanError(
                     f"{_label(slot)}: what fills this slot has the abstract "
@@ -455,40 +516,10 @@ class Handle:
                     f"overrides give it no value — name what fills it "
                     f"({path[-1]}<label>: {{}}), pass it on ({path[-1]}<>: "
                     f"{{}}), or replace it (SPEC §15.5)",
-                    slot.line, slot.col, slot.source)
-
-
-# --------------------------------------------------------------------------- #
-# Merging — SPEC §15.2
-# --------------------------------------------------------------------------- #
-def merge_nodes(earlier: Node, later: Node) -> Node:
-    """`later` merged over `earlier`. Both are owned: the result may reuse
-    either's parts."""
-    if isinstance(later, Slot):
-        if isinstance(earlier, Slot) and earlier.abstract:
-            out = Slot(later.line, later.col, later.label,
-                       earlier.layers + later.layers, later.lexeme, later.key)
-            out.source = later.source
-            return out
-        return later
-    if isinstance(earlier, Slot):
-        if not earlier.abstract and isinstance(later, Mapping):
-            out = Slot(earlier.line, earlier.col, earlier.label,
-                       earlier.layers + [later], earlier.lexeme, earlier.key)
-            out.source = earlier.source
-            return out
-        return later
-    if isinstance(earlier, Mapping) and isinstance(later, Mapping):
-        pairs = []
-        for pair in earlier.pairs:
-            if pair.key in later.by_key:
-                pair.value = merge_nodes(pair.value, later.by_key[pair.key])
-            pairs.append(pair)
-        pairs += [pair for pair in later.pairs if pair.key not in earlier.by_key]
-        out = Mapping(earlier.line, earlier.col, pairs)
-        out.source = earlier.source
-        return out
-    return later
+                    slot.line, slot.col, slot.source) from None
+            if not done:
+                checks.append(check)
+        return checks
 
 
 # --------------------------------------------------------------------------- #
@@ -505,14 +536,14 @@ def _own(value) -> Node:
 def _steps(node: Node):
     """(step, child) for a mapping's pairs and a sequence's items."""
     if isinstance(node, Mapping):
-        return [(pair.key, pair.value) for pair in node.pairs]
+        return [(_key(pair), pair.value) for pair in _keys_pairs(node)]
     if isinstance(node, Sequence):
         return list(enumerate(node.items))
     return []
 
 
 def _child(node: Node, step, where: tuple) -> Node:
-    if isinstance(node, Mapping) and isinstance(step, str):
+    if isinstance(node, Mapping) and isinstance(step, (str, Key)):
         return _pair(node, step, where).value
     if isinstance(node, Sequence) and isinstance(step, int) \
             and not isinstance(step, bool):
@@ -523,10 +554,14 @@ def _child(node: Node, step, where: tuple) -> Node:
 
 
 def _pair(mapping: Mapping, key: str, where: tuple) -> Pair:
-    name = fold_name(key)
-    for pair in mapping.pairs:
-        if pair.key == name:
-            return pair
+    if isinstance(key, Key):
+        pair = next((p for p in _keys_pairs(mapping) if p.identity == key.identity), None)
+    elif isinstance(key, str):
+        pair = mapping.key_pair(key)
+    else:
+        pair = None
+    if pair is not None:
+        return pair
     raise KeyError(f"{_show(where + (key,))} is not in the tree")
 
 
@@ -563,16 +598,3 @@ def _abstracts(node: Node, path: tuple = ()):
         return
     for step, child in _steps(node):
         yield from _abstracts(child, path + (step,))
-
-
-def _gives_value(layer: Mapping, path: tuple) -> bool:
-    """Does an override layer put a value at `path`, or replace something
-    on the way there?"""
-    node = layer
-    for step in path:
-        if not isinstance(node, Mapping) or isinstance(step, int):
-            return True                      # an ancestor is replaced whole
-        if step not in node.by_key:
-            return False
-        node = node.by_key[step]
-    return True

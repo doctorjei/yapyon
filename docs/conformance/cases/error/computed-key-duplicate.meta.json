@@ -1,0 +1,1 @@
+{"expect": "akan", "rule": "SPEC §7", "why": "equal resolved key values in one mapping are duplicates"}

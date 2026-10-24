@@ -79,7 +79,7 @@ Yapyon has no ambient scope nor includes and is built to be completely auditable
 
 ## Element References
 
-A hole names a value. The shortcut style `a.b` is syntactic sugar for (equivalent to) `a["b"]`.
+A hole names a value. `a.b` selects a **name key**; `a["b"]` can also select a quoted or computed key. Quoted keys never become names, even when their text looks like an identifier.
 
 ```yapyon
 protocol: "messenger"

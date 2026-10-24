@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import os
 
+from ._keys import KeyMap, is_named, key_error, name_key
 from ._digits import REFUSE_DIGITS
 from .contract import Functions
 from .environment import STANDARD_ENV, environment
@@ -66,13 +67,16 @@ def build(node, source: str | None = None):
     if isinstance(node, Scalar):
         return node.value
     if isinstance(node, Mapping):
-        return {pair.key: build(pair.value, source) for pair in node.pairs}
+        out = KeyMap()
+        for pair in node.pairs:
+            out._put(pair.key, build(pair.value, source), pair.named)
+        return out
     if isinstance(node, Sequence):
         return [build(item, source) for item in node.items]
     if isinstance(node, MultiMap):
         multimap = OrderedMultimap()
         for entry in node.entries:
-            multimap.insert(entry.key, build(entry.value, source))
+            multimap.insert(entry.key, build(entry.value, source))._named = entry.named
         return multimap
     if isinstance(node, ResolvedTemplate):
         return Template(
@@ -167,7 +171,7 @@ def load(fp, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
 # them because a record admits no parentheses at all, `(1)` included
 # (operator, 2026-10-23: "parentheses suggest processing / computation").
 _DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR", "COPY", "LPAREN",
-                             "LABEL"})
+                             "LABEL", "YKEY"})
 
 
 def _name_of(fp, source: str | None) -> str | None:
@@ -402,18 +406,32 @@ def _wrap(value, current, chain: list, path: list, hits: list):
     """
     if isinstance(value, dict):
         node = Mapping(0, 0, [])
+        seen = set()
         for key, item in value.items():
-            child = _wrap(item, current, [(node, key)] + chain, path + [key],
-                          hits)
-            node.pairs.append(Pair(0, 0, key, child))
-            node.by_key[key] = child
+            why = key_error(key)
+            if why:
+                raise _PathAkan(why, _where(path + [key]))
+            named = is_named(value, key)
+            identity = fold_name(key) if named else key
+            if identity in seen:
+                raise _PathAkan(f"duplicate key {identity!r} after name folding",
+                                _where(path + [key]))
+            seen.add(identity)
+            child = _wrap(item, current, [(node, identity)] + chain, path + [key], hits)
+            node.pairs.append(Pair(0, 0, identity, child, named=named))
+        node.reindex()
     elif isinstance(value, OrderedMultimap):
         # A multimap's entry keys take no part in the search (§5.2), so its
         # entries add no frame — exactly as in a document.
         node = MultiMap(0, 0, [])
         for i, entry in enumerate(value):
-            node.entries.append(Pair(0, 0, entry.key, _wrap(
-                entry.value, current, chain, path + [f"+{i}"], hits)))
+            why = key_error(entry.key)
+            if why:
+                raise _PathAkan(why, _where(path + [f"+{i}"]))
+            named = name_key(entry.key) if entry._named is None else entry._named
+            key = fold_name(entry.key) if named else entry.key
+            node.entries.append(Pair(0, 0, key, _wrap(
+                entry.value, current, chain, path + [f"+{i}"], hits), named=named))
     elif isinstance(value, list):
         node = Sequence(0, 0, [_wrap(item, current, chain, path + [i], hits)
                                for i, item in enumerate(value)])

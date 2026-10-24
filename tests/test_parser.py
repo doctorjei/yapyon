@@ -249,9 +249,9 @@ def test_duplicate_keys_are_scoped_to_one_mapping():
     assert node.by_key["b"].by_key["name"].value == "y"
 
 
-def test_quoted_keys_are_akan():
-    akan('"a": 1\n', "quoted keys are reserved")
-    akan('x: {"a": 1}\n', "quoted keys are reserved")
+def test_quoted_keys_are_non_name_keys():
+    assert not parse('"a": 1\n').pairs[0].named
+    assert not parse('x: {"a": 1}\n').by_key["x"].pairs[0].named
 
 
 def test_numeric_keys_are_akan():

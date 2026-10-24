@@ -33,7 +33,9 @@ SINGLE_VALUES = [
 @pytest.mark.parametrize("text,value", SINGLE_VALUES)
 def test_any_value_is_a_document(text, value):
     loaded = loads(text + "\n")
-    assert loaded == value and type(loaded) is type(value)
+    assert loaded == value
+    assert (isinstance(loaded, dict) if type(value) is dict
+            else type(loaded) is type(value))
 
 
 @pytest.mark.parametrize("text,value", SINGLE_VALUES)

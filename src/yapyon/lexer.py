@@ -24,7 +24,7 @@ Design decisions implemented (from the design session):
         y, yb, yt, ry   — the y-family (holes live; {{ }} escapes)
     Unknown or non-canonical prefixes (F, BR, yr, ...) are akan by name.
   * Holes: strict braces. Every "{" opens a well-formed hole or is "{{";
-    every lone "}" is akan. `a.b` is sugar for `a["b"]` — the bracket is
+    every lone "}" is akan. A dot selects a name; the bracket is
     the general form and its content yields a key (quoted literal, integer
     index, or a reference whose value is the key). The dunder namespace is
     yapyon's: __ROOT__ and __PARENT__ lead a reference, __KEY__ ends one, and
@@ -237,12 +237,12 @@ class Ref:
     or an **environment variable** (`$NAME`, SPEC §5.1.3), in which case
     `env` is the name and nothing else is set: it takes no steps.
 
-    `a.b` is sugar for `a["b"]`: the bracket is the general form and its
-    content yields a key. So `steps` is a flat list of what to do next, and
-    a dotted segment and a quoted key produce the *same* step kind — the
-    equivalence is real rather than asserted.
+    `steps` retains the distinction between a name and a data-key subscript
+    (SPEC §7). A quoted key definition is not a name, even when its text
+    is an identifier.
 
-        ("key",   str)   a mapping key, however it was spelled
+        ("key",   str)   a folded name, leading or dotted
+        ("sub",   str)   exact text from a literal subscript
         ("index", int)   a list position; brackets only, since 0 is no
                          identifier
         ("ref",   Ref)   a key named by another reference, resolved in the
@@ -687,9 +687,6 @@ class _RefParser:
                 step = self._subscript()
                 if step[0] == "ref":
                     ref.shirans.extend(step[1].shirans)
-                elif step[0] == "shiran":
-                    ref.shirans.append(step[2])
-                    step = ("key", step[1])
                 ref.steps.append(step)
                 self.expect("]", "to close the subscript")
             elif ch and ch in ".?":                   # trap 1
@@ -852,9 +849,8 @@ class _RefParser:
 
     # -- sub ::= STRING | INDEX | ref ---------------------------------------
     def _subscript(self):
-        """`["k"]`, `[0]`, or `[ref]` — the three things a bracket may hold.
-        A quoted key that a dot could have reached comes back as
-        `("shiran", key, message)`: legal, equivalent, and the long way."""
+        """Read a subscript (GRAMMAR §G5), preserving exact string text.
+        Whether a dot could replace it is known only at resolution."""
         ch = self.peek()
         if not ch:
             raise RefError("unclosed '[' in a hole reference")
@@ -866,16 +862,7 @@ class _RefParser:
                 raise RefError(f"a bracket key is a string, an index, or a "
                                f"reference; {literal.lexeme} is "
                                f"{literal.token.kind.lower()}")
-            key = literal.value
-            if is_identifier(key) and not is_dunder(key) \
-                    and key not in KEYWORDS and reserved_fold(key) is None:
-                # Legal, and equivalent — but there is one canonical spelling.
-                # The register's middle rung: did you mean the plainer one?
-                q = literal.lexeme[-1]
-                return ("shiran", fold_name(key),
-                        f"[{q}{key}{q}] is the long way to write .{key}; both "
-                        f"name the same key")
-            return ("key", fold_name(key))
+            return ("sub", literal.value)
         if ch == "+":
             raise RefError("'+' is not an index sign; a position is written "
                            "without one, as [1]")
@@ -1158,6 +1145,14 @@ class Lexer:
             self.indents.pop()
             self._emit("DEDENT")
         self._emit("EOF")
+        for i, tok in enumerate(self.tokens[:-1]):
+            if tok.kind not in ("STRING", "YSTR"):
+                continue
+            j = i + 1
+            if self.tokens[j].kind == "LABEL":
+                j += 1
+            if self.tokens[j].kind == "COLON":
+                tok.kind = "QKEY" if tok.kind == "STRING" else "YKEY"
         return self.tokens
 
     # -- line starts: indentation + dash frames ------------------------------
@@ -1245,7 +1240,7 @@ class Lexer:
             return                                 # the parser's message
         if run.startswith("("):
             self._akan(f"{run!r} is not a valid key: parentheses group or "
-                       f"copy a value (§5.6), and keys are bare identifiers")
+                       f"copy a value (§5.6), and keys are names or strings")
         # The reason and the fix both come from the pinned table, never
         # the host's `\w` (trap 12: `²` is a word character to Python).
         first = run[0]
@@ -1510,7 +1505,7 @@ class Lexer:
         character, then continue characters, both from the pinned table.
 
         This is deliberately the same rule `_check_segment` applies to hole
-        segments, so every key is addressable from a hole. The EOF guard lives
+        segments, so every name key is addressable from a hole. The EOF guard lives
         in the predicates (trap 1)."""
         if not id_start(self._peek()):
             raise Yakamashiwa("_scan_identifier called off an identifier")
@@ -1651,6 +1646,8 @@ class Lexer:
             self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
                        prefix=prefix, parts=parts,
                        lexeme=self.text[start:self.pos])
+            if prefix in ("y", "ry"):
+                self._lex_label()
             return
 
         if prefix == "b64":
@@ -1671,6 +1668,8 @@ class Lexer:
                                           line, col)[0]
         self._emit(_TOKEN_KIND_FOR_PREFIX[prefix], value, line, col,
                    prefix=prefix, lexeme=self.text[start:self.pos])
+        if not prefix:
+            self._lex_label()
 
     def _scan_string_body(self, quote, triple, line, col, holes=False):
         """Scan a string body, dedenting block strings (SPEC 4.1).

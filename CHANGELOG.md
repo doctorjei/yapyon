@@ -36,6 +36,16 @@ depends on 0.5.0.
   A bare path is still akan, and its message now offers both readings.
 - GRAMMAR §G4.3 states why `03` is akan as a literal: readers disagree
   whether `010` is 8 or 10.
+- **§7: quoted and computed string keys.** Plain quoted keys work in records;
+  `y"…"` and `ry"…"` keys resolve through the same machinery as values.
+  Quoted keys are not names: subscript through a named parent to reach them.
+  Key equality is resolved string equality; duplicates within a mapping are
+  akan, while matching keys across merged layers merge with layer precedence.
+  `__KEY__` returns the key text. Empty keys, dunders, and `@`-keys are refused.
+- Tree walking exposes pending keys as opaque `Key` locations without
+  evaluating them. Fills and merges remain before resolution. Record output
+  quotes resolved computed keys; contract results may carry any legal string
+  key. JSON/TOML metadata paths escape `~` and `/` to keep keys unambiguous.
 
 ### Changed (breaking)
 
@@ -44,6 +54,11 @@ depends on 0.5.0.
   `__as_toml__`, `__as_yaml__`, `__as_yapyon__`, and `__env__`. The old
   names are unknown built-ins. The anchors stay `__ROOT__`, `__PARENT__`,
   and `__KEY__`; declared functions use upper snake case by convention.
+- Loaded mappings are dict subclasses carrying name/non-name key metadata,
+  preserving `lookup` semantics. Normal dict indexing and equality remain;
+  exact `type(value) is dict` checks should use `isinstance(value, dict)`.
+- The avoidable-subscript warning now occurs during resolution, when the
+  target's key kind is known; lexer/parser-only operations cannot decide it.
 
 ---
 

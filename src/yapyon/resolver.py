@@ -45,6 +45,8 @@ import re
 from typing import NamedTuple
 
 from ._digits import REFUSE_DIGITS, decimal_text, int_from_decimal
+from ._keys import key_error, name_key
+from .assembly import MergedMapping
 from .contract import (BindError, Declared, Lender, ResultError,
                        float_misfit, result_node)
 from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
@@ -101,10 +103,11 @@ class _At(NamedTuple):
 # Sites: an unresolved y-string, its scope chain, and how to replace it
 # --------------------------------------------------------------------------- #
 class _Site:
-    __slots__ = ("node", "chain", "replace")
+    __slots__ = ("node", "chain", "replace", "key", "reads")
 
-    def __init__(self, node: YString, chain: list, replace):
+    def __init__(self, node: YString, chain: list, replace, *, key=False):
         self.node, self.chain, self.replace = node, chain, replace
+        self.key, self.reads = key, []
 
 
 def _collect(node: Node, chain: list, sites: list, replace) -> None:
@@ -119,14 +122,28 @@ def _collect(node: Node, chain: list, sites: list, replace) -> None:
         # only in not being joined (§6).
         sites.append(_Site(node, chain, replace))
         return
-    if isinstance(node, Mapping):
-        for pair in node.pairs:
-            _collect(pair.value, [(node, pair.key)] + chain, sites,
-                     _pair_slot(node, pair))
-        return
-    if isinstance(node, MultiMap):
-        for entry in node.entries:
-            _collect(entry.value, chain, sites, _entry_slot(entry))
+    if isinstance(node, MergedMapping):
+        node.finish()
+        if node.layers:
+            for layer in node.key_layers():
+                for pair in layer.pairs:
+                    if isinstance(pair.key, YString):
+                        sites.append(_Site(pair.key, [(node, pair)] + chain,
+                                           _key_slot(layer, pair), key=True))
+            for pair in node.visible_pairs():
+                if pair.named and node.waiting_for_name(pair.key) is None:
+                    _collect(pair.value, [(node, pair)] + chain, sites,
+                             _pair_slot(node, pair))
+            return
+    if isinstance(node, (Mapping, MultiMap)):
+        pairs = node.pairs if isinstance(node, Mapping) else node.entries
+        for pair in pairs:
+            scope = [(node, pair)] + chain if isinstance(node, Mapping) else chain
+            if isinstance(pair.key, YString):
+                sites.append(_Site(pair.key, scope, _key_slot(node, pair), key=True))
+            _collect(pair.value, scope, sites,
+                     _pair_slot(node, pair) if isinstance(node, Mapping)
+                     else _entry_slot(pair))
         return
     if isinstance(node, Sequence):
         for index, item in enumerate(node.items):
@@ -134,11 +151,31 @@ def _collect(node: Node, chain: list, sites: list, replace) -> None:
         return
 
 
+def _key_slot(container, pair):
+    def slot(new):
+        why = key_error(new.value)
+        if why:
+            raise AkanError(why, pair.line, pair.col, pair.source)
+        pair.key, pair.key_node, pair.lexeme = new.value, new, ""
+        new.source = pair.source
+        if isinstance(container, Mapping):
+            other = container._pairs_by_key.get(pair.key)
+            if other is not None and other is not pair:
+                first, later = [p for p in container.pairs if p is pair or p is other]
+                raise AkanError(f"duplicate key {pair.key!r} (first defined "
+                                f"on line {first.line})", later.line,
+                                later.col, later.source)
+            container._pairs_by_key[pair.key] = pair
+            container.by_key[pair.key] = pair.value
+    return slot
+
+
 def _pair_slot(mapping: Mapping, pair):
     def slot(new):
         pair.value = new
-        mapping.by_key[pair.key] = new           # the index must stay fresh:
-    return slot                                  # lookups run during resolution
+        if isinstance(pair.key, str):
+            mapping.by_key[pair.key] = new
+    return slot
 
 
 def _entry_slot(entry):
@@ -193,6 +230,8 @@ class Resolver:
         self.max_size = max_size             # warn tier -- see the constants
         self._warn = warn
         self.warnings: list[str] = []
+        self._bracket_seen = set()
+        self._key_reads = []
         self.rendered = 0
         self._depth: dict[int, int] = {}     # id(resolved Scalar) -> its depth
         self._facts: dict[int, tuple] = {}   # id(settled node) -> (node, size,
@@ -240,10 +279,17 @@ class Resolver:
         if slot is not None:
             self._akan(unfilled_message(slot), slot)
         holder = [self.root]
-        sites: list[_Site] = []
-        _collect(self.root, [], sites, lambda new: holder.__setitem__(0, new))
-
-        while sites:
+        while True:
+            self.root = holder[0]
+            sites: list[_Site] = []
+            _collect(self.root, [], sites, lambda new: holder.__setitem__(0, new))
+            self._verify_key_reads()
+            _check_fills(self.root)
+            slot = _unfilled(self.root)
+            if slot is not None:
+                self._akan(unfilled_message(slot), slot)
+            if not sites:
+                break
             deferred, progress = [], False
             for site in sites:
                 value = self._try(site)
@@ -251,13 +297,47 @@ class Resolver:
                     deferred.append(site)
                 else:
                     site.replace(value)
+                    if site.key and site.reads:
+                        self._key_reads.append(site)
                     progress = True
             if deferred and not progress:
                 self._akan_stuck(deferred)
-            sites = deferred
         self.root = holder[0]
         self._warn_tier()
         return self.root
+
+    def _verify_key_reads(self):
+        """A key may read a known name while cross-layer matches are pending.
+
+        Matching must not then change the very binding used to compute that
+        key. Such a dependency is circular, not permission to freeze an old
+        layer's value. Recheck paths only, never re-execute calls.
+        """
+        waiting = []
+        for site in self._key_reads:
+            if any(isinstance(m, MergedMapping) and m.layers for m, _ in site.chain):
+                waiting.append(site)
+                continue
+            probe = _Site(site.node, site.chain, None)
+            pending = False
+            for parsed, ref, previous in site.reads:
+                try:
+                    current = self._lookup_parsed(parsed, ref, probe)
+                except AkanError:
+                    current = None
+                if isinstance(current, YString):
+                    pending = True
+                    continue
+                same = current is previous or (
+                    isinstance(current, Scalar) and isinstance(previous, Scalar)
+                    and current.type == previous.type and current.value == previous.value)
+                if not same:
+                    self._akan("computed key forms a cycle: matching its key "
+                               f"changes the binding of {{{ref}}} used to compute it",
+                               site.node)
+            if pending:
+                waiting.append(site)
+        self._key_reads = waiting
 
     def _warn_tier(self) -> None:
         """§5.3's warn tier: one shiran each, after the run, or none.
@@ -413,6 +493,10 @@ class Resolver:
         only a pending node is ever replaced — so the answer is kept, which
         is what keeps a chain of copies from re-walking what it copies.
         The node itself is kept beside it, so a recycled `id` cannot match."""
+        if isinstance(node, MergedMapping):
+            node.finish()
+            if node.layers:
+                return None
         known = self._facts.get(id(node))
         if known is not None and known[0] is node:
             return known[1], known[2]
@@ -459,6 +543,8 @@ class Resolver:
             raise Yakamashiwa(f"unresolved {type(node).__name__} reached "
                               f"the copy step")
         new.__dict__ = fields
+        if isinstance(new, Mapping):
+            new.reindex()
         depth = self._depth.get(id(node))
         if depth is not None:
             self._depth[id(new)] = depth
@@ -494,9 +580,7 @@ class Resolver:
 
     def _lookup(self, ref: str, site: _Site) -> Node:
         """Walk a parsed reference (GRAMMAR §G5) from its anchor to its target.
-
-        `a.b` is sugar for `a["b"]`, so both arrive here as the same step and
-        the equivalence needs no separate code path.
+        Dot and subscript steps share traversal, but differ in key visibility.
         """
         parsed = parse_ref(ref)
         if parsed.key:                               # §5.1.1: names a position
@@ -513,6 +597,7 @@ class Resolver:
         if parsed.env is not None:                   # §5.1.3: {$NAME}
             return self._env(parsed.env, ref, site, strict=True)
         steps = list(parsed.steps)
+        trace = [] if site.key else None
         if parsed.root:
             current = self.root
         elif parsed.parents:
@@ -521,7 +606,10 @@ class Resolver:
             if not steps or steps[0][0] != "key":
                 raise Yakamashiwa(f"reference {ref!r} does not begin with a "
                                   f"name")
-            current = self._search(steps.pop(0)[1], site)
+            first = steps.pop(0)
+            if trace is not None:
+                trace.append(first)
+            current = self._search(first[1], site)
         for step in steps:
             if isinstance(current, YString):
                 # Waiting on a y-string mid-walk (a subscript's key, or the
@@ -529,7 +617,10 @@ class Resolver:
                 # fixpoint does for any target not resolved yet. Judging it
                 # now would make the answer depend on document order (trap 4).
                 return current
-            current = self._step(current, step, ref, site)
+            current = self._step(current, step, ref, site, trace)
+        if site.key and not isinstance(current, YString):
+            frozen = Ref(parsed.root, trace, ref, parents=parsed.parents)
+            site.reads.append((frozen, ref, current))
         return current
 
     # -- §5.1.1's relative anchors ----------------------------------------------
@@ -546,16 +637,21 @@ class Resolver:
         return site.chain[hops - 1][0]
 
     def _key_of(self, parsed: Ref, ref: str, site: _Site) -> Node:
-        """`__KEY__`: the key of the pair this hole sits in, or of an
-        enclosing one. A key is always a UAX #31 identifier, so it is
-        closure-safe as text by construction (§5.5); into a `yb` it is
-        text→bytes and the ordinary law-5 akan catches it with no special
-        case here."""
+        """`__KEY__`: the text of this pair's key, or an enclosing one's.
+        A pending key defers like a pending value; a resolved key carries
+        its dependency depth. Text→bytes still follows §5.5's ordinary rule.
+        """
         if parsed.parents >= len(site.chain):
             self._akan(f"{{{ref}}}: {self._too_far(parsed.parents + 1, site)}",
                        site.node)
-        name = site.chain[parsed.parents][1]
-        return Scalar(site.node.line, site.node.col, "str", name)
+        branch = site.chain[parsed.parents][1]
+        if isinstance(branch, Pair):
+            if isinstance(branch.key, YString):
+                return branch.key
+            if branch.key_node is not None:
+                return branch.key_node
+            branch = branch.key
+        return Scalar(site.node.line, site.node.col, "str", branch)
 
     # -- §13.1 calls ----------------------------------------------------------
     def _call(self, call: Call, ref: str, site: _Site) -> Node:
@@ -765,16 +861,14 @@ class Resolver:
             if not (isinstance(key, Scalar) and key.type == "str"):
                 self._akan(f"{{{ref}}}: __get__() on a multimap takes a str "
                            f"key", key)
-            name = fold_name(key.value)
-            return self._clone(Sequence(at.line, at.col, [
-                entry.value for entry in container.entries
-                if entry.key == name]))
+            return self._clone(self._child(container, key.value, ref, at,
+                                           spelled_out=False))
         if isinstance(container, Mapping):
             if not (isinstance(key, Scalar) and key.type == "str"):
                 self._akan(f"{{{ref}}}: __get__() on a mapping takes a str "
                            f"key", key)
-            found = container.by_key.get(fold_name(key.value))
-            return default if found is None else self._clone(found)
+            pair = container.key_pair(key.value)
+            return default if pair is None else self._clone(pair.value)
         if isinstance(container, Sequence):
             if not (isinstance(key, Scalar) and key.type == "int"):
                 self._akan(f"{{{ref}}}: __get__() on a list takes an int "
@@ -979,7 +1073,7 @@ class Resolver:
                 f"is {depth} level{'' if depth == 1 else 's'} away and has no "
                 f"key of its own")
 
-    def _step(self, node: Node, step, ref: str, site: _Site) -> Node:
+    def _step(self, node: Node, step, ref: str, site: _Site, trace=None) -> Node:
         """One traversal step: a key, an integer index, or a key named by
         another reference."""
         kind, payload = step
@@ -993,12 +1087,18 @@ class Resolver:
             # A resolved key is whatever it resolved to: an int indexes a
             # list, exactly as a literal one would. The two spellings of a
             # subscript must not disagree about what the value means.
+            if trace is not None:
+                trace.append(("index" if isinstance(key, int) else "sub", key))
             if isinstance(key, int):
                 return self._index(node, key, ref, site.node)
             return self._child(node, key, ref, site.node, spelled_out=False)
+        if trace is not None:
+            trace.append(step)
         if kind == "index":
             return self._index(node, payload, ref, site.node)
-        return self._child(node, payload, ref, site.node, spelled_out=True)
+        return self._child(node, payload, ref, site.node,
+                           spelled_out=kind == "sub", named=kind == "key",
+                           key_read=site.key)
 
     def _subscript_value(self, inner: Ref, ref: str, site: _Site):
         """Resolve `[someref]` to the key it names."""
@@ -1010,9 +1110,7 @@ class Resolver:
                        f"a string or a number to use as a key, not a "
                        f"container", site.node)
         if target.type == "str":
-            # A resolved key means what a written one means, so it is folded
-            # the same way (SPEC §7): `p: "ｎａｍｅ"` then `{d[p]}` finds `name`.
-            return fold_name(target.value)
+            return target.value
         if target.type == "int":
             return target.value
         self._akan(f"{{{ref}}}: the subscript {{{inner.text}}} names a "
@@ -1036,36 +1134,71 @@ class Resolver:
         return node.items[i]
 
     def _child(self, node: Node, seg, ref: str, at: YString,
-               spelled_out: bool = True) -> Node:
+               spelled_out: bool = True, named: bool = False,
+               key_read: bool = False) -> Node:
         if isinstance(seg, int):
             self._akan(f"{{{ref}}}: {seg} is a number, and only a list takes "
                        f"one — write a key here", at)
-        if isinstance(node, MultiMap):
-            # §7.1 by-key traversal is a LIST VIEW: every value filed under
-            # that key, in order. Nothing is picked, so nothing is guessed —
-            # 0 entries give an empty list, N give N.
-            items = [entry.value for entry in node.entries if entry.key == seg]
-            return Sequence(node.line, node.col, items)
-        if isinstance(node, Mapping):
-            if seg not in node.by_key:
-                self._akan(f"{{{ref}}}: there is no key {seg!r} here", at)
-            return node.by_key[seg]
+        if isinstance(node, MergedMapping):
+            node.finish()
+            pending = (None if named and key_read else
+                       node.waiting_for_name(seg) if named else node.pending_key())
+            if pending is not None:
+                return pending
+        if isinstance(node, (Mapping, MultiMap)):
+            pairs = (node.visible_pairs() if isinstance(node, MergedMapping)
+                     else node.pairs if isinstance(node, Mapping) else node.entries)
+            if not named:
+                pending = next((p.key for p in pairs if isinstance(p.key, YString)), None)
+                if pending is not None:
+                    return pending
+            if isinstance(node, MultiMap):
+                matches = node.key_pairs(seg, named=named)
+                if spelled_out and matches and all(p.named for p in matches):
+                    self._bracket_warning(seg, ref, at)
+                return Sequence(node.line, node.col, [p.value for p in matches])
+            pair = node.key_pair(seg, named=named)
+            if pair is None:
+                hint = ("; quoted and computed keys are not names — use a "
+                        "subscript through their parent" if named else "")
+                self._akan(f"{{{ref}}}: there is no key {seg!r} here{hint}", at)
+            if spelled_out and pair.named:
+                self._bracket_warning(seg, ref, at)
+            return pair.value
         if isinstance(node, Sequence):
             self._akan(f"{{{ref}}}: cannot look up {seg!r} in a list; index "
                        f"it with brackets instead", at)
         self._akan(f"{{{ref}}}: cannot look up {seg!r}, because the value "
                    f"named before it is not a mapping", at)
 
+    def _bracket_warning(self, key: str, ref: str, at: YString):
+        if not name_key(key):
+            return
+        token = (id(at), ref, key)
+        if token not in self._bracket_seen:
+            self._bracket_seen.add(token)
+            self._shiran(f"[{key!r}] is the long way to write .{key}; both "
+                         f"name the same key", at)
+
     def _search(self, name: str, site: _Site) -> Node:
         hits = []
         for level, (mapping, branch) in enumerate(site.chain):
-            if level == 0 and name == branch:        # not the current key
+            own = branch.key if isinstance(branch, Pair) else branch
+            if level == 0 and name == own:
                 continue
-            if name in mapping.by_key:
-                hits.append((level, mapping))
+            if isinstance(mapping, MergedMapping):
+                mapping.finish()
+            pair = mapping.key_pair(name, named=True)
+            if pair is not None:
+                pending = (mapping.waiting_for_name(name)
+                           if isinstance(mapping, MergedMapping) and not site.key else None)
+                hits.append((level, pending if pending is not None else pair.value))
         if not hits:
+            hint = ("; quoted and computed keys are not names — use a "
+                    "subscript through a named parent"
+                    if any(not p.named for m, _ in site.chain for p in m.pairs) else "")
             self._akan(f"no value named {name!r} is in scope here"
-                       f"{_dollar_hint_for(site.node, name)}", site.node)
+                       f"{_dollar_hint_for(site.node, name)}{hint}", site.node)
 
         # Nearest wins (SPEC §5.2). Shadowing an outer definition is NOT
         # warned about: the rule is total and deterministic, so there is
@@ -1073,25 +1206,42 @@ class Resolver:
         # correct layered config while naming a "fix" ({__ROOT__.x}) that
         # changes the resolved value. Removed 2026-09-14; see
         # DESIGN_RATIONALE.md's diagnostics-register section.
-        level, mapping = hits[0]
-        return mapping.by_key[name]
+        level, value = hits[0]
+        return value
 
 
 def _children(node: Node) -> list:
-    if isinstance(node, Mapping):
-        return [pair.value for pair in node.pairs]
-    if isinstance(node, MultiMap):
-        return [entry.value for entry in node.entries]
-    if isinstance(node, Sequence):
-        return list(node.items)
-    return []
+    if isinstance(node, MergedMapping):
+        node.finish()
+        if node.layers:
+            return ([p.key for layer in node.key_layers() for p in layer.pairs
+                     if isinstance(p.key, YString)]
+                    + [p.value for p in node.visible_pairs()])
+    out = children(node)
+    if isinstance(node, (Mapping, MultiMap)):
+        pairs = node.pairs if isinstance(node, Mapping) else node.entries
+        out += [p.key_node for p in pairs if p.key_node is not None]
+    return out
+
+
+def _check_fills(node: Node):
+    if node.fill_checks:
+        node.fill_checks = tuple(check for check in node.fill_checks if not check.check())
+    for child in _children(node):
+        _check_fills(child)
 
 
 def _unfilled(node: Node) -> Slot | None:
     """The first slot left in a tree, in document order (SPEC §15.6)."""
     if isinstance(node, Slot):
         return node
-    for child in children(node):
+    if isinstance(node, MergedMapping):
+        node.finish()
+        nested = [p.value for p in node.visible_pairs()
+                  if not node.layers or p.named and node.waiting_for_name(p.key) is None]
+    else:
+        nested = children(node)
+    for child in nested:
         found = _unfilled(child)
         if found is not None:
             return found

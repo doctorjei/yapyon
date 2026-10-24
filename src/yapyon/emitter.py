@@ -265,7 +265,18 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
     out = []
     for pair in pairs:
         inline = _inline(pair.value, level, source)
-        head = f"{pad}{marker}{pair.lexeme or pair.key}:"
+        if isinstance(pair.key, YString):
+            raise AkanError(deferred_message("YKEY", pair.key.prefix),
+                            pair.line, pair.col, pair.source or source)
+        spelling = pair.lexeme or (pair.key if pair.named else
+                    _scalar(Scalar(pair.line, pair.col, "str", pair.key)))
+        key_lines = _lexeme_lines(spelling, level + (1 if marker else 0))
+        if len(key_lines) > 1:
+            out.append(f"{pad}{marker}{key_lines[0]}")
+            out.extend(key_lines[1:-1])
+            head = key_lines[-1] + ":"
+        else:
+            head = f"{pad}{marker}{key_lines[0]}:"
         flow = _flow(pair.value, source)
         if flow is not None and _fits(f"{head} {flow}"):
             inline = [flow]

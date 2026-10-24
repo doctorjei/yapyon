@@ -35,6 +35,7 @@ from collections.abc import Sequence as _SequenceABC
 
 from ._digits import REFUSE_DIGITS, WARN_DIGITS, decimal_digits
 from .lexer import AkanError, Lexer, fold_name, is_dunder, is_identifier
+from ._keys import is_named, key_error, name_key
 from .parser import Mapping, MultiMap, Node, Pair, Parser, Scalar, Sequence
 from .typespec import (WIDENED, Type, TypeSpecError, choose, choose_value,
                        parse_type, show, value_kind)
@@ -288,8 +289,14 @@ class BorrowedMapping(_Borrow, _MappingABC):
     __slots__ = ()
 
     def __getitem__(self, key):
-        return self._lend(self._node.by_key[fold_name(key)]
-                          if isinstance(key, str) else self._node.by_key[key])
+        pair = self._node.key_pair(key) if isinstance(key, str) else None
+        if pair is None:
+            raise KeyError(key)
+        return self._lend(pair.value)
+
+    def _is_named(self, key):
+        pair = self._node.key_pair(key, named=True)
+        return pair is not None
 
     def __iter__(self):
         return (pair.key for pair in self._node.pairs)
@@ -333,12 +340,11 @@ class BorrowedMultimap(_Borrow):
         return tuple(dict.fromkeys(entry.key for entry in self._node.entries))
 
     def get(self, key, default=()):
-        found = tuple(self._lend(e.value) for e in self._node.entries
-                      if e.key == fold_name(key))
+        found = tuple(self._lend(e.value) for e in self._node.key_pairs(key))
         return found or default
 
     def __contains__(self, key):
-        return any(e.key == fold_name(key) for e in self._node.entries)
+        return bool(self._node.key_pairs(key))
 
     def __repr__(self):
         return f"BorrowedMultimap({list(self)!r})"
@@ -433,17 +439,20 @@ def _node(value, alt: Type, at, max_digits, warn) -> Node:
                                     for v in value])
     entries = value.items() if kind == "dict" else value
     pairs, seen = [], set()
-    for key, child in entries:
-        if not isinstance(key, str) or not is_identifier(key) \
-                or is_dunder(fold_name(key)):
-            raise ResultError(f"returned the key {key!r}, which is not a "
-                              f"name a document could write (§7)")
-        folded = fold_name(key)
-        if kind == "dict" and folded in seen:
-            raise ResultError(f"returned two keys that fold to {folded!r}")
-        seen.add(folded)
-        pairs.append(Pair(line, col, folded,
-                          _child(child, item, at, max_digits, warn)))
+    for entry in entries:
+        key, child = entry
+        why = key_error(key)
+        if why:
+            raise ResultError(f"returned the key {key!r}: {why} (§7)")
+        named = is_named(value, key) if kind == "dict" else getattr(entry, "_named", None)
+        if named is None:
+            named = name_key(key)
+        identity = fold_name(key) if named else key
+        if kind == "dict" and identity in seen:
+            raise ResultError(f"returned two keys that fold to {identity!r}")
+        seen.add(identity)
+        pairs.append(Pair(line, col, identity,
+                          _child(child, item, at, max_digits, warn), named=named))
     if kind == "dict":
         return Mapping(line, col, pairs)
     return MultiMap(line, col, pairs)

@@ -21,14 +21,14 @@ def run(stage, text):
                           input=text, capture_output=True, text=True)
 
 
-@pytest.mark.parametrize("module", ["lexer", "parser"])
+@pytest.mark.parametrize("module", ["expand"])
 def test_a_shiran_is_shown_by_default(module):
     done = run(module, WARNS)
     assert "shiran:" in done.stderr
     assert "the long way to write .bar" in done.stderr
 
 
-@pytest.mark.parametrize("module", ["lexer", "parser"])
+@pytest.mark.parametrize("module", ["expand"])
 def test_a_shiran_does_not_reach_stdout(module):
     # stdout is the payload -- for `record` it is yapyon meant to be
     # redirected into a file, and a diagnostic there would corrupt it.
@@ -36,7 +36,7 @@ def test_a_shiran_does_not_reach_stdout(module):
     assert "shiran:" not in done.stdout
 
 
-@pytest.mark.parametrize("module", ["lexer", "parser"])
+@pytest.mark.parametrize("module", ["expand"])
 def test_a_shiran_does_not_change_the_exit_status(module):
     # legal but suspicious: a pipeline must not break because of one
     assert run(module, WARNS).returncode == 0

@@ -19,7 +19,7 @@ def test_the_empty_multimap(text):
 
 
 def test_an_empty_mapping_is_still_a_mapping():
-    assert loads("a: {}\n")["a"] == {} and type(loads("a: {}\n")["a"]) is dict
+    assert loads("a: {}\n")["a"] == {} and isinstance(loads("a: {}\n")["a"], dict)
     assert loads("a: {+}\n")["a"] != loads("a: {}\n")["a"]   # §7.1: never equal
 
 

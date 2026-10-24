@@ -109,6 +109,11 @@ def _what(node: Node) -> str:
     return "list" if isinstance(node, Sequence) else "value"
 
 
+def _lexeme_path(path) -> str:
+    """§14.2: JSON Pointer segment escaping, without a leading slash."""
+    return "/".join(part.replace("~", "~0").replace("/", "~1") for part in path)
+
+
 class _JsonBuilder:
     def __init__(self, lexemes: bool, dropped: list):
         self.lexemes, self.dropped = lexemes, dropped
@@ -117,7 +122,7 @@ class _JsonBuilder:
         if table is None:
             self.dropped.append(text)
         else:
-            table["/".join(path)] = text
+            table[_lexeme_path(path)] = text
 
     def value(self, node: Node, table, path) -> _J:
         if isinstance(node, Mapping):
@@ -468,7 +473,7 @@ class _Toml:
     def omitted(self, pair, own: dict) -> bool:
         """`None` in a table: the key is left out, and recorded (§14.5)."""
         if isinstance(pair.value, Scalar) and pair.value.type == "none":
-            own[pair.key] = "None"
+            own[_lexeme_path([pair.key])] = "None"
             return True
         return False
 
@@ -486,7 +491,7 @@ class _Toml:
         for i, entry in enumerate(node.entries):
             path = ["entries", str(i)]
             if isinstance(entry.value, Scalar) and entry.value.type == "none":
-                own["/".join(path)] = "None"
+                own[_lexeme_path(path)] = "None"
                 items.append(_T("text", "{}"))
                 continue
             value = _tone(self.inline(entry.value, own, path))
@@ -494,7 +499,7 @@ class _Toml:
         return _T("arr", items)
 
     def scalar(self, node: Scalar, table: dict, path: list) -> str:
-        where = "/".join(path)
+        where = _lexeme_path(path)
         if node.type == "none":                  # in an array: a stand-in
             table[where] = "None"
             return '"None"'

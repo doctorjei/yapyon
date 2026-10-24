@@ -64,7 +64,7 @@ def test_a_shiran_carries_the_source_too():
     seen = []
     loads('a:\n  bar: "X"\nu: y"{a[\'bar\']}"\n', warn=seen.append,
           source="sh.yap")
-    assert seen[0].startswith("shiran: sh.yap:3:5: ")
+    assert seen[0].startswith("shiran: sh.yap:3:3: ")  # resolved at the y-string
 
 
 def test_is_record_names_the_source_when_the_text_will_not_lex():

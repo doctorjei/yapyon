@@ -78,7 +78,23 @@ inline: {burst: 100, sustained: 25}
   for a reason the spec records; a date, for one, is a string until a
   program says otherwise.
 
-Keys are bare identifiers, and a key may appear only once in a mapping:
+Keys are bare identifiers or strings. A plain quoted key is allowed in a
+record; a `y`/`ry` key is computed and needs resolution:
+
+```yapyon
+provider: "moonshot-ai"
+providers:
+  y"{provider}": {port: 443}
+selected: (providers[provider])  # -> {"port": 443}
+```
+
+Only bare keys are **names**. A quoted or computed key, even `"model":`,
+is reached by a subscript through a named parent, not by `.model` or a
+bare `{model}` reference. Keys are equal when their resulting strings are
+equal, regardless of how those strings were spelled or computed. Empty
+keys, dunders, and keys beginning with `@` are refused (§7).
+
+A key may appear only once in a mapping:
 
 ```pycon
 >>> yapyon.loads('a: 1\na: 2\n')

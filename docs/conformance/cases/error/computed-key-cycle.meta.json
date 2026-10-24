@@ -1,0 +1,1 @@
+{"expect": "akan", "rule": "SPEC §5.3 / §7", "why": "subscripts wait for computed keys, including cycles"}

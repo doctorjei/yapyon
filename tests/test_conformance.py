@@ -231,10 +231,10 @@ def test_inf_and_nan_reachable_in_python_and_unspellable_here():
     assert "no inf/nan spelling" in akan_of("a: nan\n")
 
 
-def test_dict_keys_are_any_hashable_in_python_and_identifiers_here():
+def test_dict_keys_are_any_hashable_in_python_and_strings_here():
     assert ast.literal_eval('{1: "a", (2, 3): "b"}') == {1: "a", (2, 3): "b"}
     assert "numeric keys are akan" in akan_of('1: "a"\n')
-    assert "quoted keys are reserved" in akan_of('"k": "a"\n')
+    assert loads('"k": "a"\n') == {"k": "a"}
 
 
 def test_duplicate_keys_collapse_in_python_and_are_akan_here():

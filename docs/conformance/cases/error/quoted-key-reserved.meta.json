@@ -1,5 +1,0 @@
-{
-  "expect": "akan",
-  "rule": "SPEC \u00a77 / \u00a79",
-  "why": "keys are bare identifiers in v0.1; quoted keys are reserved"
-}

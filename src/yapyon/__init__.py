@@ -23,7 +23,7 @@ from .multimap import Entry, KeyView, OrderedMultimap
 from .template import Hole, Template
 from .loader import (is_record, load, load_record, loads, loads_record,
                     lookup, tier_of)
-from .tree import Handle, Tree, merge, parse, parse_file
+from .tree import Handle, Key, Tree, merge, parse, parse_file
 from .emitter import emit
 from .expand import expand_record
 from .contract import Contract, load_contract, loads_contract
@@ -45,7 +45,7 @@ __all__ = [
     # records — the fixed, literal-only form
     "load_record", "loads_record", "is_record",
     # a document read but not resolved: walk, merge, fill, resolve (SPEC §15)
-    "parse", "parse_file", "Tree", "Handle", "merge",
+    "parse", "parse_file", "Tree", "Handle", "Key", "merge",
     # §5.2's scope search over a loaded tree, for consumers that assemble one
     "lookup",
     # the environment a document may read (SPEC §5.1.3, §5.1.4)

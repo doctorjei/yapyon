@@ -1,7 +1,7 @@
 """Subscript tests — SPEC §5.1. One test per rule, named after the rule.
 
-`a.b` is sugar for `a["b"]`: the bracket is the general form and its content
-yields a key — a quoted literal, an integer index, or a reference whose
+`a.b` selects a name; `a["b"]` can also select a non-name key. A bracket's
+content yields a key — a quoted literal, an integer index, or a reference whose
 *value* is the key. When a test and the implementation disagree, check the
 spec before changing either.
 """
@@ -27,9 +27,9 @@ def warnings_of(text):
 # --------------------------------------------------------------------------- #
 # The dot is sugar for the bracket
 # --------------------------------------------------------------------------- #
-def test_a_dot_and_a_quoted_key_are_the_same_step():
-    # not two constructs: the dot reduces to the bracket, so they parse alike
-    assert parse_ref("a.b").steps == parse_ref("a['b']").steps
+def test_dot_and_subscript_steps_retain_their_distinct_visibility():
+    assert parse_ref("a.b").steps == [("key", "a"), ("key", "b")]
+    assert parse_ref("a['b']").steps == [("key", "a"), ("sub", "b")]
 
 
 def test_a_dot_and_a_quoted_key_resolve_alike():
@@ -39,12 +39,8 @@ def test_a_dot_and_a_quoted_key_resolve_alike():
 
 
 def test_a_bracket_reaches_keys_a_dot_cannot():
-    # this is what the general form is *for* — it subsumes §9's reserved
-    # "quoted hole segments" rather than adding a third spelling.
-    # No v0.1 document can *write* the key `b.c` (GRAMMAR §G7 keys are bare
-    # identifiers, and quoted keys are reserved), so the reference side is
-    # ready ahead of the key side. That is the compatible order.
-    assert parse_ref('a["b.c"]').steps == [("key", "a"), ("key", "b.c")]
+    assert parse_ref('a["b.c"]').steps == [("key", "a"), ("sub", "b.c")]
+    assert loads('a: {"b.c": 42}\nu: (a["b.c"])')["u"] == 42
 
 
 # --------------------------------------------------------------------------- #
@@ -238,14 +234,14 @@ def test_malformed_references_are_akan(ref, needle):
 
 def test_a_quoted_key_may_hold_a_brace():
     # the hole scanner tracks quotes, so } inside a key does not close it
-    assert parse_ref('a["}"]').steps == [("key", "a"), ("key", "}")]
+    assert parse_ref('a["}"]').steps == [("key", "a"), ("sub", "}")]
 
 
 def test_a_quoted_key_takes_escapes():
     # GRAMMAR §G5: a STRING in a hole takes §G4.5's escapes (operator,
     # 2026-10-13; reserved until v0.3)
-    assert parse_ref("a['x\\'y']").steps == [("key", "a"), ("key", "x'y")]
-    assert parse_ref('a["b\\x2ec"]').steps == [("key", "a"), ("key", "b.c")]
+    assert parse_ref("a['x\\'y']").steps == [("key", "a"), ("sub", "x'y")]
+    assert parse_ref('a["b\\x2ec"]').steps == [("key", "a"), ("sub", "b.c")]
 
 
 @pytest.mark.parametrize("doc,value", [
@@ -463,10 +459,8 @@ def test_toml_writes_an_empty_list_inline_rather_than_losing_the_key():
 
 
 def test_toml_quotes_a_non_ascii_key_in_an_array_header():
-    # A yapyon key is always an identifier, and an identifier never contains
-    # a dot -- quoted keys are reserved in v0.1 -- so the only key that can
-    # make a header need quoting is a non-ASCII one. TOML's bare-key set is
-    # ASCII-only, so it goes out quoted, which keeps it literal.
+    # TOML's bare-key set is ASCII-only, so this name goes out quoted.
+    # Quoted/computed keys may require quoting for other reasons too.
     d = loads('s:\n  日本:\n    - k: 1\n'
               'u: y"{s.__as_toml__()}"\n')
     assert d["u"] == '[["日本"]]\nk = 1\n'

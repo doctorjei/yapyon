@@ -179,11 +179,14 @@ def test_whitespace_inside_a_token_is_not_whitespace_between_them():
 # --------------------------------------------------------------------------- #
 # Shirans survive into calls
 # --------------------------------------------------------------------------- #
-def test_the_bracket_shiran_reaches_through_a_call():
-    assert len(parse_ref('f(a["b"])').shirans) == 1
-    assert len(parse_ref('a["b"].f()').shirans) == 1
-    assert len(parse_ref('f(x).g(a["b"])').shirans) == 1
-    assert parse_ref('f(a["b.c"])').shirans == []
+@pytest.mark.parametrize("ref", ['__str__(a["b"])', 'a["b"].__str__()',
+                                 '__get__(xs, __int__(a["b"]))'])
+def test_the_bracket_shiran_reaches_through_a_call(ref):
+    # Key kind is known at resolution, not while parsing the call.
+    assert parse_ref(ref).shirans == []
+    warnings = []
+    loads(f'a: {{b: 0}}\nxs: [1]\nu: y"{{{ref}}}"', warn=warnings.append)
+    assert len(warnings) == 1
 
 
 # --------------------------------------------------------------------------- #

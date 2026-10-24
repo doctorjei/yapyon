@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §7",
+  "why": "empty string keys are reserved for now"
+}

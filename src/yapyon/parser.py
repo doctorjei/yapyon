@@ -29,9 +29,12 @@ a diagnostic points back at.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
+from itertools import count
 
-from .lexer import AkanError, Lexer, Token, Yakamashiwa, is_dunder
+from .lexer import AkanError, Lexer, Token, Yakamashiwa, fold_name
+from ._keys import key_error
 
 
 # --------------------------------------------------------------------------- #
@@ -48,6 +51,7 @@ class Node:
     col: int
 
     source = None
+    fill_checks = ()
 
 
 @dataclass
@@ -135,15 +139,30 @@ class Slot(Node):
         return not self.label
 
 
+_pair_ids = count()
+
+
 @dataclass
 class Pair(Node):
-    """One `key: value`.  The position is the key's. `key` is the name's
-    identity (folded, SPEC §7); `lexeme` is the key as written, which a
-    yapyon writer reproduces (§4.4)."""
+    """One `key: value`. `key` is its identity, or a pending y-string.
+    `named` distinguishes names from data keys (SPEC §7); `lexeme` keeps
+    the spelling (§4.4), and `key_node` keeps a resolved key's dependencies.
+    `identity` is an unresolved Tree location, never data-key equality."""
 
-    key: str
+    key: str | YString
     value: Node
     lexeme: str = ""
+    named: bool = True
+    key_node: Scalar | None = None
+    identity: int = field(default_factory=lambda: next(_pair_ids), compare=False,
+                          repr=False)
+
+    def __deepcopy__(self, memo):
+        out = object.__new__(type(self))
+        memo[id(self)] = out
+        out.__dict__ = copy.deepcopy(self.__dict__, memo)
+        out.identity = next(_pair_ids)
+        return out
 
 
 @dataclass
@@ -151,8 +170,21 @@ class Mapping(Node):
     pairs: list = field(default_factory=list)   # list[Pair], in source order
 
     def __post_init__(self):
-        # Keys within one mapping are unique (GRAMMAR §G7), so this is lossless.
-        self.by_key = {p.key: p.value for p in self.pairs}
+        self.reindex()
+
+    def reindex(self):
+        self._pairs_by_key = {p.key: p for p in self.pairs if isinstance(p.key, str)}
+        self._names = {k: p for k, p in self._pairs_by_key.items() if p.named}
+        self.by_key = {k: p.value for k, p in self._pairs_by_key.items()}
+
+    def pending_key(self):
+        return next((p.key for p in self.pairs if isinstance(p.key, YString)), None)
+
+    def key_pair(self, key: str, *, named: bool = False):
+        if named:
+            return self._names.get(key)
+        exact = self._pairs_by_key.get(key)
+        return exact if exact is not None else self._names.get(fold_name(key))
 
 
 @dataclass
@@ -168,6 +200,13 @@ class MultiMap(Node):
     keys take no part in hole resolution (§5.2)."""
 
     entries: list = field(default_factory=list)   # list[Pair], in source order
+
+    def key_pairs(self, key: str, *, named: bool = False):
+        exact = not named and any(p.key == key for p in self.entries)
+        if exact:
+            return [p for p in self.entries if p.key == key]
+        folded = fold_name(key)
+        return [p for p in self.entries if p.named and p.key == folded]
 
 
 def deferred_message(kind: str, prefix: str) -> str:
@@ -240,31 +279,33 @@ _BLOCK_FORM = {
     "DASH": "'- ' items",
     "PLUS": "'+ ' entries",
     "NAME": "'key: value' pairs",
+    "QKEY": "'key: value' pairs",
+    "YKEY": "'key: value' pairs",
 }
 
 
 def _bad_key_msg(tok: Token) -> str:
-    """GRAMMAR §G7: keys are bare identifiers."""
-    if tok.kind in ("STRING", "YSTR", "YTSTR"):
-        return ("keys are bare identifiers; quoted keys are reserved "
-                "(write name: rather than \"name\":)")
+    """GRAMMAR §G7: key forms that cannot produce an ordinary string."""
+    if tok.kind == "YTSTR":
+        return "a template is not key text; use a plain, y, or ry string"
     if tok.kind in ("BYTES", "YBSTR"):
-        return "keys are bare identifiers; a bytes literal is not a key"
+        return "keys are names or strings; a bytes literal is not a key"
     if tok.kind in ("INT", "FLOAT"):
-        return "keys are bare identifiers; numeric keys are akan"
+        return "keys are names or strings; numeric keys are akan"
     if tok.kind == "KEYWORD":
         spelling = tok.lexeme or str(tok.value)
         return f"{spelling!r} is a keyword, not a key"
-    return f"expected a key (a bare identifier), found {_describe(tok)}"
+    return f"expected a key (a name or string), found {_describe(tok)}"
 
 
 def children(node: Node) -> list:
     """A node's direct children, in document order — slot overrides
     included. The one walk every tree pass shares."""
-    if isinstance(node, Mapping):
-        return [pair.value for pair in node.pairs]
-    if isinstance(node, MultiMap):
-        return [entry.value for entry in node.entries]
+    if isinstance(node, (Mapping, MultiMap)):
+        pairs = node.pairs if isinstance(node, Mapping) else node.entries
+        return [child for pair in pairs
+                for child in ([pair.key, pair.value] if isinstance(pair.key, Node)
+                              else [pair.value])]
     if isinstance(node, Sequence):
         return list(node.items)
     if isinstance(node, Slot):
@@ -275,6 +316,9 @@ def children(node: Node) -> list:
 def stamp(node: Node, source: str) -> None:
     """Record the document every node of `node` was written in."""
     node.source = source
+    if isinstance(node, (Mapping, MultiMap)):
+        for pair in node.pairs if isinstance(node, Mapping) else node.entries:
+            pair.source = source
     for child in children(node):
         stamp(child, source)
 
@@ -301,8 +345,8 @@ class Parser:
 
     # -- token helpers -------------------------------------------------------
     def _at_key(self, n: int = 0) -> bool:
-        """A key starts here: `NAME :`, or `NAME <label> :` (GRAMMAR §G6)."""
-        if self._peek(n).kind != "NAME":
+        """A key token and its optional label precede ':' (GRAMMAR §G6)."""
+        if self._peek(n).kind not in ("NAME", "QKEY", "YKEY"):
             return False
         nxt = self._peek(n + 1).kind
         return nxt == "COLON" or (nxt == "LABEL"
@@ -379,19 +423,23 @@ class Parser:
         self._akan(f"a block holds {_BLOCK_FORM[own]} or "
                    f"{_BLOCK_FORM[tok.kind]}, not both", tok)
 
-    def _check_key(self, key_tok: Token, first_line: dict[str, tuple[int, str]]) -> str:
+    def _check_key(self, key_tok: Token,
+                   first_line: dict[str, tuple[int, str]]) -> str | YString:
         """GRAMMAR §G7's rules on a name in key position, in one place.
 
         Block pairs and flow maps both come here so the two cannot drift —
         they held separate copies of the duplicate check before.
         """
+        if key_tok.kind == "YKEY":
+            return YString(key_tok.line, key_tok.col, key_tok.prefix,
+                           list(key_tok.parts), key_tok.lexeme)
+        if key_tok.kind == "QKEY" and key_tok.prefix:
+            self._akan("a literal key is a plain quoted string; "
+                       "only y and ry prefixes are allowed on keys", key_tok)
         key = key_tok.value
-        if is_dunder(key):
-            self._akan(f"{key!r} cannot be a key: dunder names are reserved "
-                       f"for yapyon's own (__ROOT__, __PARENT__, "
-                       f"__KEY__), so no "
-                       f"hole could ever name it — drop the leading and "
-                       f"trailing '__'", key_tok)
+        why = key_error(key)
+        if why:
+            self._akan(why, key_tok)
         if key in first_line:
             # Names are compared after folding (SPEC §7), so when either
             # spelling differs from the name, show both: `name` and `ｎａｍｅ`
@@ -425,7 +473,8 @@ class Parser:
                          f"expected end of line after the value of {key!r}, "
                          f"found {_describe(self._peek())}")
         return Pair(key_tok.line, key_tok.col, key,
-                    self._slot(label, value, key_tok), key_tok.lexeme)
+                    self._slot(label, value, key_tok), key_tok.lexeme,
+                    named=key_tok.kind == "NAME")
 
     def _slot(self, label: Token | None, value: Node, key_tok: Token) -> Node:
         """GRAMMAR §G7: a labeled pair's value is its slot's overrides, a
@@ -592,7 +641,7 @@ class Parser:
         first_line: dict[str, tuple[int, str]] = {}
         while not self._at("RBRACE"):
             key_tok = self._peek()
-            if key_tok.kind != "NAME":
+            if key_tok.kind not in ("NAME", "QKEY", "YKEY"):
                 self._akan(_bad_key_msg(key_tok), key_tok)
             self._advance()
             label = self._advance() if self._at("LABEL") else None
@@ -601,7 +650,7 @@ class Parser:
             key = self._check_key(key_tok, first_line)
             value = self._slot(label, self._flow_value(), key_tok)
             pairs.append(Pair(key_tok.line, key_tok.col, key, value,
-                              key_tok.lexeme))
+                              key_tok.lexeme, named=key_tok.kind == "NAME"))
             if self._at("COMMA"):
                 self._advance()                  # trailing comma is fine
             elif not self._at("RBRACE"):

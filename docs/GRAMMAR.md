@@ -604,17 +604,17 @@ afterwards.
 
 ### §G5.1 What each form admits
 
-- **`a.b` is sugar for `a["b"]`.** The bracket is the general form and its
-  contents yield a key; the dot is a shorthand whose domain is restricted to
-  identifiers. They are not two constructs — one reduces to the other, which
-  is why "canonical spellings only" (§G4.6) does not object.
+- **A dot takes a name; a subscript takes a key.** The two spellings must
+  remain distinguishable in the parsed reference: `.b` names a named key,
+  while `["b"]` can also select a quoted or computed key. Quoting a key at
+  its definition does not make it a name, even when its text is an identifier.
 - A **quoted literal** in a bracket is a key: `{a["b.c"]}` names the key
   `b.c`. Either quote mark may be used, the enclosing literal's own included
   (§G4.7): `y"{a["b"]}"` and `y"{a['b']}"` are the same reference. Escapes
   work as in any string: `{a['b\'c']}`.
 - An **integer** in a bracket is a list position: `{xs[0]}`. Brackets only —
   `{xs.0}` is akan, because `0` is not a `NAME` and `SEG` admits none. That
-  restriction is exactly what keeps `a.b` ≡ `a["b"]` true. **A negative index
+  restriction keeps dotted segments names-only. **A negative index
   counts from the end**, as in Python: `{xs[-1]}` is the last element, and
   `{xs[-0]}` is `{xs[0]}`.
 - A **reference** in a bracket names the key, and nests without an extra rule:
@@ -626,8 +626,8 @@ afterwards.
 - A **literal as the whole hole**: `{8080}` names nothing. A literal in *key
   position* is a different role and is legal — the axis is literal-vs-
   reference in key position, not static-vs-dynamic.
-- A **keyword segment** (`True`, `False`, `None`): keywords are not keys
-  (§G7), so such a segment could never name anything.
+- A **keyword segment** (`True`, `False`, `None`): keywords are not name
+  keys (§G7). A quoted string with that text is reached by a subscript.
 - An **undefined dunder** name: `{__foo__.a}`.
 - **Format specs and conversions** — `{x:...}`, `{x!r}` — are akan and
   reserved.
@@ -645,10 +645,12 @@ means by `d[p]` and nothing diverges.
 
 ### §G5.4 The one shiran
 
-**`{a["bar"]}` where `bar` is an identifier is shiran** — legal, equivalent,
-but `{a.bar}` is the canonical spelling. The warning fires **only where the
-bracket is avoidable**: `{a["b.c"]}`, `{xs[0]}`, `{d[p]}` and `{a[__KEY__]}`
-are silent, because a dot could not have been written there.
+**`{a["bar"]}` is shiran only when `.bar` reaches the same named key.**
+Whether the key is named is known at resolution, not from the reference's
+syntax alone. A quoted or computed key requires the bracket and is silent,
+even when its text is an identifier. `{a["b.c"]}`, `{xs[0]}`, `{d[p]}`, and
+`{a[__KEY__]}` are silent too. A warning must never recommend a dotted step
+that cannot reach the same entry.
 
 Shiran never changes whether a document is accepted, and taking this one's
 advice never changes what a document means.
@@ -666,7 +668,7 @@ block_value ::= block_map
               | flow_value NEWLINE
 
 block_map   ::= pair+
-pair        ::= NAME [ LABEL ] COLON ( flow_value NEWLINE
+pair        ::= key [ LABEL ] COLON ( flow_value NEWLINE
                            | NEWLINE INDENT block_value DEDENT )
 
 block_seq   ::= seq_item+
@@ -685,8 +687,18 @@ scalar      ::= STRING | BYTES | YSTR | YBSTR | YTSTR | COPY
 group       ::= LPAREN flow_value RPAREN
 flow_list   ::= LBRACKET [ flow_value (COMMA flow_value)* [COMMA] ] RBRACKET
 flow_map    ::= LBRACE ( PLUS | [ fpair (COMMA fpair)* [COMMA] ] ) RBRACE
-fpair       ::= NAME [ LABEL ] COLON flow_value
+fpair       ::= key [ LABEL ] COLON flow_value
+key         ::= NAME | QKEY | YKEY
 ```
+
+`QKEY` and `YKEY` are the key-position forms of a plain `STRING` and a
+`y`/`ry` string, respectively. The lexer classifies a string followed by
+`COLON`, or by `LABEL COLON`, as a key token, keeping its value, parts,
+prefix, lexeme, and position. This classification uses the lexical tokens
+(including logical newlines), not parser feedback; it distinguishes a
+string-valued document from one beginning with a quoted key. Both quote
+marks and triple quoting use the ordinary string rules. A plain key has no
+prefix; `r`, bytes, `yt`, copies, and calls are not key forms.
 
 - The optional `NEWLINE` after a marker is the **bare-marker form** (`-` or
   `+` alone on its line); the optional `INDENT … DEDENT` covers a body
@@ -698,7 +710,7 @@ fpair       ::= NAME [ LABEL ] COLON flow_value
   holds none. Like `{ }`, it is three tokens, and whitespace between them is
   layout (`{ + }`). A flow multimap **with** entries (`{+ a: 1, + a: 2}`) is
   reserved; `{+` followed by anything but `}` is akan. The choice is made at
-  the token after `{` — `PLUS`, a `NAME`, or `}` — so the grammar stays
+  the token after `{` — `PLUS`, a key token, or `}` — so the grammar stays
   LL(1).
 - **A group is not a tuple.** `group` holds exactly one value, so `()`,
   `(1,)`, and `(1, 2)` are not generated, and are akan; a sequence is
@@ -721,8 +733,11 @@ These are well-formedness rules that the phrase grammar cannot express. A
 conforming implementation enforces all of them, and needs nothing beyond the
 parse tree to do so.
 
-- **Keys are bare `NAME`s.** Quoted keys, numeric keys, and every other key
-  form are akan. *(Reserved: quoted string keys.)*
+- **Keys are names or strings:** `NAME`, `QKEY`, or `YKEY`. Numeric,
+  bytes, template, container, copy, and call keys are akan. A quoted key
+  is not a name, even when its text is an identifier.
+- **A literal string key is nonempty, does not begin with `@`, and is not
+  a dunder.** A computed key's text is not available to a static check.
 - **Keywords are not keys.** `True: 1` is akan.
 - **Dunder keys are akan** (§G4.2). A document may not define a name that
   begins and ends with `__`.
@@ -732,8 +747,10 @@ parse tree to do so.
   a mapping; write {} for none."
 - **No label in a multimap entry.** A `+ ` entry's pair carries no
   `LABEL`; one there is akan. *(Reserved: slots in multimap entries.)*
-- **Duplicate keys within one mapping are akan.** A block whose keys repeat by
-  design is a multimap and must say so with `+ `.
+- **Duplicate statically known keys within one mapping are akan.** Name
+  keys compare after folding; quoted keys use their decoded text. Comparing
+  computed keys waits for their values, not their expression spellings.
+  A block whose keys repeat by design is a multimap and must say so with `+ `.
 - **Each `+ ` frame holds exactly one `key: value` pair.** A second key inside
   one entry is akan: "a multimap entry holds one key: value pair; indent it
   under the key, or open a new `+ ` entry."

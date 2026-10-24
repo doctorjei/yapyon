@@ -120,7 +120,7 @@ Nine core types. **Prefixes are *spellings*, not types** — the prefix table is
 | NoneType | `None` | one spelling |
 | bytes | `b"..."`, `rb"..."`, and the stream literals `bin dna oct hex c32 b64` | eight spellings, one type |
 | list | `[a, b]` flow, `- ` block | |
-| dict | `{k: v}` flow, indented block | identifier keys (§7) |
+| dict | `{k: v}` flow, indented block | name or string keys (§7) |
 | multimap | `+ ` block; `{+}` when empty | keyed and ordered; keys may repeat (§7.1) |
 
 **Numbers are numbers; bytes are streams.** An integer literal in any radix
@@ -339,9 +339,10 @@ Climbing past the document root is **akan**: the root is not inside anything
 and has no key of its own. `{__ROOT__.__KEY__}` is therefore akan too, and
 says so.
 
-A key is always an identifier (`GRAMMAR §G4.1`), so splicing one into text is
-closure-safe by construction (ehmon 4). Into a `yb` string it is text→bytes and
-akan under ehmon 5, by the ordinary rule and with no special case.
+`__KEY__` yields the key's text, including for a quoted or computed key
+(§7). If that key is pending, the reference waits for it; a key depending on
+itself is a cycle (§5.3). Its result is text, so splicing it into a `yb`
+string is text→bytes and akan under ehmon 5, by the ordinary rule.
 
 ```
 store: "/cfg"
@@ -941,44 +942,63 @@ it requires the resolver, and a record is the form that needs none.
 
 ## 7. Keys
 
-**Syntax: `GRAMMAR §G4.1`** (identifiers and the Unicode-version requirement),
-**`§G4.2`** (the reserved dunder vocabulary), **`§G7`** (keys are bare names;
-keywords, dunders, duplicates, and every other key form are akan).
+**Syntax: `GRAMMAR §G4.1`** (names), **`§G4.2`** (dunders), and
+**`§G6`–`§G7`** (name, plain quoted, and `y`/`ry` keys).
 
-What belongs here is the **consequence**, which is a claim about
-addressability rather than about well-formedness:
+> **Every name key of a mapping is addressable from a hole.**
 
-> **Every key of a mapping is addressable from a hole.**
+A bare identifier is a **name key**. A quoted key is **not a name**, even
+when its text is an identifier: `model:` and `"model":` have the same data
+key but different visibility. Only name keys participate in §5.2's scope
+search and dotted traversal. Quoted and computed keys are reached by a
+subscript through a named container, never by spelling their text as a name.
 
-This holds only because the grammar applies **one predicate** to keys and to
-hole segments. Widen either alone and the claim becomes false — which is how
-it broke twice: `a²` was admitted as a key by `str.isalnum()` and could be
-named by nothing, and `__foo__` was a legal key whose hole akaned.
+**A name's identity is its folded name** (GRAMMAR §G4.1: width variants,
+then NFC). The consumer receives that folded string, and the emitter keeps
+the original key lexeme. Nothing warns about folding; it defines equality.
+A plain quoted key retains its exact decoded text, with no name folding.
+A computed `y`/`ry` key resolves like a string value at the pair's position
+(§5.2–§5.5), then retains that exact text. It never becomes a name.
 
-**A key's identity is its folded name** (GRAMMAR §G4.1: width variants to
-their standard form, then NFC). Two spellings that fold alike are **the same
-key** — by definition, not by reinterpretation — so:
+**Key equality is equality of the resulting strings**, not equality of
+expressions. Two entries in one mapping with equal keys are duplicate-key
+akan, even if one key is a name and the other is quoted, or their computed
+expressions differ. Two name spellings that fold alike are also duplicates.
+Computed duplicates are diagnosed when their keys resolve. Multimaps still
+allow repeated keys (§7.1).
 
-- `ｎａｍｅ: 1` and `name: 2` in one mapping are a **duplicate key**, akan like
-  any other; the diagnostic names both spellings;
-- a hole may name a key in any spelling that folds to it: `{name}` and
-  `{ｎａｍｅ}` both reach `ｎａｍｅ: 1`, and so does a bracketed key or a key
-  held in a value (`{d[p]}`), since a resolved key means what a written one
-  means;
-- **the consumer receives the folded name.** `ｎａｍｅ: 1` loads as
-  `{"name": 1}`. A yapyon writer still writes the key as spelled — its
-  lexeme (§3, §4.4) — so `ｎａｍｅ` comes back as `ｎａｍｅ`; a key with no
-  lexeme, such as one in a function's result (§13.4), is written as its
-  folded name.
+Subscripts first select an exact data key. If no exact key exists, a folded
+name may be selected; non-name keys are never folded. Both literal and
+indirect subscripts use this rule. They wait for pending computed keys before
+selecting or reporting absence. A dotted step selects only a name key and
+must not warn that a necessary subscript should be replaced by a dot.
 
-Nothing warns about a folded spelling. A warning would say the author may have
-meant something else, and here there is nothing else to mean.
+```yapyon
+provider: "moonshot-ai"
+providers:
+  y"{provider}":
+    endpoint: "https://example.invalid"
+chosen: (providers[provider])
+```
 
-**Addressability and searchability are different claims, and only the first is
-universal.** Sequence items and multimap entries have no keys of their own and
-so take no part in §5.2's scope search — but both are **reachable by explicit
-traversal**: `{xs[0]}` indexes a list, and `{mm.k}` is the list view of a
-multimap key.
+Here `providers` is a name; its child is not. `providers[provider]` reaches
+that child, while searching for `moonshot-ai`, or writing it as a dotted
+segment, cannot. Even `"model":` requires a subscript rather than `.model`.
+
+**Every key is nonempty, does not begin with `@`, and is not a dunder.**
+These checks apply to literal text at parse time and computed text at
+resolution, at the key's position. Empty keys are reserved for now. The `@`
+restriction protects the serializer metadata vocabulary (§14).
+
+Plain quoted keys are literal and legal in records (§12). A `y`/`ry` key
+requires at least a ledger, even without holes; environment access or
+contract calls raise its tier just as they do in a value. Record writers
+keep literal key lexemes and write resolved computed keys as ordinary quoted
+strings, never as names merely because their text resembles an identifier.
+
+Sequence items and multimap entries take no part in §5.2's scope search.
+Explicit traversal reaches them: `{xs[0]}` indexes a list, and `{mm.k}` is
+the list view of a named multimap key; subscripts also reach non-name keys.
 
 ### 7.1 Multimaps
 
@@ -1029,8 +1049,7 @@ other token a value can begin with is a grouping parenthesis.
 ## 9. Reserved for future versions
 
 Syntax that is akan in v0.5 with the door explicitly open: `yb64` and `ytb`
-prefixes; **quoted keys** (the key side of the grammar's `a["b.c"]`, whose
-reference side is built); a flow spelling for multimaps with entries (`{+ a: 1}`; the empty `{+}`
+prefixes; **empty string keys**; a flow spelling for multimaps with entries (`{+ a: 1}`; the empty `{+}`
 is built, §7.1); format
 specs and conversions in holes; list interpolation; **default and variadic
 parameters** for declared functions (§13.7); positional access to a multimap's entries
@@ -1110,7 +1129,7 @@ normative; the individual rows are cross-references to the rule's own home.
 | `0q`, `0z` integer prefixes | syntax error | base 4 and Crockford base 32 (`GRAMMAR §G4.3`) |
 | `bin dna oct hex c32 b64` string prefixes | syntax error | bytes stream literals (§4.3) |
 | decimal integers over 4,300 digits | `ValueError` by default (3.11+) | shiran; akan only above the implementation's ceiling (§3.1) |
-| dict keys | any hashable | bare identifiers only |
+| dict keys | any hashable | names or strings; quoted keys are not names (§7) |
 | duplicate dict keys | last wins, silently | akan; `+ ` multimap if repeats are meant (§7.1) |
 | identifier folding | NFKC | width variants, then NFC — `ｎａｍｅ` ≡ `name`, but `ﬁ` ≢ `fi` (GRAMMAR §G4.1) |
 | identifier character set | the interpreter's Unicode version | pinned to Unicode 14.0.0; no invisible characters |
@@ -1158,7 +1177,8 @@ literal either (`GRAMMAR §G7`, no implicit null).
 
 The grammar's `scalar` has nine alternatives (§8): the five literal kinds,
 plus `YSTR`, `YBSTR`, `YTSTR`, and `COPY`. Those four are therefore
-*exactly* the non-literal set, and the only other way to begin a value is a
+*exactly* the non-literal scalar set; `YKEY`, the key-position y-string,
+is deferred too. The only other way to begin a value is a
 grouping parenthesis, which a record does not admit either — parentheses
 mark computation, even around a literal. A label (`GRAMMAR §G4.9`) is
 not a value at all but makes its key's value a slot (§15), which only a
@@ -1229,9 +1249,10 @@ Of §9's reserved syntax, the items that concern holes — `yb64` and `ytb`,
 format specs and conversions, list interpolation, default and variadic
 parameters, positional multimap access — are **ledger and above**,
 since a record has no holes at all. §5.1.1's relative references are
-ledger and above for the same reason. The rest — quoted
-keys, a flow spelling for multimaps, `---` streams, timestamp prefixes — would
-concern both forms.
+ledger and above for the same reason. The rest — empty string keys,
+a flow spelling for multimaps, `---` streams, timestamp prefixes — would
+concern both forms. Plain quoted keys are already legal in records; the
+key-position `YKEY` token is deferred just as a value-position `YSTR` is.
 
 On meeting a y-family prefix, a record implementation is **akan at that
 prefix's line and column**, and says so as the record rule rather than as a
@@ -1422,10 +1443,11 @@ PEP 8 form: `dict[str, int]`, `int | None`.
 A result is placed by §5.5, unchanged: a `str` splices into a `y`; a list in
 a `y` is akan as any list is; other scalars splice by value (§5.4). A
 function cannot return a node of the document; its result is fresh data.
-**Returned data must be yapyon data**: a returned mapping's keys obey the
-identifier rule and are folded (§7), so a key that is not an identifier, or
-two keys that fold alike, is akan at the call, naming the function; and a
-returned string is Unicode scalar values, as a written one is
+**Returned data must be yapyon data**: a returned mapping's keys are legal
+strings (§7). Keys with retained name/non-name information keep it; otherwise
+a writable identifier is a name and is folded, and any other legal string
+is a non-name key. Duplicate resulting keys are akan at the call, naming the
+function. A returned string is Unicode scalar values, as a written one is
 (`GRAMMAR §G4.5`), so one holding a lone surrogate is akan there too. A
 result has no lexemes; a yapyon writer gives it canonical form (§4.4).
 
@@ -1514,8 +1536,11 @@ the plain value is the yapyon value. *(A decimal's spelling — `1_000`,
 **Entry keys.** A value that is a member of the object is keyed by its
 key. A value inside an array is keyed by a **path** from the nearest
 containing object: the member's key, then each index, joined with `/` —
-`"ports/0"`, `"matrix/0/1"`. (Keys are identifiers, §7, so no key holds a
-`/`.) **In a multimap node** the table is the node's own, and a path is
+`"ports/0"`, `"matrix/0/1"`. Each segment uses JSON Pointer's escaping
+(RFC 6901): replace `~` with `~0`, then `/` with `~1`; there is no leading
+slash. This applies to a member key on its own too, so a literal key
+`ports/0` has the entry `ports~10`, distinct from index 0 under `ports`.
+**In a multimap node** the table is the node's own, and a path is
 `entries/<i>` — the entry, not its key, since an entry holds exactly one
 value — continuing with indices only if that value is an array
 (`entries/0/1`). Entries are in document order.
@@ -1733,7 +1758,13 @@ a later tree over an earlier one:
 - **Two mappings merge key by key.** A key in both takes the merge of its
   two values; a key in one keeps its value. The earlier mapping's keys
   keep their order, and the later mapping's new keys follow, in theirs.
-  Keys are compared as names (§7).
+  Keys are compared by their resulting strings (§7), not by the spelling
+  of their expressions. Merge operations happen before resolution. When a
+  key is not yet known, retain the contributions and their layer order until
+  resolution can determine which keys match; do not resolve either input
+  early. Equal keys from different merged layers merge; duplicates within
+  one input mapping remain akan. The first occurrence keeps the key's
+  position, spelling, and name/non-name kind, as it keeps its order.
 - **Anything else is replaced whole** by the later value — across kinds
   (a string may replace a mapping, and a mapping a string), and for
   sequences, multimaps, y-strings, copies, and slots alike. `None` is a
@@ -1831,7 +1862,10 @@ Any value meets it:
   the abstract slot, and its overrides with it.
 
 A fill whose overrides leave an abstract slot without a value is akan at
-that fill, naming the abstract slot. An abstract slot that no fill brings
+that fill, naming the abstract slot. If checking the obligation requires a
+computed key's text, the comparison waits for resolution and any error still
+names the fill; it must not compare expression spellings or resolve an input
+early. An abstract slot that no fill brings
 in — at the top of the document a consumer starts from — is the
 consumer's to fill directly.
 

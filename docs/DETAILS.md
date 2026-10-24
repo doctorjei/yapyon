@@ -8,7 +8,7 @@ done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **2016 tests** on the current tree; the number here tracks the tree,
+suite is **2176 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 **The normative specification is published, in two documents under
@@ -18,7 +18,7 @@ not a release.
 |---|---|
 | [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 95 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 104 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -108,6 +108,36 @@ too — unless the call follows `?.`, which skips the rest of the chain:
 `__get__(key, default=None)` is `dict.get`, for lists too, and gives a
 multimap's list view of the key. SPEC §5.1.5 has every rule.
 
+## String keys
+
+A bare key is a name. A plain quoted key is literal data, and `y`/`ry`
+computes its text using the ordinary string rules. Quoted and computed keys
+are **not names**, even when their text is an identifier: use a subscript
+through a named parent to reach them, not a dotted step or scope search.
+
+```python
+>>> d = yapyon.loads('provider: "moonshot-ai"\nproviders: {y"{provider}": {port: 443}}\nselected: (providers[provider])\n')
+>>> d["providers"]
+{'moonshot-ai': {'port': 443}}
+>>> d["selected"]
+{'port': 443}
+>>> yapyon.loads_record('"model-name": "small"\n')
+{'model-name': 'small'}
+```
+
+Key equality is the resulting string: different expressions can yield the
+same key. Repetition in one mapping is akan; matching keys across explicitly
+merged layers follow the ordinary merge rule. Merging never resolves an
+input early. Pending contributions keep their precedence until the keys are
+known. Empty keys, dunders, and keys beginning with `@` are refused.
+
+Loaded mappings are **dict subclasses** retaining which keys were names, so
+`yapyon.lookup` agrees with document holes. Normal indexing and equality are
+dict's; replacing a value preserves its key's kind. New Python-added keys
+and ordinary dicts use writable identifiers as names and other legal strings
+as non-name keys. `copy`, deepcopy, pickle, and unions preserve provenance;
+explicitly converting to `dict` discards it.
+
 ## Trees and slots
 
 `yapyon.parse` reads a document **without resolving it** and returns a
@@ -127,6 +157,20 @@ place. A consumer walks it, combines trees with `merge`, and resolves once.
 A merge recurses only where both sides are mappings; anywhere else the later
 value wins whole, and `None` is a value like any other. Holes resolve where
 their values end up, so a layer can refer to keys another layer brings.
+
+Before resolution, `keys()`/`items()` return a `yapyon.Key` location token
+for each computed key. Pass that token back to the same mapping to walk or
+edit its value; `.lexeme` shows the key expression without evaluating it.
+These tokens are locations, not expressions compared for data-key equality.
+
+```python
+>>> pending = yapyon.parse('name: "x"\ny"{name}": 42\n')
+>>> key = pending.keys()[1]
+>>> key.lexeme, pending[key].value
+('y"{name}"', 42)
+>>> pending.resolve()
+{'name': 'x', 'x': 42}
+```
 
 A **slot** marks a place the consumer fills. `persona<llamacpp>:` makes
 `persona`'s value a slot labeled `llamacpp`; the mapping under it holds

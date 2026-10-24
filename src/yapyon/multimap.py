@@ -18,10 +18,11 @@ from itertools import count
 
 
 class Entry:
-    __slots__ = ("_id", "_key", "value")
+    __slots__ = ("_id", "_key", "value", "_named")
 
     def __init__(self, id, key, value):
         self._id, self._key, self.value = id, key, value
+        self._named = None
 
     @property
     def id(self): return self._id
@@ -100,6 +101,7 @@ class OrderedMultimap:
             return
         self._unindex(e._id, e._key)
         e._key = new_key
+        e._named = None
         bucket = self._by_key.setdefault(new_key, {})
         bucket[e._id] = e
         if len(bucket) > 1:
