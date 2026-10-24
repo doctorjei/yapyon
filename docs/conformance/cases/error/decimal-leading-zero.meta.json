@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR §G4.3",
+  "why": "readers disagree about a decimal literal with a leading zero (octal 8 or decimal 10)"
+}

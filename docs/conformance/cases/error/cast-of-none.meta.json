@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.1.5",
+  "why": "None is akan for a cast unless ?. skips the call"
+}

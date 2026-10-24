@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.1.5",
+  "why": "text cast to an int must be a whole decimal number; 3.0 implies a float"
+}

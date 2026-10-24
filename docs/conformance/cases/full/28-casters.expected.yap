@@ -1,0 +1,10 @@
+port_text: "0080"
+ratio_text: "2.5e+3"
+flag_text: "Yes"
+whole: 3.7
+port: 80
+ratio: 2500.0
+flag: True
+truncated: 3
+one: 1
+back: "80"

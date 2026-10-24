@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR §G4.8",
+  "why": "only a value ending in a call may stand bare; a path is copied in parentheses"
+}

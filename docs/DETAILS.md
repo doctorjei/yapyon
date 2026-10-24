@@ -8,7 +8,7 @@ done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **1989 tests** on the current tree; the number here tracks the tree,
+suite is **2016 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 **The normative specification is published, in two documents under
@@ -18,7 +18,7 @@ not a release.
 |---|---|
 | [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 86 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 95 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -82,6 +82,31 @@ False
 The lookup is a hole's, the value is resolved where it is written and then
 copied, and the copy is a separate object. Parentheses around a literal only
 group it, as in Python. SPEC §5.6 has the rules.
+
+## Casts and the getter
+
+Four built-ins convert one value to another type, with Python's names and
+yapyon's own rules for what they accept — so a cast means the same in every
+implementation. A value ending in a call may stand bare, without the
+parentheses a copy needs. *(New in `0.5.1`.)*
+
+```python
+>>> yapyon.loads('port_text: "0080"\nport: port_text.__int__()\nflag: __bool__("Yes")\n')
+{'port_text': '0080', 'port': 80, 'flag': True}
+```
+
+Text must be the whole value: `"3.0"`, `"42abc"`, and `" 42"` are akan as
+ints, and nothing is quietly dropped. A float truncates to an int, bools are
+1 and 0, and `__str__` writes a number as splicing does. `None` is akan
+too — unless the call follows `?.`, which skips the rest of the chain:
+
+```python
+>>> yapyon.loads('models: []\nmind: {a: 1}\nfable: models.__get__(0)?.__str__()\nctx: mind.__get__("b", 8)\n')
+{'models': [], 'mind': {'a': 1}, 'fable': None, 'ctx': 8}
+```
+
+`__get__(key, default=None)` is `dict.get`, for lists too, and gives a
+multimap's list view of the key. SPEC §5.1.5 has every rule.
 
 ## Trees and slots
 

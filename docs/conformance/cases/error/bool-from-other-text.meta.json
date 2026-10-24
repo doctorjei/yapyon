@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.1.5",
+  "why": "a bool is read only from true/false, yes/no, on/off, or 1/0"
+}

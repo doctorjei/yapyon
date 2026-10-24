@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.1.5",
+  "why": "a cast never reads a prefix and drops the rest"
+}

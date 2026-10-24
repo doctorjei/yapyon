@@ -9,6 +9,44 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## Unreleased
+
+Built to specification and grammar **v0.5**, amended. **Breaking**: the
+built-in functions are renamed. Released as a patch because nothing yet
+depends on 0.5.0.
+
+### Added
+
+- **§5.1.5: casters.** `__str__`, `__int__`, `__float__`, and `__bool__`
+  convert one value, with Python's names and yapyon's own parsing. Text
+  must be the whole value — `"03"` is 3, but `"3.0"`, `"42abc"`, and
+  `" 42"` are akan as ints, unlike C's `atoi`; a float truncates to an
+  int; bools are 1 and 0 both ways (`__bool__` reads `true/false`,
+  `yes/no`, `on/off`, `1/0` in any case); `__str__` writes numbers as
+  splicing does and refuses bytes. `None` is akan unless `?.` skips the
+  call.
+- **`__get__(key, default=None)`**: `dict.get` for mappings and lists
+  (negative indices from the end); a multimap gives the key's list view.
+- **§13.1: `?.`.** A call written after `?.` is skipped when its receiver
+  is `None`, and the rest of the chain with it, so
+  `models.__get__(0)?.__str__()` is `None` for an empty list.
+- **§5.6: bare call values.** A value ending in a call may be written
+  without parentheses — `port: port_text.__int__()` — and means its copy:
+  a call's result is owned by nobody, so it may land where it is written.
+  A bare path is still akan, and its message now offers both readings.
+- GRAMMAR §G4.3 states why `03` is akan as a literal: readers disagree
+  whether `010` is 8 or 10.
+
+### Changed (breaking)
+
+- **Built-ins are lowercase dunders**: `__AS_JSON__`, `__AS_TOML__`,
+  `__AS_YAML__`, `__AS_YAPYON__`, and `__ENV__` are now `__as_json__`,
+  `__as_toml__`, `__as_yaml__`, `__as_yapyon__`, and `__env__`. The old
+  names are unknown built-ins. The anchors stay `__ROOT__`, `__PARENT__`,
+  and `__KEY__`; declared functions use upper snake case by convention.
+
+---
+
 ## 0.5.0 — 2026-10-24
 
 Built to specification and grammar **v0.5**: slots, and trees a consumer
