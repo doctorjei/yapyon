@@ -396,7 +396,8 @@ both are legal (§13.1). A result is a `str`, and a chain is checked like
 any call: `{a.__as_json__().__as_yaml__()}` writes the JSON text as a YAML
 string, while `{a.__as_json__().__as_toml__()}` is a type error at the
 second link, since `__as_toml__` takes a table. **A dunder call that names
-no built-in — these four, or `__env__` (§5.1.3) — is akan** at the call,
+no built-in — these four, `__env__` (§5.1.3), or the casters and
+`__get__` (§5.1.5) — is akan** at the call,
 naming the built-ins that exist: a dunder call names a built-in or
 nothing.
 
@@ -632,6 +633,46 @@ these standards — `USER`, `HOSTNAME`,
 anything an application defines for itself — is exposed only by a loader
 that chooses to.*
 
+### 5.1.5 Casters and the getter
+
+Four built-ins **cast** one value to another type. They take **Python's
+names** and **yapyon's own parsing**: what each accepts is defined here,
+not by any host language, so a document casts the same way everywhere.
+
+| name | takes | gives |
+|---|---|---|
+| `__int__` | text that is a whole decimal number — an optional sign and ASCII digits, leading zeros allowed (`"03"` is 3), nothing before or after; an int; a float, **truncated toward zero** (`3.7` is 3); a bool (`True` is 1) | `int` |
+| `__float__` | decimal text — digits with an optional fraction and an optional exponent (`"2.5e+3"`, `"3"`, `".5"`); a float; an int or a bool, rounded to the nearest float, akan if outside the float range | `float` |
+| `__bool__` | the text `true`/`false`, `yes`/`no`, `on`/`off`, or `1`/`0`, in any ASCII case; the numbers 1 and 0 (and 1.0, 0.0); a bool | `bool` |
+| `__str__` | an int, float, or bool, written as §5.4 writes it; a string, as it is | `str` |
+
+**Anything else is akan** at the call, naming what the cast takes:
+`"3.0"`, `"42abc"`, `" 42"`, and `"4_2"` as an int (text must be the whole
+number — no host's habit of reading a prefix and dropping the rest);
+`"inf"`, `"nan"`, `"2,5"`, and `"0x1p3"` as a float; `"y"` and `"maybe"` as
+a bool; bytes for `__str__`, since text from bytes needs a named encoding
+(ehmon 5); any container. **`None` is akan** too — unless the call is
+written after `?.` (§13.1), which skips it.
+
+`__get__(container, key, default=None)` is Python's `dict.get`, for
+sequences as well: the value at a **key** of a mapping (compared as names,
+§7) or an **index** of a list (negative counts from the end, §5.1), or
+`default` when there is none. A **multimap** gives the list view of the key
+(§5.2) — every value filed under it, `[]` when none — so its default is
+never used. `default` may be given by position or keyword.
+
+    persona:
+      mind:
+        model_list: []
+    port_text: "8080"
+    port: port_text.__int__()                                   # 8080
+    FABLE: persona.mind.model_list.__get__(0)?.__str__()        # None
+
+**A call's result is a separate value**, as a copy is (§5.6): changing one
+loaded value never changes another. That is what can be observed, not how
+it is built — an implementation shares whatever cannot be told apart,
+every single value included.
+
 ### 5.2 Resolution scope: nearest wins
 
 A reference's first segment resolves by searching outward from the y-string's
@@ -793,6 +834,13 @@ is — a list stays a list, a mapping a mapping.
   result is an assembly, as one splicing it is. A built-in's result is
   copied the same way: `(__env__("X"))` is `None` when `X` is unset,
   where `y"{__env__('X')}"` is the text `None`.
+- **A value ending in a call may stand bare**: `port: port_text.__int__()`
+  means `port: (port_text.__int__())` (`GRAMMAR §G4.8`). A value written
+  in a document must not be **owned somewhere else** in the tree — naming
+  one is fine, moving it is not. In this version **every call's result is
+  owned by nobody**, so a call may land where it is written; a bare
+  **path** names a value owned elsewhere and stays akan, to be quoted as
+  text or copied in parentheses.
 - **Limits.** A copy is one link of a dependency chain, and adds what it
   copies to the rendered size — the length of each string and bytes value
   in it, and one for each other value — so copies that double their input
@@ -1078,7 +1126,7 @@ is a ledger that splices nothing, a ledger is a template that holds no
 `yt` or slot and reads no environment, and a template is an assembly that calls no declared
 function. The record is the restricted form — records are implied to be
 fixed, and this one is. The tier a document needs is computable from its
-bytes: a `y`, `yb`, or `ry` literal, a copy, or any parenthesis makes it
+bytes: a `y`, `yb`, or `ry` literal, a copy or bare call (§5.6), or any parenthesis makes it
 a ledger (§5.6), a `yt` literal, a slot (§15), or
 an environment reference (`$NAME` or a call to `__env__`) a template, and a call to a declared
 function an assembly.
@@ -1217,6 +1265,11 @@ literal rendering of it, and not ownership of it.
   names a function the contract declares. A name neither defines is akan at
   the call site.
 - **The receiver form is sugar.** `{a.f(x)}` is `{f(a, x)}`.
+- **`?.` skips a call on `None`.** In `{a.f()?.g().h()}`, if `a.f()` is
+  `None`, neither `g` nor `h` is called and the whole chain is `None` — as
+  in JavaScript, C#, and Swift. Otherwise `?.` is `.`. It protects only its
+  own chain: an argument is a chain of its own. Without it, a call given
+  `None` is akan where its parameter does not take `None` (§5.1.5).
 - **Keyword arguments name a parameter.** A keyword takes anything a
   positional argument can, and follows every positional argument, as in
   Python. For a **declared** function the keywords are its parameter names

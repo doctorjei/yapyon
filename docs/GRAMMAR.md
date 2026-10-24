@@ -202,6 +202,12 @@ prefixes Python does not have:
   the first digit (`0z_7Z`); never two in a row, and never at the end.
 - **The sign** is one optional `+` or `-` before the literal.
 
+- **A decimal `INT` has no leading zero**: `0` alone, or a run of zeros
+  (`00`), but `03` and `010` are akan. Readers disagree about such a
+  literal — C, C++, and YAML 1.1 read `010` as octal 8, Rust as 10, and
+  Python refuses it — so the only spelling every reader agrees on is the
+  one without. A prefixed `INT` (`0x003`) and a `FLOAT` (`03.5`) may have
+  them.
 - **There is no `inf` or `nan` spelling.** Python has none either; they are
   reachable in Python only through a function call.
 - **The digits of a numeric literal are ASCII**, as in Python source. Other
@@ -415,6 +421,22 @@ follows it — skipping whitespace, newlines included:
 
 `(` is never part of a `NAME`, so a key cannot begin with one (§G7).
 
+**A bare call** is a `COPY` token too, written without the parentheses: in
+value position, a `NAME` (or `$` and an `ENVNAME`) followed directly by
+`.`, `?`, `(`, or `[` begins a reference chain that runs — through name
+characters, `.`, `?`, and bracketed or parenthesized runs, in which strings
+may hold anything — to the first character outside a bracket that cannot
+continue it, whitespace included. The chain is a `copy_ref`, and it must
+**end in a call**:
+
+```ebnf
+COPY      ::= copy_ref               (§G5), where the ref is an applied
+```
+
+So `port: port_text.__int__()`, `a: __int__("12")`, and
+`m: models.__get__(0)?.__str__()` are values, while `x: foo.bar`,
+`x: foo[0]`, and `x: $HOME` are akan, as bare words always are.
+
 ### §G4.9 Labels
 
 Outside a string literal, `<` is admitted in one place only: **after the
@@ -462,7 +484,7 @@ receiver    ::= anchor step+
               | SEG    step*
               | ENV
 
-suffix      ::= "." call
+suffix      ::= ( "." | "?." ) call
 
 call        ::= callee "(" [ args [ "," ] ] ")"
               | callee "(" [ args "," ] kwargs [ "," ] ")"
@@ -542,8 +564,13 @@ What the production says, and why:
   `ENVNAME` cannot spell is reached through a built-in call with a string
   argument; which variables exist and what they hold is the
   specification's business.
-- **Nothing follows a call but another call.** `suffix ::= "." call`, so
-  `{f(x).g()}` chains, but `{f(x)[0]}` and `{f(x).name}` are not generated.
+- **Nothing follows a call but another call.** `suffix ::= ( "." | "?." )
+  call`, so `{f(x).g()}` chains, but `{f(x)[0]}` and `{f(x).name}` are not
+  generated.
+- **`?.` is one token, and only ever precedes a call**: `{a?.f()}` and
+  `{a.f()?.g()}`, never `{a?.b}`, `{a?[0]}`, or `{a? .f()}`. A `?` is
+  never anything else in a reference. Its meaning is the specification's
+  business.
 - **A literal appears only as an argument** (positional or keyword), or a
   key in a bracket — never
   as the whole hole (`{8080}`) and never as a receiver (`{"x".f()}`). A
