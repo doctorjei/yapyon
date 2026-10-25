@@ -152,11 +152,10 @@ def _scalar(node: Scalar) -> str:
 
 
 def _lexeme_lines(lexeme: str, level: int) -> list[str]:
-    """The author's spelling, laid out at `level`. A multi-line lexeme is a
-    `\"\"\"` literal: its continuation lines shift together so their anchor
-    sits one level in, which keeps the value (GRAMMAR §G4.4 dedents against
-    the first content line). Whitespace-only lines are blank to the scanner,
-    and stay blank."""
+    """The author's spelling, laid out at `level`. Continuation lines of
+    multiline literals/references shift together, preserving each string's
+    content-relative anchor (GRAMMAR §G4.4). Whitespace-only lines are blank
+    to the scanner, and stay blank."""
     first, *rest = lexeme.split("\n")
     if not rest:
         return [first]
@@ -188,6 +187,13 @@ def _inline(node: Node, level: int, source: str | None, *,
             unresolved: bool = False) -> list[str] | None:
     """The value as it appears after `key: ` or `- `, or None if it needs a
     block of its own. A list, because a block string spans lines."""
+    from .parser import Expression
+    if isinstance(node, Expression):
+        if unresolved:
+            from ._expressions import source as expression_source
+            return _lexeme_lines(expression_source(node), level)
+        raise AkanError(deferred_message("FOR", ""), node.line, node.col,
+                        node.source or source)
     if isinstance(node, YString):
         if unresolved:
             if not node.lexeme:
@@ -248,6 +254,10 @@ def _fits(line: str) -> bool:
 def _lines(node: Node, level: int, source: str | None, *,
            unresolved: bool = False) -> list[str]:
     pad = INDENT * level
+    from .parser import Expression
+    if isinstance(node, Expression):
+        inline = _inline(node, level, source, unresolved=unresolved)
+        return [pad + inline[0]] + inline[1:]
     flow = _flow(node, source, unresolved=unresolved)
     if flow is not None and _fits(pad + flow):
         return [pad + flow]

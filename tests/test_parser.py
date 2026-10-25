@@ -169,9 +169,10 @@ def test_multimap_keys_may_repeat_where_a_mapping_would_akan():
     assert [e.value.value for e in node.entries] == [1, 2]
 
 
-def test_a_flow_multimap_with_entries_is_reserved():
-    # §9: only the empty one, {+}, has a flow spelling (2026-10-19)
-    akan("x: {+ a: 1}\n", "a flow multimap with entries is reserved")
+def test_a_flow_multimap_has_one_marker_and_keeps_repeated_entries():
+    node = parse("x: {+ a: 1, a: 2,}\n")
+    assert isinstance(node.pairs[0].value, MultiMap)
+    assert [pair.value.value for pair in node.pairs[0].value.entries] == [1, 2]
 
 
 # --------------------------------------------------------------------------- #

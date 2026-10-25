@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §16.2",
+  "why": "a generated key must be a string; there is no implicit string cast"
+}

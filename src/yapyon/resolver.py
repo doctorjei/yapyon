@@ -2,11 +2,10 @@
 
 YAMLちゃうで。やぴょんやぴょん。
 
-Replacement without computation (law 2): every hole names a value that is
-already in the document, a variable of the loading process's environment
-(`{$NAME}`, `__env__`, §5.1.3), or a declared function's result (§13), and
-the only things that happen are substitution, the format's named encodings
-(§5.1.2), and those calls — no operators, no control flow.
+Holes name document values, loading-process environment strings (§5.1.3),
+or declared function results (§13). Data expressions and comprehensions
+(§16) construct values through the same lookup, call, and dependency paths;
+there is no second evaluator or in-document function-definition mechanism.
 
 Three rules do all the work:
 
@@ -53,8 +52,9 @@ from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
                           environment)
 from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
-from .parser import (Copy, Mapping, MultiMap, Node, Pair, ResolvedTemplate,
-                     Scalar, Sequence, Slot, YString, children)
+from .parser import (Comprehension, Copy, Expression, Mapping, MultiMap, Node,
+                     Pair, ResolvedTemplate, Scalar, Sequence, Slot, YString,
+                     children)
 from .serializers import (BUILTIN_NAMES, CASTERS, ENV_BUILTIN, GET_BUILTIN,
                           SERIALIZERS, YEETED_YT)
 from .typespec import check, parse_type, show
@@ -103,56 +103,72 @@ class _At(NamedTuple):
 # Sites: an unresolved y-string, its scope chain, and how to replace it
 # --------------------------------------------------------------------------- #
 class _Site:
-    __slots__ = ("node", "chain", "replace", "key", "reads")
+    __slots__ = ("node", "chain", "replace", "key", "reads", "bindings", "contribution", "key_scope")
 
-    def __init__(self, node: YString, chain: list, replace, *, key=False):
+    def __init__(self, node: YString, chain: list, replace, *, key=False,
+                 bindings=None, contribution=False, key_scope=None):
         self.node, self.chain, self.replace = node, chain, replace
         self.key, self.reads = key, []
+        self.bindings = (getattr(node, "_bindings", {}) if bindings is None
+                         else bindings)
+        self.contribution = contribution
+        self.key_scope = key_scope
 
 
-def _collect(node: Node, chain: list, sites: list, replace) -> None:
-    """Walk the tree, recording every splice site with its scope chain.
-
-    A frame is `(mapping, branch_key)`, innermost first. Sequences and
-    multimaps add no frame: list items have no keys, and a multimap's entry
-    keys take no part in the search (§5.2)."""
+def _collect(node: Node, chain: list, sites: list, replace, bindings=None) -> None:
+    """Record pending sites with ordinary document scope and lexical bindings."""
+    bindings = getattr(node, "_bindings", bindings or {})
     if isinstance(node, YString):
-        # Every y-family literal is a site, `yt` included: since 2026-09-14 a
-        # template resolves against the document like any other, and differs
-        # only in not being joined (§6).
-        sites.append(_Site(node, chain, replace))
+        sites.append(_Site(node, chain, replace, bindings=bindings))
         return
     if isinstance(node, MergedMapping):
         node.finish()
         if node.layers:
+            def layers(mapping):
+                for index, layer in enumerate(mapping.layers):
+                    if isinstance(layer, Comprehension):
+                        sites.append(_Site(layer, chain,
+                                           lambda new, i=index, m=mapping: m.layers.__setitem__(i, new),
+                                           bindings=bindings, key=True, contribution=True,
+                                           key_scope=node))
+                    elif isinstance(layer, MergedMapping) and layer.layers:
+                        layers(layer)
+            layers(node)
             for layer in node.key_layers():
+                if isinstance(layer, Comprehension):
+                    continue
                 for pair in layer.pairs:
                     if isinstance(pair.key, YString):
                         sites.append(_Site(pair.key, [(node, pair)] + chain,
-                                           _key_slot(layer, pair), key=True))
+                                           _key_slot(layer, pair), key=True,
+                                           bindings=bindings))
             for pair in node.visible_pairs():
                 if pair.named and node.waiting_for_name(pair.key) is None:
                     _collect(pair.value, [(node, pair)] + chain, sites,
-                             _pair_slot(node, pair))
+                             _pair_slot(node, pair), bindings)
             return
     if isinstance(node, (Mapping, MultiMap)):
         pairs = node.pairs if isinstance(node, Mapping) else node.entries
         for pair in pairs:
             scope = [(node, pair)] + chain if isinstance(node, Mapping) else chain
             if isinstance(pair.key, YString):
-                sites.append(_Site(pair.key, scope, _key_slot(node, pair), key=True))
+                sites.append(_Site(pair.key, scope, _key_slot(node, pair), key=True,
+                                   bindings=bindings))
             _collect(pair.value, scope, sites,
                      _pair_slot(node, pair) if isinstance(node, Mapping)
-                     else _entry_slot(pair))
+                     else _entry_slot(pair), bindings)
         return
     if isinstance(node, Sequence):
         for index, item in enumerate(node.items):
-            _collect(item, chain, sites, _index_slot(node, index))
+            _collect(item, chain, sites, _index_slot(node, index), bindings)
         return
 
 
 def _key_slot(container, pair):
     def slot(new):
+        if not isinstance(new, Scalar) or new.type != "str":
+            raise AkanError("a computed key must yield a string; no implicit cast",
+                            pair.line, pair.col, pair.source)
         why = key_error(new.value)
         if why:
             raise AkanError(why, pair.line, pair.col, pair.source)
@@ -318,7 +334,7 @@ class Resolver:
             if any(isinstance(m, MergedMapping) and m.layers for m, _ in site.chain):
                 waiting.append(site)
                 continue
-            probe = _Site(site.node, site.chain, None)
+            probe = _Site(site.node, site.chain, None, bindings=site.bindings)
             pending = False
             for parsed, ref, previous in site.reads:
                 try:
@@ -372,6 +388,9 @@ class Resolver:
         stuck = []
         for site in deferred:
             for kind, ref in site.node.parts:
+                if kind == "expression":
+                    stuck.append(f"{site.node.lexeme or ref} at line {site.node.line}, "
+                                 f"col {site.node.col}")
                 if kind == "hole":
                     shown = (f"({ref})" if isinstance(site.node, Copy)
                              else f"{{{ref}}}")
@@ -384,6 +403,9 @@ class Resolver:
     def _try(self, site: _Site):
         """Resolve one y-string, or None to defer it to a later pass."""
         node = site.node
+        if isinstance(node, Expression):
+            from ._expressions import evaluate
+            return evaluate(self, site)
         if isinstance(node, Copy):
             return self._copy(site)
         targets, pending = {}, False
@@ -454,6 +476,11 @@ class Resolver:
         AST, so every literal keeps its lexeme (§3)."""
         node, ref = site.node, site.node.ref
         target = self._lookup(ref, site)
+        return self._copy_value(target, site)
+
+    def _copy_value(self, target, site):
+        """Finish an already-looked-up value without repeating its call."""
+        node, ref = site.node, site.node.ref
         facts = self._settled(target)
         if facts is None:
             # Something in it is still pending. If that something is this
@@ -687,6 +714,8 @@ class Resolver:
                 node = self._argument(arg, call, ref, site)
             if isinstance(node, YString):
                 return node
+            if i == 0 and call.safe and isinstance(node, Scalar) and node.type == "none":
+                raise _Short
             args.append(node)
         if call.safe and isinstance(args[0], Scalar) and args[0].type == "none":
             raise _Short
@@ -1012,6 +1041,9 @@ class Resolver:
         A borrow is ready only when nothing in its subtree is pending."""
         if isinstance(arg, Literal):
             return _literal_node(arg, site.node)
+        if isinstance(arg, Node):
+            pending = _pending(arg)
+            return pending if pending is not None else arg
         if arg.call is not None:
             return self._call(arg.call, ref, site)
         if arg.key:
@@ -1181,6 +1213,8 @@ class Resolver:
                          f"name the same key", at)
 
     def _search(self, name: str, site: _Site) -> Node:
+        if name in site.bindings:
+            return site.bindings[name]
         hits = []
         for level, (mapping, branch) in enumerate(site.chain):
             own = branch.key if isinstance(branch, Pair) else branch
@@ -1214,8 +1248,9 @@ def _children(node: Node) -> list:
     if isinstance(node, MergedMapping):
         node.finish()
         if node.layers:
-            return ([p.key for layer in node.key_layers() for p in layer.pairs
-                     if isinstance(p.key, YString)]
+            return ([layer for layer in node.key_layers() if isinstance(layer, YString)]
+                    + [p.key for layer in node.key_layers() for p in layer.pairs
+                       if isinstance(p.key, YString)]
                     + [p.value for p in node.visible_pairs()])
     out = children(node)
     if isinstance(node, (Mapping, MultiMap)):
@@ -1232,7 +1267,9 @@ def _check_fills(node: Node):
 
 
 def _unfilled(node: Node) -> Slot | None:
-    """The first slot left in a tree, in document order (SPEC §15.6)."""
+    """The first instantiated slot left in a tree (SPEC §15.6)."""
+    if isinstance(node, Expression):
+        return None
     if isinstance(node, Slot):
         return node
     if isinstance(node, MergedMapping):

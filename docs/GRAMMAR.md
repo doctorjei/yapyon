@@ -14,7 +14,7 @@ references this document and never restates a production from it.
 *(That pointer is a courtesy, not a dependency. If you are implementing a
 reader, you need this file and no other.)*
 
-Sections are numbered **§G1**–**§G8** so that a citation can never be confused
+Sections are numbered **§G1**–**§G9** so that a citation can never be confused
 with a section of the specification.
 
 ## §G1 Scope, conformance, and notation
@@ -301,7 +301,8 @@ of `\xHH`.
 lowercase, in the order given. Python accepts `br` as well as `rb`, and any
 capitalization (`Rb`, `BR`); yapyon accepts neither variant. An identifier
 immediately adjacent to a quote is consumed as a prefix; whitespace between
-them yields two tokens.
+them yields two tokens. The contextual expression words (§G9) are operators
+or clause tokens, not string prefixes, even immediately before a quote.
 
 | Prefix | Token | Formal name | Spoken |
 |---|---|---|---|
@@ -426,8 +427,9 @@ value position, a `NAME` (or `$` and an `ENVNAME`) followed directly by
 `.`, `?`, `(`, or `[` begins a reference chain that runs — through name
 characters, `.`, `?`, and bracketed or parenthesized runs, in which strings
 may hold anything — to the first character outside a bracket that cannot
-continue it, whitespace included. The chain is a `copy_ref`, and it must
-**end in a call**:
+continue it. Whitespace may separate reference tokens before a postfix
+operation; a logical newline still ends a bare value. A call prefix is a
+`copy_ref` ending in a call; further constructed-value postfixes are §G9:
 
 ```ebnf
 COPY      ::= copy_ref               (§G5), where the ref is an applied
@@ -439,9 +441,9 @@ So `port: port_text.__int__()`, `a: __int__("12")`, and
 
 ### §G4.9 Labels
 
-Outside a string literal, `<` is admitted in one place only: **after the
-`NAME` of a key, before its `:`**, where it opens a **label**, one token
-`LABEL`:
+**After the `NAME` of a key, before its `:`**, `<` opens a **label**, one
+`LABEL` token. In an expression, `<` and `>` are comparison operators (§G9).
+A label is:
 
 ```ebnf
 LABEL       ::= "<" [ label_name ( "." label_name )* ] ">"
@@ -454,9 +456,9 @@ newlines too inside brackets, where a newline is not layout (§G3) — and
 any two tokens inside the label, newlines included, as inside a copy
 (§G4.8): `persona<llamacpp>`, `persona <llamacpp>`,
 `persona< base . agent >`, and `persona<>` are all labels. A label name keeps its lexeme and is compared as a key is
-(§G4.1). `<` anywhere else outside a string — in value position, or a
-second label after the first — is akan, and so is a `<` with no `>` to
-close it.
+(§G4.1). A second label after the first is akan, as is an unclosed label.
+A comparison instead requires an operand on each side; a naked `<b>` is
+neither a label in key position nor a complete comparison.
 
 ## §G5 Reference grammar
 
@@ -657,7 +659,13 @@ advice never changes what a document means.
 
 ## §G6 Phrase grammar
 
-Over the token stream of §G3–§G4, the grammar is plain **LL(1)**:
+Over the token stream of §G3–§G4, the grammar is **LL(1) after ordinary
+left factoring**. The EBNF below names the alternatives for readability.
+Where a name/quoted key can begin either a pair or an expression, consume
+that common starter before choosing `LABEL`/`COLON` versus an expression
+continuation. Separator/trailing-comma tails are factored the same way.
+These are decisions over tokens, not source indentation or parser feedback
+to the lexer; comprehension heads are already marked lexically (§G9).
 
 ```ebnf
 document    ::= block_value EOF
@@ -665,6 +673,7 @@ document    ::= block_value EOF
 block_value ::= block_map
               | block_seq
               | block_mmap
+              | block_comp
               | flow_value NEWLINE
 
 block_map   ::= pair+
@@ -681,12 +690,12 @@ mmap_entry  ::= PLUS INDENT [ NEWLINE ] entry_body DEDENT
 entry_body  ::= pair
               | INDENT pair DEDENT
 
-flow_value  ::= scalar | flow_list | flow_map | group
+flow_value  ::= expression                         (§G9)
 scalar      ::= STRING | BYTES | YSTR | YBSTR | YTSTR | COPY
               | INT | FLOAT | KEYWORD
-group       ::= LPAREN flow_value RPAREN
+group       ::= LPAREN expression RPAREN
 flow_list   ::= LBRACKET [ flow_value (COMMA flow_value)* [COMMA] ] RBRACKET
-flow_map    ::= LBRACE ( PLUS | [ fpair (COMMA fpair)* [COMMA] ] ) RBRACE
+flow_map    ::= LBRACE [ PLUS ] [ fpair (COMMA fpair)* [COMMA] ] RBRACE
 fpair       ::= key [ LABEL ] COLON flow_value
 key         ::= NAME | QKEY | YKEY
 ```
@@ -705,13 +714,13 @@ prefix; `r`, bytes, `yt`, copies, and calls are not key forms.
   indented deeper than the frame's anchor. Both are layout, not meaning:
   `- 1` and `-` followed by an indented `1` are the same document, exactly as
   `k: 1` and `k:` followed by an indented `1` already are.
-- **`{+}` is the empty multimap**, and `{}` the empty mapping: a block
-  multimap needs an entry, so this is the one spelling for a multimap that
-  holds none. Like `{ }`, it is three tokens, and whitespace between them is
-  layout (`{ + }`). A flow multimap **with** entries (`{+ a: 1, + a: 2}`) is
-  reserved; `{+` followed by anything but `}` is akan. The choice is made at
-  the token after `{` — `PLUS`, a key token, or `}` — so the grammar stays
-  LL(1).
+- **`{+}` is the empty multimap**, and `{}` the empty mapping. A nonempty
+  flow multimap is **`{+ a: 1, a: 2}`**: one leading `PLUS` identifies the
+  collection, and comma-separated ordinary pairs follow. Keys may repeat.
+  There is no second `PLUS` before a flow pair. One trailing comma and
+  whitespace between tokens are allowed, as in every flow collection.
+  Block multimaps retain `+ ` on every entry. Comprehension openers are
+  classified lexically before this production (§G9).
 - **A group is not a tuple.** `group` holds exactly one value, so `()`,
   `(1,)`, and `(1, 2)` are not generated, and are akan; a sequence is
   spelled with brackets.
@@ -720,12 +729,10 @@ prefix; `r`, bytes, `yt`, copies, and calls are not key forms.
 - **One document per file.** `---` and `...` are reserved tokens with no
   meaning. *(Reserved: multi-document streams.)*
 
-Note that `scalar` has **nine** alternatives, of which five — `STRING`,
-`BYTES`, `INT`, `FLOAT`, `KEYWORD` — are literals readable from their own
-bytes, and four — `YSTR`, `YBSTR`, `YTSTR`, `COPY` — are not. That partition is
-exact and has no other members, and `LPAREN` is the only other token a
-`flow_value` can begin with; the specification builds a conformance form on
-both.
+`scalar` has **nine** alternatives: five literals (`STRING`, `BYTES`, `INT`,
+`FLOAT`, `KEYWORD`) and four deferred forms (`YSTR`, `YBSTR`, `YTSTR`, `COPY`).
+Expressions and comprehensions (§G9) add structured computed forms beyond
+that scalar partition; they are not literal collection structure.
 
 ## §G7 Static rules
 
@@ -733,9 +740,10 @@ These are well-formedness rules that the phrase grammar cannot express. A
 conforming implementation enforces all of them, and needs nothing beyond the
 parse tree to do so.
 
-- **Keys are names or strings:** `NAME`, `QKEY`, or `YKEY`. Numeric,
-  bytes, template, container, copy, and call keys are akan. A quoted key
-  is not a name, even when its text is an identifier.
+- **Ordinary keys are names or strings:** `NAME`, `QKEY`, or `YKEY`.
+  Numeric, bytes, template, container, copy, and call keys are akan in an
+  ordinary pair. A quoted key is not a name, even when its text is an
+  identifier. A comprehension head instead has an expression key (§G9).
 - **A literal string key is nonempty, does not begin with `@`, and is not
   a dunder.** A computed key's text is not available to a static check.
 - **Keywords are not keys.** `True: 1` is akan.
@@ -761,12 +769,12 @@ parse tree to do so.
   layout must not smuggle one back in.
 - **An empty document is akan.** `document ::= block_value EOF` admits no
   empty production, and a file of only comments is empty.
-- **An unquoted word in value position is akan**, always, and is never a
-  string and never a boolean — unless it begins a bare call, a reference
-  chain that ends in a call (§G4.8), which is a `COPY`. There are no plain
-  scalars. *(This is the single
-  rule that makes YAML's implicit typing — the Norway problem —
-  unrepresentable.)*
+- **There are no plain scalars.** A bare path as an ordinary value is
+  akan, never implicitly text or a boolean; quote text or copy a reference
+  in parentheses. A bare call (§G4.8), a computed expression, or selection
+  from a newly constructed value is a value. Comprehension heads, iterable
+  clauses, predicates, and expression operands may name values directly
+  (§G9). Ordinary nested mapping values retain the explicit-copy rule.
 
 ## §G8 What this document does not decide
 
@@ -787,6 +795,102 @@ Two consequences worth stating plainly:
 - **A parser written from this document alone is a useful artifact**, and that
   is the point of separating the two. It can tokenize, build a tree, and
   reject malformed input, without implementing resolution at all.
+
+## §G9 Expressions and comprehensions
+
+Expressions construct values; they do not introduce statements, assignment,
+function definitions, arithmetic, generators, or general destructuring.
+The hole-interior reference grammar remains §G5. Reference atoms and calls
+in expressions use that grammar, not a second reference syntax.
+
+### §G9.1 Lexical classification
+
+In addition to §G4's tokens:
+
+- `COMPARE` is `==`, `!=`, `<`, `<=`, `>`, or `>=`.
+- `DOT` is `.`, and `SAFE_DOT` is the single token `?.`.
+- The contextual words `for`, `if`, `in`, `is`, `not`, `and`, and `or`
+  yield `FOR`, `IF`, `IN`, `IS`, `NOT`, `AND`, and `OR`. They remain names
+  as ordinary mapping keys and path segments; strings never become operators.
+- A reference chain that does not end in a call may be a `REF` token in an
+  expression. Its text must satisfy §G5. A bare `REF` is not an ordinary
+  value by itself (§G7); it is an operand or comprehension expression.
+- A `FOR` directly inside `[` or `{`, not inside a nested collection or
+  parenthesis, marks that opener as `LCOMP`, `DCOMP`, or `MCOMP` (the last
+  when its first token is `PLUS`). A `FOR` at a block's own indentation marks
+  its first head with `BCOMP(kind)`: list for a `DASH`, multimap for a
+  `PLUS`, otherwise dictionary. These marks are lexical tokens, not parser
+  feedback. A nested block or collection has its own head.
+
+A comprehension has exactly one head item or pair, one `FOR`, and at most
+one `IF`. More head entries, more clauses, and `else` are not generated.
+Whitespace may separate tokens, as elsewhere; block indentation still
+identifies nesting. For/if clauses in a block align with the head's initial
+key, dash, or plus marker, not with a marker's inner frame.
+
+### §G9.2 Value expressions
+
+```ebnf
+expression  ::= conjunction (OR conjunction)*
+conjunction ::= negation (AND negation)*
+negation    ::= NOT negation | comparison
+comparison  ::= postfix (comparison_op postfix)*
+comparison_op ::= COMPARE | IN | NOT IN | IS [NOT]
+postfix     ::= primary ( LBRACKET expression RBRACKET
+                        | DOT reference_tail
+                        | SAFE_DOT applied_tail )*
+primary     ::= scalar | flow_list | flow_map | group | NAME | REF | QKEY | YKEY | flow_comp
+reference_tail ::= a name-led ref from §G5, without an anchor or ENV
+applied_tail   ::= a reference_tail ending in a call
+```
+
+`IS` and `IS NOT` require `None` on the right; grouping that literal is
+allowed, but an arbitrary reference or call is not an identity test. An
+ordinary value consisting only of a bare name/path is akan (§G7). As a
+comprehension expression or an operand, the same name/path denotes a typed
+value. An ordinary mapping nested in an expression still has ordinary keys
+and explicit copies for bare reference values.
+
+Postfix subscripts accept the same string-key or integer-index forms as
+§G5, including negative indices but not a literal leading `+`. Dot steps
+select name keys. A call tail uses §G5's argument and keyword rules, with
+its receiver supplied by the preceding expression. Calls, literals,
+collections, groups, and comprehensions share these postfix facilities.
+`?.` occurs only before a call. A name is callable; arbitrary expression
+values are not function objects.
+
+### §G9.3 Inline and block comprehensions
+
+```ebnf
+flow_comp   ::= LCOMP expression for_clause [if_clause] RBRACKET
+              | DCOMP expression COLON expression for_clause [if_clause] RBRACE
+              | MCOMP PLUS expression COLON expression for_clause [if_clause] RBRACE
+for_clause  ::= FOR binding IN expression
+binding     ::= NAME [COMMA NAME]
+if_clause   ::= IF expression
+
+block_comp  ::= BCOMP(dict) comp_pair FOR binding IN expression NEWLINE
+                [IF expression NEWLINE]
+              | BCOMP(list) DASH INDENT [NEWLINE] comp_item DEDENT
+                FOR binding IN expression NEWLINE [IF expression NEWLINE]
+              | BCOMP(multimap) PLUS INDENT [NEWLINE] comp_pair DEDENT
+                FOR binding IN expression NEWLINE [IF expression NEWLINE]
+comp_pair   ::= expression COLON ( expression NEWLINE
+                                | NEWLINE INDENT block_value DEDENT )
+comp_item   ::= expression NEWLINE | block_map | block_seq | block_mmap | block_comp
+              | INDENT block_value DEDENT
+```
+
+The optional deeper body indentation under a bare marker follows §G6's
+ordinary frame rule. A binding name is not a dunder or a keyword; two names
+must be distinct after identifier folding. Arbitrary tuple/list binding
+patterns and three or more binding names are not generated. Whether the
+source kind requires one or two names is a value question, not syntax.
+
+A dictionary/multimap head's key is an **expression**, even when written as
+one bare name. It is not an ordinary literal name key. Ordinary nested
+mapping syntax does not change. A head has no slot label; a slot must be
+attached to an ordinary dictionary key.
 
 ---
 

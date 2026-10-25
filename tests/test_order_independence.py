@@ -15,6 +15,8 @@ mean nothing. A document calling a serializer is skipped, because a
 serializer writes keys in document order on purpose (order is data, §5.1.2);
 one holding a `\"\"\"` string is skipped too: its content
 lines are not structure, so a line-based reorder cannot see where it ends.
+Two-name collection iteration is also excluded: dictionary entry order is
+an explicit input to construction, so reordering it may change a result list.
 """
 
 import re
@@ -176,8 +178,12 @@ key: (k)
 
 # A serializer writes keys in document order — order is data (§5.1.2) — so
 # its output legitimately follows a reorder; those documents are left out.
+# Two-name iteration observes dictionary entry order, just as serialization
+# does. Reordering that input legitimately changes a constructed list.
+PAIR_ITERATION = re.compile(r"\bfor\s+[^,\s]+\s*,\s*[^\s]+\s+in\b")
 CASES = [(name, text) for name, text in documents()
-         if '"""' not in text and "__as_" not in text]
+         if '"""' not in text and "__as_" not in text
+         and not PAIR_ITERATION.search(text)]
 CASES += [(f"dense/{n}", text) for n, text in enumerate(DENSE)]
 
 

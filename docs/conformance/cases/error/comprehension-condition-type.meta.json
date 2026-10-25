@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §16.3",
+  "why": "numeric zero is not a boolean condition; only bool and None are accepted"
+}

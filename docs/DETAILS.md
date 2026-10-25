@@ -2,13 +2,14 @@
 
 ## Status
 
-**`0.5.2`**, built to specification **v0.5**. Lexer, parser, resolver,
+**`0.5.3`**, built to specification **v0.5**, including collection
+comprehensions and expressions (§16). Lexer, parser, resolver,
 loader, emitter, the four serializers, contracts, and trees with slots are
 done and tested,
 including a conformance suite that turns the splice matrix and the Python
 divergence table into executable cases, and a portable corpus in
 `docs/conformance/` that another implementation can run against itself. The
-suite is **2323 tests** on the current tree; the number here tracks the tree,
+suite is **2463 tests** on the current tree; the number here tracks the tree,
 not a release.
 
 **The normative specification is published, in two documents under
@@ -18,7 +19,7 @@ not a release.
 |---|---|
 | [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 104 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 114 portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -39,6 +40,61 @@ interpreter, so a key means the same thing on every install and every Python.
 Width variants and canonically equivalent spellings are the same name —
 `ｎａｍｅ` is `name`, and `é` is `é` however it was composed — while `ﬁ` and
 `fi` stay distinct. `yapyon.UNICODE_VERSION` names the pinned version.
+
+## Collection comprehensions
+
+*Added in 0.5.3; SPEC §16 and GRAMMAR §G9.* Construct lists, dictionaries, and
+multimaps directly in the document. Every comprehension has one `for` and
+at most one `if`. A list source binds one item; a dictionary or multimap source
+binds key and value. Multimap input visits every entry, including repeats.
+
+```python
+>>> import yapyon
+>>> d = yapyon.loads('persona: {name: "example", models: ["m1", "M/2"]}\nrows: {target: {provider: (persona.name), remote: (target)} for target in persona.models}\n')
+>>> d["rows"]
+{'m1': {'provider': 'example', 'remote': 'm1'}, 'M/2': {'provider': 'example', 'remote': 'M/2'}}
+```
+
+The outer `target` is a computed key; the inner `provider` and `remote` are
+ordinary name keys. Keys retain exact string text and are not promoted to
+names. Dictionary duplicates are akan; use a multimap to retain them. Ordinary
+nonempty inline multimaps are `{+ key: value, key: value}`.
+
+```python
+>>> d = yapyon.loads('models: ["m1", "m2"]\nby_provider: {+ "example": model for model in models}\n')
+>>> [(entry.key, entry.value) for entry in d["by_provider"]]
+[('example', 'm1'), ('example', 'm2')]
+```
+
+Filters accept **True**, **False**, or **None** only; None counts as false.
+Numbers, strings, and containers are not implicitly converted. Test availability
+explicitly when empty-but-present values must count:
+
+```python
+>>> d = yapyon.loads('supported: ["responses", "chat"]\npersona: {dialects: {responses: None, chat: {}}}\nprotocol: [dialect for dialect in supported if persona.dialects.__get__(dialect) is not None][0]\n')
+>>> d["protocol"]
+'chat'
+>>> yapyon.loads('choices: []\nprotocol: [x for x in choices].__get__(0)\n')["protocol"] is None
+True
+```
+
+`[0]` requires a match and is akan on an empty result. `.__get__(0)` returns
+None instead. Both evaluate the whole comprehension; neither hides errors in
+later iterations. Comparisons, membership, None tests, and short-circuit
+boolean operators are shared expression facilities, not special matching
+functions. `and`/`or`/`not` return booleans, not selected arbitrary operands.
+
+The equivalent block dictionary form is shown in the complete
+[`comprehension example`](../examples/comprehensions.yap). A block list head
+starts with `-`, and a block multimap head with `+`; the trailing `for` and
+optional `if` align with that marker. Iteration bindings do not leak or become
+mapping entries; ordinary nested mapping keys/explicit copies stay unchanged.
+
+`Tree.to_source()` preserves unfinished comprehensions without evaluation.
+Dictionary comprehensions merge by key across layers before retained value
+bodies resolve. Saving a comprehension combined with another nonempty dictionary
+layer is akan: ordinary source cannot retain that deferred union. Keep that
+merge in memory, or save the unmerged pieces; empty literal layers remain safe.
 
 ## Templates
 

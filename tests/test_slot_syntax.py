@@ -99,7 +99,7 @@ def test_bad_labels(text, match):
 
 
 @pytest.mark.parametrize("text", [
-    "a: 1 < 2\n", "a: [<b>]\n", "<a>: {}\n", "p<a><b>: {}\n",
+    "a: < 2\n", "a: [<b>]\n", "<a>: {}\n", "p<a><b>: {}\n",
 ])
 def test_a_stray_angle_bracket_is_akan(text):
     with pytest.raises(AkanError):

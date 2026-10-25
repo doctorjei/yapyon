@@ -59,6 +59,7 @@ $ python -m yapyon expand examples/bridge.yap    # a ledger in, a record out
 - [Details](https://github.com/doctorjei/yapyon/blob/main/docs/DETAILS.md) — the long-form guide: every feature, the API, and the CLI
 - [Specification](https://github.com/doctorjei/yapyon/blob/main/docs/SPEC.md) — what yapyon bytes mean (normative)
 - [Grammar](https://github.com/doctorjei/yapyon/blob/main/docs/GRAMMAR.md) — which bytes are well-formed yapyon (normative)
+- [Collection comprehensions](docs/DETAILS.md#collection-comprehensions) — typed list, dictionary, and multimap construction
 - [Conformance corpus](https://github.com/doctorjei/yapyon/tree/main/docs/conformance) — portable test cases for a second implementation
 - [Changelog](https://github.com/doctorjei/yapyon/blob/main/CHANGELOG.md)
 
@@ -71,7 +72,7 @@ Verbose success prints `ええやん`.
 
 A document is one of four kinds (discoverable via `yapyon.tier_of()`):
 - **record**: literals only (no resolver / resolution process)
-- **ledger**: splices & calls built-ins; resolves internally
+- **ledger**: splices, constructs collections, and calls built-ins; resolves internally
 - **template**: incorporates external data (e.g., environment variables)
 - **assembly**: calls functions that a **contract** declares; can be assembled from multiple files
 

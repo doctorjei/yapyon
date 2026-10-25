@@ -117,6 +117,7 @@ RAW_PREFIXES = {"r", "rb", "ry"}
 BYTES_PREFIXES = {"b", "rb", "yb"}          # b64 handled separately
 Y_PREFIXES = {"y", "yb", "yt", "ry"}
 KEYWORDS = {"True": True, "False": False, "None": None}
+_EXPRESSION_WORDS = frozenset({"for", "if", "in", "is", "not", "and", "or"})
 
 _TOKEN_KIND_FOR_PREFIX = {
     "": "STRING", "r": "STRING",
@@ -407,8 +408,9 @@ def _find_copy_end(s: str, start: int) -> int:
 def _find_chain_end(s: str, start: int) -> int:
     """End of a bare reference chain starting at `start` (SPEC §5.6): name
     characters, `.`, `?`, `$`, and bracketed or parenthesized runs — inside
-    which strings may hold anything, as in `_find_copy_end`. Whitespace
-    ends the chain unless it is inside brackets."""
+    which strings may hold anything, as in `_find_copy_end`. Interior token
+    spacing is allowed before postfix operations; a logical newline outside
+    brackets ends the chain."""
     depth, i, quote = 0, start, ""
     while i < len(s):
         ch = s[i]
@@ -426,6 +428,16 @@ def _find_chain_end(s: str, start: int) -> int:
             if depth == 0:
                 return i
             depth -= 1
+        elif depth == 0 and ch in " \t":
+            j = i
+            while j < len(s) and s[j] in " \t":
+                j += 1
+            before = s[start:i].rstrip()
+            if (s[j:j + 1] and s[j:j + 1] in ".?(["
+                    or before and before[-1] in ".?"):
+                i = j
+                continue
+            return i
         elif depth == 0 and not (_id_continue(ch) or ch in ".?$"):
             return i
         i += 1
@@ -1089,6 +1101,7 @@ class Lexer:
         self.depth = 0                        # bracket nesting depth
         self.tokens: list[Token] = []
         self.warnings: list[str] = []         # shiran: ...
+        self._key_checks = []                 # expression-shaped possible keys
 
     # -- character helpers ---------------------------------------------------
     def _peek(self, n: int = 0) -> str:
@@ -1153,7 +1166,63 @@ class Lexer:
                 j += 1
             if self.tokens[j].kind == "COLON":
                 tok.kind = "QKEY" if tok.kind == "STRING" else "YKEY"
+        self._classify_expressions()
         return self.tokens
+
+    def _classify_expressions(self):
+        """Mark comprehension heads from lexical brackets and indent frames.
+
+        A trailing for distinguishes the head before the parser sees it; no
+        parser feedback or evaluation is involved. Contextual words remain
+        names when used as ordinary keys or dotted segments.
+        """
+        words = {word: word.upper() for word in _EXPRESSION_WORDS}
+        for i, tok in enumerate(self.tokens[:-1]):
+            if (tok.kind == "NAME" and tok.lexeme in words
+                    and self.tokens[i + 1].kind not in ("COLON", "LABEL")
+                    and (not i or self.tokens[i - 1].kind not in
+                         ("DOT", "SAFE_DOT"))):
+                tok.kind = words[tok.lexeme]
+        brackets, starts, blocks, heads = [], [0], {}, set()
+        for i, tok in enumerate(self.tokens):
+            if tok.kind in ("LBRACKET", "LBRACE", "LPAREN"):
+                brackets.append(i)
+            elif tok.kind in ("RBRACKET", "RBRACE", "RPAREN"):
+                if brackets:
+                    brackets.pop()
+            elif not brackets:
+                if tok.kind == "INDENT":
+                    starts.append(i + 1)
+                elif tok.kind == "DEDENT":
+                    if len(starts) > 1:
+                        starts.pop()
+                elif tok.kind == "FOR":
+                    start = starts[-1]
+                    while self.tokens[start].kind == "NEWLINE":
+                        start += 1
+                    blocks[start] = self.tokens[start]
+                    head = start + 2 if self.tokens[start].kind in ("DASH", "PLUS") else start
+                    heads.add((self.tokens[head].line, self.tokens[head].col))
+            if tok.kind == "FOR" and brackets:
+                opener = self.tokens[brackets[-1]]
+                if opener.kind in ("LBRACKET", "LBRACE"):
+                    opener.kind = "LCOMP" if opener.kind == "LBRACKET" else "DCOMP"
+                    head = brackets[-1] + 1
+                    if self.tokens[head].kind == "PLUS":
+                        opener.kind = "MCOMP"
+                        head += 1
+                    heads.add((self.tokens[head].line, self.tokens[head].col))
+        for line, col, message in self._key_checks:
+            if (line, col) not in heads:
+                self._akan(message, line, col)
+        if blocks:
+            out = []
+            for i, tok in enumerate(self.tokens):
+                if i in blocks:
+                    kind = {"DASH": "list", "PLUS": "multimap"}.get(tok.kind, "dict")
+                    out.append(Token("BCOMP", kind, tok.line, tok.col))
+                out.append(tok)
+            self.tokens = out
 
     # -- line starts: indentation + dash frames ------------------------------
     def _handle_line_start(self) -> bool:
@@ -1238,9 +1307,19 @@ class Lexer:
             return                                 # a slot's label, §G4.9
         if _NUMBER_RUN.fullmatch(run):
             return                                 # the parser's message
+        reference = False
+        try:
+            parse_ref(run[1:-1] if run.startswith("(") and run.endswith(")") else run)
+            reference = True
+        except RefError:
+            pass
         if run.startswith("("):
-            self._akan(f"{run!r} is not a valid key: parentheses group or "
+            message = (f"{run!r} is not a valid key: parentheses group or "
                        f"copy a value (§5.6), and keys are names or strings")
+            if reference:
+                self._key_checks.append((self.line, self.col, message))
+                return
+            self._akan(message)
         # The reason and the fix both come from the pinned table, never
         # the host's `\w` (trap 12: `²` is a word character to Python).
         first = run[0]
@@ -1257,8 +1336,33 @@ class Lexer:
         fix = "".join(ch if _id_continue(ch) else "_" for ch in run)
         if not id_start(fix[0]):
             fix = "_" + fix
-        self._akan(f"{run!r} is not a valid key: {why}. Keys are bare "
+        message = (f"{run!r} is not a valid key: {why}. Keys are bare "
                    f"identifiers; write it as {fix!r}")
+        if reference:
+            self._key_checks.append((self.line, self.col, message))
+        else:
+            self._akan(message)
+
+    def _after_space(self):
+        j = self.pos
+        while self.text[j:j + 1] in (" ", "\t"):
+            j += 1
+        return self.text[j:j + 1]
+
+    def _after_for(self):
+        depth = 0
+        for i in range(len(self.tokens) - 1, -1, -1):
+            tok = self.tokens[i]
+            if tok.kind in ("RBRACKET", "RBRACE", "RPAREN", "DEDENT"):
+                depth += 1
+            elif tok.kind in ("LBRACKET", "LBRACE", "LPAREN", "INDENT"):
+                if not depth:
+                    return False
+                depth -= 1
+            elif (not depth and tok.kind == "NAME" and tok.lexeme == "for"
+                  and (i + 1 == len(self.tokens) or self.tokens[i + 1].kind != "COLON")):
+                return True
+        return False
 
     # -- ordinary tokens -----------------------------------------------------
     def _lex_token(self):
@@ -1286,6 +1390,24 @@ class Lexer:
                 self._check_key_run()
             return
 
+        if ch in "=!<>" and ch:
+            op = self.text[self.pos:self.pos + 2]
+            if op not in ("==", "!=", "<=", ">="):
+                op = ch
+            if op in ("==", "!=", "<=", ">=", "<", ">"):
+                self._emit("COMPARE", op, line, col, lexeme=op)
+                self._advance(len(op))
+                return
+        if self.text.startswith("...", self.pos):
+            self._akan("'...' is reserved and has no meaning; yapyon is one document per file")
+        if ch == "." and not _digit(self._peek(1)):
+            self._emit("DOT", ".", line, col, lexeme=".")
+            self._advance()
+            return
+        if ch == "?" and self._peek(1) == ".":
+            self._emit("SAFE_DOT", "?.", line, col, lexeme="?.")
+            self._advance(2)
+            return
         if ch == "(":
             self._lex_paren(line, col)
             return
@@ -1315,6 +1437,9 @@ class Lexer:
                            f"keywords, prefixes and dunder names are written "
                            f"exactly one way", line, col)
             if self._peek() in ("'", '"'):
+                if name in _EXPRESSION_WORDS:
+                    self._emit("NAME", name, line, col, lexeme=name)
+                    return
                 if name not in STRING_PREFIXES:
                     hint = _PREFIX_HINTS.get(
                         name, "use one of: " + ", ".join(sorted(STRING_PREFIXES)))
@@ -1323,7 +1448,15 @@ class Lexer:
                 self._lex_string(name, line, col)
             elif name in KEYWORDS:
                 self._emit("KEYWORD", KEYWORDS[name], line, col, lexeme=name)
-            elif self._peek() in (".", "(", "[", "?") and self._peek():
+            elif (name in ("not", "and", "or", "in", "is")
+                  and self._after_space() in ("(", "[")
+                  and (not self.tokens or self.tokens[-1].kind not in ("DOT", "SAFE_DOT"))
+                  or name == "if" and self._after_space() == "(" and self._after_for()
+                  and self.tokens[-1].lexeme not in ("in", "for", "if", "and", "or", "not", "is")):
+                self._emit("NAME", name, line, col, lexeme=name)
+            elif (self._after_space() in (".", "(", "[", "?")
+                  and not (name in _EXPRESSION_WORDS
+                           and self._peek() in (" ", "\t"))):
                 self._lex_bare_call(self.pos - len(name), line, col)
             else:
                 # The token carries the name's identity; the lexeme keeps
@@ -1389,7 +1522,7 @@ class Lexer:
             while _id_continue(self.text[k:k + 1]):
                 k += 1
             word = self.text[j:k]
-            copy = (word not in KEYWORDS
+            copy = (word not in KEYWORDS and word != "not"
                     and self.text[k:k + 1] not in ("'", '"'))
         if not copy:
             self.depth += 1
@@ -1404,6 +1537,13 @@ class Lexer:
         try:
             ref = parse_ref(text)
         except RefError as e:
+            if (_re.search(r"\b(?:and|or|not|is|in)\b|[=!<>]", text)
+                    or "cannot be indexed or traversed" in str(e)):
+                self.depth += 1
+                self.brackets.append("(")
+                self._emit("LPAREN", "(")
+                self._advance()
+                return
             if "," in text:
                 self._akan(f"{e}; a comma in parentheses would make a tuple, "
                            f"and yapyon has no tuples")
@@ -1429,18 +1569,45 @@ class Lexer:
         end = _find_chain_end(self.text, start)
         text = self.text[start:end]
         if "(" not in text:
-            try:
-                parse_ref(text)
-                copy = f", or ({text}) for a copy of that value"
-            except RefError:
-                copy = ""
-            self._akan(f"{text!r} is a bare word, and yapyon has no plain "
-                       f"scalars: write \"{text}\" for the text{copy}",
-                       line, col)
+            self._emit("REF", text, line, col, lexeme=text,
+                       parts=[("hole", text)])
+            self._advance(end - self.pos)
+            return
         try:
             ref = parse_ref(text)
         except RefError as e:
-            self._akan(str(e), line, col)
+            # A constructed/call result may have ordinary postfix operations.
+            # Keep the longest reference prefix; its tail is parsed as postfix
+            # syntax, with traversal and calls still using their one paths.
+            depth, quote, cuts, escaped = 0, "", [], False
+            for i, ch in enumerate(text):
+                if quote:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == quote:
+                        quote = ""
+                elif ch in "'\"":
+                    quote = ch
+                elif ch in "([":
+                    if depth == 0:
+                        cuts.append(i)
+                    depth += 1
+                elif ch in ")]":
+                    depth -= 1
+                elif ch in ".?" and depth == 0:
+                    cuts.append(i)
+            for cut in reversed(cuts):
+                try:
+                    prefix = parse_ref(text[:cut])
+                except RefError:
+                    continue
+                if prefix.call is not None:
+                    ref, text, end = prefix, text[:cut], start + cut
+                    break
+            else:
+                self._akan(str(e), line, col)
         if ref.call is None:
             self._akan(f"{text}: only a value ending in a call may stand "
                        f"bare; a path names a value owned elsewhere, so copy "
@@ -1464,8 +1631,31 @@ class Lexer:
         gap = " \t\n" if self.depth else " \t"
         while j < len(self.text) and self.text[j] in gap:
             j += 1
-        if self.text[j:j + 1] != "<":
+        if self.text[j:j + 1] != "<" or self.text[j + 1:j + 2] == "=":
             return
+        # Bound the label candidate before looking for ':'; a colon in a
+        # later collection belongs to that collection, not to this name.
+        stop = j + 1
+        while stop < len(self.text) and self.text[stop] not in ">:<{}[](),#'\"\n":
+            stop += 1
+        ending = self.text[stop:stop + 1]
+        if ending == ":":
+            name = self.tokens[-1]
+            self._key_checks.append((name.line, name.col,
+                                     "unclosed '<': a slot's label ends at its '>'"))
+            return
+        if ending == ">":
+            after = self.text[stop + 1:].lstrip(" \t")
+            if after and after[0] not in ":\n,}]#":
+                return
+        elif ending != "\n":
+            return
+        else:
+            # Multiline labels are legal only if their closing delimiter is
+            # followed by the key's colon; otherwise this is a comparison.
+            close = self.text.find(">", stop)
+            if close < 0 or not self.text[close + 1:].lstrip(" \t\n").startswith(":"):
+                return
         self._advance(j - self.pos)
         line, col = self.line, self.col
         j = self.pos

@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §16.1",
+  "why": "a dictionary source requires key/value bindings, not one item binding"
+}

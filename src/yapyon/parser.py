@@ -33,7 +33,8 @@ import copy
 from dataclasses import dataclass, field
 from itertools import count
 
-from .lexer import AkanError, Lexer, Token, Yakamashiwa, fold_name
+from .lexer import (AkanError, Lexer, RefError, Token, Yakamashiwa,
+                    fold_name, is_dunder, parse_ref)
 from ._keys import key_error
 
 
@@ -209,8 +210,45 @@ class MultiMap(Node):
         return [p for p in self.entries if p.named and p.key == folded]
 
 
+class Expression(YString):
+    """A deferred value expression; shares every pending outcome with copies."""
+
+    def __init__(self, line, col, op, args=(), value=None, lexeme=""):
+        super().__init__(line, col, "(", [("expression", op)], lexeme)
+        self.op, self.args, self.value = op, list(args), value
+
+    @property
+    def type(self):
+        return "expression"
+
+
+class Comprehension(Expression):
+    """Unevaluated collection construction with one lexical binding frame."""
+
+    def __init__(self, line, col, kind, names, iterable, body, predicate=None,
+                 key=None):
+        super().__init__(line, col, "comprehension", [iterable, body, predicate, key])
+        self.kind, self.names = kind, tuple(names)
+
+
+class DictionaryComprehension(Comprehension, Mapping):
+    """A deferred dictionary contribution on the existing mapping merge path."""
+
+    def __init__(self, *args, **kwargs):
+        Comprehension.__init__(self, *args, **kwargs)
+        self.pairs = []
+        self.reindex()
+
+    def pending_key(self):
+        return self._output.pending_key() if getattr(self, "_expanded", False) else self
+
+
 def deferred_message(kind: str, prefix: str) -> str:
     """Why a record refuses this token (SPEC §12)."""
+    if kind in ("BCOMP", "LCOMP", "DCOMP", "MCOMP", "FOR"):
+        return "a record holds no comprehensions; collection construction needs the resolver"
+    if kind in ("REF", "COMPARE", "AND", "OR", "NOT", "IS", "IN", "DOT", "SAFE_DOT"):
+        return "a record holds no expressions; computation needs the resolver"
     if kind == "LPAREN":
         return ("a record admits no parentheses: they group what is computed "
                 "(write the value without them, or load with yapyon.loads "
@@ -301,6 +339,8 @@ def _bad_key_msg(tok: Token) -> str:
 def children(node: Node) -> list:
     """A node's direct children, in document order — slot overrides
     included. The one walk every tree pass shares."""
+    if isinstance(node, Expression):
+        return [arg for arg in node.args if isinstance(arg, Node)]
     if isinstance(node, (Mapping, MultiMap)):
         pairs = node.pairs if isinstance(node, Mapping) else node.entries
         return [child for pair in pairs
@@ -390,6 +430,8 @@ class Parser:
 
     # -- block level ---------------------------------------------------------
     def _block_value(self) -> Node:
+        if self._at("BCOMP"):
+            return self._block_comprehension()
         if self._at("DASH"):
             return self._block_seq()
         if self._at("PLUS"):
@@ -561,18 +603,208 @@ class Parser:
 
     # -- flow level ----------------------------------------------------------
     def _flow_value(self) -> Node:
+        return self._expression(allow_ref=False)
+
+    def _expression(self, *, allow_ref=True) -> Node:
+        value = self._or_expression()
+        if isinstance(value, Copy) and getattr(value, "implicit", False):
+            if not allow_ref:
+                text = value.ref
+                if "." not in text and "[" not in text and "?" not in text:
+                    self._akan(_bare_word_msg(text), _at_node(value, self._peek()))
+                try:
+                    parse_ref(text)
+                    hint = f", or ({text}) for a copy of that value"
+                except RefError:
+                    hint = ""
+                self._akan(f"{text!r} is a bare word, and yapyon has no plain "
+                           f"scalars: write \"{text}\" for the text{hint}",
+                           _at_node(value, self._peek()))
+            try:
+                parse_ref(value.ref)
+            except RefError as exc:
+                self._akan(str(exc), _at_node(value, self._peek()))
+        return value
+
+    def _expr(self, at, op, args, value=None):
+        from ._expressions import source
+        node = Expression(at.line, at.col, op, args, value)
+        node.lexeme = source(node)
+        return node
+
+    def _or_expression(self):
+        value = self._and_expression()
+        while self._at("OR"):
+            op = self._advance()
+            value = self._expr(op, "or", [value, self._and_expression()])
+        return value
+
+    def _and_expression(self):
+        value = self._not_expression()
+        while self._at("AND"):
+            op = self._advance()
+            value = self._expr(op, "and", [value, self._not_expression()])
+        return value
+
+    def _not_expression(self):
+        if self._at("NOT") and self._peek(1).kind != "IN":
+            op = self._advance()
+            return self._expr(op, "not", [self._not_expression()])
+        return self._comparison()
+
+    def _comparison(self):
+        first = self._peek()
+        args, ops = [self._postfix()], []
+        while self._at("COMPARE", "IN", "IS") or (
+                self._at("NOT") and self._peek(1).kind == "IN"):
+            tok = self._advance()
+            op = tok.value if tok.kind == "COMPARE" else tok.kind.lower()
+            if tok.kind == "NOT":
+                self._advance()
+                op = "not in"
+            if tok.kind == "IS":
+                if self._at("NOT"):
+                    self._advance()
+                    op = "is not"
+            right = self._postfix()
+            if tok.kind == "IS" and not (isinstance(right, Scalar) and right.type == "none"):
+                self._akan("is and is not test None, not object identity", tok)
+            ops.append(op)
+            args.append(right)
+        return self._expr(first, "compare", args, ops) if ops else args[0]
+
+    def _postfix(self):
+        value = self._primary()
+        while self._at("LBRACKET", "DOT", "SAFE_DOT"):
+            tok = self._advance()
+            if tok.kind == "LBRACKET":
+                key = self._expression()
+                if isinstance(key, Scalar) and key.lexeme.startswith("+"):
+                    self._akan("a literal index has no '+' sign", tok)
+                self._expect("RBRACKET", "expected ']' after the subscript")
+                value = self._expr(tok, "subscript", [value, key])
+            else:
+                tail = self._peek()
+                if tail.kind not in ("NAME", "REF", "COPY"):
+                    self._akan("expected a name or call after the dot", tail)
+                self._advance()
+                text = tail.value if tail.kind != "NAME" else tail.lexeme
+                try:
+                    parsed = parse_ref(text)
+                except RefError as exc:
+                    self._akan(str(exc), tail)
+                if parsed.root or parsed.parents or parsed.key or parsed.env:
+                    self._akan("an anchor or environment variable cannot follow a dot", tail)
+                if tok.kind == "SAFE_DOT":
+                    first = parsed.call
+                    while first is not None and first.receiver and first.args[0].call is not None:
+                        first = first.args[0].call
+                    if first is None or first.receiver:
+                        self._akan("'?.' comes only before a call", tok)
+                value = self._expr(tok, "suffix", [value],
+                                   (text, tok.kind == "SAFE_DOT"))
+        return value
+
+    def _primary(self):
         tok = self._peek()
+        if tok.kind in ("LCOMP", "DCOMP", "MCOMP"):
+            return self._flow_comprehension()
         if tok.kind == "LBRACKET":
             return self._flow_list()
         if tok.kind == "LBRACE":
             return self._flow_map()
         if tok.kind == "LPAREN":
             return self._group()
-        if tok.kind in _SCALAR_KINDS:
+        if tok.kind in _SCALAR_KINDS or tok.kind in ("QKEY", "YKEY"):
             return self._scalar()
-        if tok.kind == "NAME":
-            self._akan(_bare_word_msg(tok.value))
+        if tok.kind in ("NAME", "REF"):
+            self._advance()
+            text = tok.lexeme or tok.value
+            node = Copy(tok.line, tok.col, text, text)
+            node.implicit = True
+            return node
         self._akan(f"expected a value, found {_describe(tok)}")
+
+    def _clause(self, at, kind, body, key=None, *, block=False):
+        self._expect("FOR", "expected one for clause after the comprehension head")
+        names, spellings = [], []
+        while True:
+            name = self._expect("NAME", "expected an iteration variable")
+            if is_dunder(name.value):
+                self._akan("dunder names belong to yapyon, not iteration bindings", name)
+            if name.value in names:
+                self._akan("iteration binding names must be distinct", name)
+            names.append(name.value)
+            spellings.append(name.lexeme or name.value)
+            if not self._at("COMMA"):
+                break
+            self._advance()
+            if len(names) == 2:
+                self._akan("iteration binds one item or one key/value pair")
+        self._expect("IN", "expected in after the iteration binding")
+        iterable = self._expression()
+        if block:
+            self._expect("NEWLINE", "expected end of line after the for clause")
+        predicate = None
+        if self._at("IF"):
+            self._advance()
+            predicate = self._expression()
+            if block:
+                self._expect("NEWLINE", "expected end of line after the if clause")
+        if self._at("FOR", "IF"):
+            self._akan("a comprehension has one for clause and at most one if clause")
+        cls = DictionaryComprehension if kind == "dict" else Comprehension
+        node = cls(at.line, at.col, kind, names, iterable, body, predicate, key)
+        node.binding_lexemes = tuple(spellings)
+        from ._expressions import source
+        node.lexeme = source(node)
+        return node
+
+    def _flow_comprehension(self):
+        at = self._advance()
+        kind = {"LCOMP": "list", "DCOMP": "dict", "MCOMP": "multimap"}[at.kind]
+        if kind == "multimap":
+            self._expect("PLUS", "expected '+' marking the multimap")
+        head = self._expression()
+        key = None
+        if kind != "list":
+            key = head
+            self._expect("COLON", "expected ':' between the computed key and value")
+            head = self._expression()
+        node = self._clause(at, kind, head, key)
+        self._expect("RBRACKET" if kind == "list" else "RBRACE",
+                     "expected the end of the comprehension")
+        return node
+
+    def _block_comprehension(self):
+        at = self._advance()
+        key = None
+        if at.value == "list":
+            marker = self._expect("DASH", "a block list comprehension has one '-' head")
+            def item():
+                if self._at_key() or self._at("DASH", "PLUS", "BCOMP"):
+                    return self._block_value()
+                value = self._expression()
+                self._expect("NEWLINE", "expected end of line after the head item")
+                return value
+            body = self._frame_body(marker, item, "comprehension item")
+        else:
+            marker = self._advance() if at.value == "multimap" else None
+            def head():
+                nonlocal key
+                key = self._expression()
+                self._expect("COLON", "expected ':' after the comprehension key")
+                if self._at("NEWLINE"):
+                    self._advance()
+                    self._expect("INDENT", "indent the comprehension's value")
+                    value = self._block_value()
+                    self._expect("DEDENT", "expected the end of the value")
+                else:
+                    value = self._expression()
+                    self._expect("NEWLINE", "expected end of line after the head")
+                return value
+            body = self._frame_body(marker, head, "comprehension entry") if marker else head()
+        return self._clause(at, at.value, body, key, block=True)
 
     def _group(self) -> Node:
         """`(value)` is the value (SPEC §5.6), as in Python. A tuple is not:
@@ -581,23 +813,27 @@ class Parser:
         if self._at("RPAREN"):
             self._akan("'()' would be an empty tuple, and yapyon has no "
                        "tuples", opener)
-        value = self._flow_value()
+        value = self._expression()
+        if isinstance(value, Copy):
+            value.implicit = False
         if self._at("COMMA"):
             self._akan("a comma in parentheses would make a tuple, and "
                        "yapyon has no tuples; use a list", self._peek())
         self._expect("RPAREN", f"expected ')' to close the '(' at line "
                      f"{opener.line}, col {opener.col}, found "
                      f"{_describe(self._peek())}")
+        if isinstance(value, Expression) and value.op in ("subscript", "suffix"):
+            return self._expr(opener, "group", [value])
         return value
 
     def _scalar(self) -> Node:
         tok = self._advance()
         if tok.kind == "COPY":
             return Copy(tok.line, tok.col, tok.value, tok.lexeme)
-        if tok.kind in ("YSTR", "YBSTR", "YTSTR"):
+        if tok.kind in ("YSTR", "YBSTR", "YTSTR", "YKEY"):
             return YString(tok.line, tok.col, tok.prefix, list(tok.parts),
                            tok.lexeme)
-        if tok.kind == "STRING":
+        if tok.kind in ("STRING", "QKEY"):
             return Scalar(tok.line, tok.col, "str", tok.value,
                           lexeme=tok.lexeme, prefix=tok.prefix)
         if tok.kind == "BYTES":
@@ -626,17 +862,9 @@ class Parser:
 
     def _flow_map(self) -> Node:
         opener = self._advance()                 # LBRACE
-        if self._at("PLUS"):
-            # `{+}`: the empty multimap (GRAMMAR §G6). `{}` stays a mapping
-            # (operator, 2026-10-19); a flow multimap with entries is
-            # reserved (§9), so anything after the `+` is akan.
+        multimap = self._at("PLUS")
+        if multimap:
             self._advance()
-            if not self._at("RBRACE"):
-                self._akan("a flow multimap with entries is reserved (§9); "
-                           "{+} is the empty multimap, and entries are "
-                           "written as a '+ ' block")
-            self._advance()                      # RBRACE
-            return MultiMap(opener.line, opener.col, [])
         pairs: list[Pair] = []
         first_line: dict[str, tuple[int, str]] = {}
         while not self._at("RBRACE"):
@@ -647,7 +875,9 @@ class Parser:
             label = self._advance() if self._at("LABEL") else None
             self._expect("COLON", f"expected ':' after the key "
                                   f"{key_tok.value!r}")
-            key = self._check_key(key_tok, first_line)
+            if multimap and label is not None:
+                self._akan("a slot in a multimap entry is reserved (SPEC §9)", label)
+            key = self._check_key(key_tok, {} if multimap else first_line)
             value = self._slot(label, self._flow_value(), key_tok)
             pairs.append(Pair(key_tok.line, key_tok.col, key, value,
                               key_tok.lexeme, named=key_tok.kind == "NAME"))
@@ -657,7 +887,8 @@ class Parser:
                 self._akan(f"expected ',' or '}}' in a flow mapping, found "
                            f"{_describe(self._peek())} (commas are mandatory)")
         self._advance()                          # RBRACE
-        return Mapping(opener.line, opener.col, pairs)
+        cls = MultiMap if multimap else Mapping
+        return cls(opener.line, opener.col, pairs)
 
 
 # --------------------------------------------------------------------------- #
@@ -680,6 +911,9 @@ def dump(node: Node, level: int = 0) -> str:
     """One node per line, positions attached — for `python -m yapyon.parser`."""
     pad = "  " * level
     where = f"@{node.line}:{node.col}"
+    if isinstance(node, Expression):
+        from ._expressions import source
+        return f"{pad}{node.type} {source(node)} {where}"
     if isinstance(node, Mapping):
         if not node.pairs:
             return f"{pad}mapping (empty) {where}"

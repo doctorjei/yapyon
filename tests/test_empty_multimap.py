@@ -58,8 +58,7 @@ def test_as_yapyon_and_the_other_serializers():
 
 
 @pytest.mark.parametrize("text,needle", [
-    ("a: {+ k: 1}\n", "a flow multimap with entries is reserved"),
-    ("a: {+ +}\n", "a flow multimap with entries is reserved"),
+    ("a: {+ +}\n", "expected a key"),
     ("a: {k: 1, +}\n", "found a multimap's '+'"),
     ("a: [+]\n", ""),                      # only directly inside braces
     ("a: +\n", "opens a block frame"),

@@ -98,8 +98,13 @@ class MergedMapping(Mapping):
     def pending_key(self):
         if not self.layers:
             return super().pending_key()
-        return next((p.key for layer in self.key_layers() for p in layer.pairs
-                     if isinstance(p.key, YString)), None)
+        for layer in self.key_layers():
+            if isinstance(layer, YString):
+                return layer
+            pending = layer.pending_key()
+            if pending is not None:
+                return pending
+        return None
 
     def waiting_for_name(self, key):
         """An unknown cross-layer key that could still change this name.

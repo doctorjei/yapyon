@@ -1,5 +1,5 @@
 {
   "expect": "akan",
-  "rule": "GRAMMAR \u00a7G4.9",
-  "why": "< opens a label only after a key; yapyon has no operators"
+  "rule": "GRAMMAR \u00a7G9.2",
+  "why": "a comparison needs a left operand; a naked < does not begin a value"
 }

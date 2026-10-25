@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §16.2",
+  "why": "equal result keys within one dictionary comprehension are duplicates, not layers"
+}

@@ -4,7 +4,8 @@ import copy
 
 from .assembly import MergedMapping, merge_nodes
 from .lexer import AkanError
-from .parser import Mapping, MultiMap, Sequence, Slot, YString
+from .parser import (Comprehension, Expression, Mapping, MultiMap, Sequence,
+                     Slot, YString)
 
 
 def _pattern(key):
@@ -42,6 +43,17 @@ def _could_match(left, right):
 
 
 def _check_merge(node):
+    layers = list(node.key_layers())
+    comprehensions = [layer for layer in layers if isinstance(layer, Comprehension)]
+    if comprehensions and (len(comprehensions) > 1 or any(
+            layer.pairs for layer in layers if not isinstance(layer, Comprehension))):
+        at = comprehensions[0]
+        raise AkanError(
+            "cannot save this dictionary merge: a deferred comprehension and "
+            "another nonempty dictionary contribution need separate layers; "
+            "ordinary source cannot preserve them — keep the merge in memory "
+            "or remove the competing contribution before saving (SPEC §15.8)",
+            at.line, at.col, at.source)
     earlier = []
     for layer in node.key_layers():
         for pair in layer.pairs:
@@ -134,7 +146,18 @@ def _check_overrides(values, slot, path=()):
 
 
 def _prepare(node):
+    if isinstance(node, Expression):
+        _check_fills(node)
+        node.args = [_prepare(arg) if arg is not None else None for arg in node.args]
+        return node
     if isinstance(node, Mapping):
+        if isinstance(node, MergedMapping) and node.layers:
+            _check_merge(node)
+            _check_fills(node)
+            comprehension = next((layer for layer in node.key_layers()
+                                  if isinstance(layer, Comprehension)), None)
+            if comprehension is not None:
+                return _prepare(comprehension)
         out = _mapping(node)
         for pair in out.pairs:
             pair.value = _prepare(pair.value)

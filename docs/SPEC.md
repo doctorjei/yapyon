@@ -51,16 +51,18 @@ Every rule in both documents follows from seven guiding principles, the
 1. **Precision.** A value's type is fixed by its syntax or by a declared
    contract (§13) — for a copy (§5.6), by the syntax of the value it
    copies; it is never inferred from bare text. There are no plain
-   scalars: an unquoted word in value position — other than a bare call
-   (§5.6) — is akan, never a string,
-   never a boolean. (YAML's implicit typing — the Norway problem — is
+   scalars: a bare path as an ordinary value is akan, never implicitly a
+   string or boolean. Calls (§5.6), expressions, and comprehensions (§16)
+   compute typed values; comprehension result kinds are visible in their
+   delimiters or block markers. (YAML's implicit typing — the Norway problem — is
    unrepresentable.)
 2. **Reducibility.** Computation is driven by data and yields a document. A
    **record** computes nothing: every leaf is a literal, and loading one
    needs no resolver (§12). A **ledger** — a record with references to
    itself — splices named values into strings, copies named values whole
-   (§5.6), and applies only the format's own built-ins — its encodings and casts (§5.1.2, §5.1.5) — and reduces to a record that is the
-   same on every system. A **template** is finished by something outside
+   (§5.6), constructs collections and evaluates data expressions (§16), and
+   applies only the format's own built-ins — its encodings and casts
+   (§5.1.2, §5.1.5) — and reduces to a record that is the same on every system. A **template** is finished by something outside
    the document: it may read the environment of the process loading it
    (§5.1.3), and reduces to a record given that environment, and it may
    hold template strings (§6), whose parts the consumer joins, and slots
@@ -1024,7 +1026,9 @@ changes:
 - **`{+}` is the empty multimap** (`GRAMMAR §G6`) — a block needs an entry,
   so this is its one spelling when it holds none. **`{}` is a mapping**, as
   everywhere: the `+` is what says "multimap", in the document's own bytes,
-  as the block marker does. A flow multimap *with* entries is reserved (§9).
+  as the block marker does. A nonempty flow multimap is
+  `{+ a: 1, a: 2}`: one leading `+`, comma-separated ordinary pairs, and
+  an optional trailing comma. The block form still marks each entry.
 
 Why a marker rather than simply permitting repeated keys in a mapping: ehmon 1.
 A repeated key would otherwise be indistinguishable from a typo, and the
@@ -1038,19 +1042,18 @@ says which was meant, in the document's own bytes.
 **`GRAMMAR §G6`** holds the phrase grammar, and `GRAMMAR §G7` the static rules
 it cannot express.
 
-One property of that grammar is load-bearing here and is cited by §12:
-`scalar` has **nine** alternatives, of which exactly five are literals
-readable from their own bytes and exactly four are not — the y-family and
-the copy. The partition is exact and has no other members, and the one
-other token a value can begin with is a grouping parenthesis.
+The grammar's `scalar` has **nine** alternatives: five literal kinds and
+four deferred kinds (the y-family and the copy). Expressions and
+comprehensions (`GRAMMAR §G9`, §16) add structured computed forms beyond
+that scalar partition. §12's literal-only restriction excludes those forms
+as well as scalar computation.
 
 ---
 
 ## 9. Reserved for future versions
 
 Syntax that is akan in v0.5 with the door explicitly open: `yb64` and `ytb`
-prefixes; **empty string keys**; a flow spelling for multimaps with entries (`{+ a: 1}`; the empty `{+}`
-is built, §7.1); format
+prefixes; **empty string keys**; format
 specs and conversions in holes; list interpolation; **default and variadic
 parameters** for declared functions (§13.7); positional access to a multimap's entries
 (`{mm[0]}`);
@@ -1146,8 +1149,9 @@ is a ledger that splices nothing, a ledger is a template that holds no
 `yt` or slot and reads no environment, and a template is an assembly that calls no declared
 function. The record is the restricted form — records are implied to be
 fixed, and this one is. The tier a document needs is computable from its
-bytes: a `y`, `yb`, or `ry` literal, a copy or bare call (§5.6), or any parenthesis makes it
-a ledger (§5.6), a `yt` literal, a slot (§15), or
+bytes: a `y`, `yb`, or `ry` literal, a copy or bare call (§5.6), any
+parenthesis, or an expression or comprehension (§16) makes it at least a
+ledger; a `yt` literal, a slot (§15), or
 an environment reference (`$NAME` or a call to `__env__`) a template, and a call to a declared
 function an assembly.
 
@@ -1175,21 +1179,16 @@ literal either (`GRAMMAR §G7`, no implicit null).
 
 ### 12.2 The mechanical test
 
-The grammar's `scalar` has nine alternatives (§8): the five literal kinds,
-plus `YSTR`, `YBSTR`, `YTSTR`, and `COPY`. Those four are therefore
-*exactly* the non-literal scalar set; `YKEY`, the key-position y-string,
-is deferred too. The only other way to begin a value is a
-grouping parenthesis, which a record does not admit either — parentheses
-mark computation, even around a literal. A label (`GRAMMAR §G4.9`) is
-not a value at all but makes its key's value a slot (§15), which only a
-template has. So
+The five literal scalar kinds (§8) and ordinary literal collections need
+no resolver. A record refuses y-family literals/keys, copies and bare calls,
+parentheses, labels, expression operators/reference atoms/postfixes, and
+comprehension markers (`GRAMMAR §G9`). Contextual words used as ordinary keys
+and punctuation inside literals do not count as computation. A nonempty
+literal flow multimap (§7.1) remains a record.
 
-> a document is a record iff no string in it carries a y-family prefix and
-> no parenthesis or label appears outside a string
-
-is equivalent to §12.1. The first is the definition; the second is how an
-implementation tests it. The test reads the token stream and nothing else:
-**a record is identifiable by lexing alone.**
+An implementation can test those lexical kinds without resolving anything:
+**a record is identifiable by lexing alone.** As always, subset membership
+does not replace the grammar's validity checks.
 
 ### 12.3 Being a record is a property, not a declaration
 
@@ -1214,6 +1213,7 @@ record" must not be read as "this value reaches the application unchanged".
 |---|---|---|
 | y-family prefixes `y` `yb` `yt` `ry` | **akan** | permitted |
 | copies and parentheses (§5.6) | **akan** | permitted |
+| expressions and comprehensions (§16) | **akan** | permitted |
 | slots (§15) | **akan** | permitted (template and above) |
 | §5 parse-time splicing | n/a | yes |
 | §6 templates | n/a | yes |
@@ -1231,11 +1231,13 @@ it is plain keyed data rather than deferred structure; the criterion is
 An implementation **must state which tier it implements**. There are four:
 
 - **Record** — the whole of `GRAMMAR.md` except the y-family prefixes
-  (`§G4.6`), holes (`§G4.7`), and the reference grammar (`§G5`); plus this
+  (`§G4.6`), holes (`§G4.7`), the reference grammar (`§G5`), and computed
+  expressions/comprehensions (`§G9`); plus this
   document's §3, §7, §10, §11, and §12.
 - **Ledger** — all of the above, plus `GRAMMAR §G4.7`, `§G5` except
   `ENV`, and this document's §4.4, §5 except §5.1.3–§5.1.4, and §14, and
-  §13 as it applies to the built-ins other than `__env__`.
+  §13 as it applies to the built-ins other than `__env__`, and §16 with
+  `GRAMMAR §G9` excluding environment/declared-function access.
 - **Template** — all of the above, plus `yt` (§6), `ENV`,
   §5.1.3–§5.1.4, `__env__`, `LABEL` (`GRAMMAR §G4.9`), and slots (§15).
 - **Assembly** — all of the above, plus the whole of §13: contracts, their
@@ -1250,7 +1252,7 @@ format specs and conversions, list interpolation, default and variadic
 parameters, positional multimap access — are **ledger and above**,
 since a record has no holes at all. §5.1.1's relative references are
 ledger and above for the same reason. The rest — empty string keys,
-a flow spelling for multimaps, `---` streams, timestamp prefixes — would
+`---` streams and timestamp prefixes — would
 concern both forms. Plain quoted keys are already legal in records; the
 key-position `YKEY` token is deferred just as a value-position `YSTR` is.
 
@@ -1906,7 +1908,7 @@ resolution.
 the behavior of subsequent equivalent fills, merges, edits, and eventual
 resolution. An unfilled slot's overrides must therefore act on any future
 filler in the same way before and after saving, not merely produce the same
-mapping when merged with an empty one. There are three **save-time refusals**:
+mapping when merged with an empty one. There are four **save-time refusals**:
 
 - **Potentially matching computed keys across merged dictionaries.** When a
   dictionary contribution has a computed key and another contribution to the
@@ -1939,6 +1941,14 @@ mapping when merged with an empty one. There are three **save-time refusals**:
   applies to pending slot overrides, not to an already-applied merge of
   concrete trees, and it does not forbid harmless combinations of overrides.
 
+- **A deferred dictionary comprehension with another nonempty dictionary
+  contribution (§16).** Ordinary source cannot represent the comprehension
+  and its separate merge layer, even when their keys would be disjoint.
+  Saving that combination is akan, not permission to evaluate it or discard
+  either layer. A comprehension with only empty literal dictionary layers
+  remains saveable. In-memory merging is unchanged. A future source-layer
+  representation is deferred.
+
 These refusals do not change in-memory merging, filling, or resolution. In
 particular, a refused tree may still be resolved in memory under §15.2–§15.6.
 A diagnostic explains why saving cannot preserve the state and names the
@@ -1955,6 +1965,150 @@ locations in that tree instead.
 
 *Reference implementation: `Tree.to_source()` returns newline-terminated
 source text. It does not write a file. Record `emit()` remains record-only.*
+
+## 16. Expressions and collection comprehensions
+
+**Syntax: `GRAMMAR §G9`.** A comprehension constructs a list, dictionary,
+or multimap by applying one locally bound head to an ordered source
+collection, optionally excluding items with one condition. It is data
+construction, not an in-document function definition or a generator.
+
+### 16.1 Sources, bindings, and result kinds
+
+The source and result kinds are independent:
+
+| Source | Binding | Iteration order |
+|---|---|---|
+| list | one name for each typed item | list order |
+| dictionary | two names: string key, typed value | dictionary entry order |
+| multimap | two names: string key, typed value | every entry in order, including repeats |
+
+Other source kinds or a binding count that does not match the source are
+akan at the comprehension. A list item is not unpacked, even if it is a
+list of two values. A multimap source is not its grouped by-key list view.
+Empty input constructs the corresponding empty result (`[]`, `{}`, `{+}`).
+
+The iterable expression resolves in the surrounding context, before the new
+binding exists. Each item introduces a lexical binding frame over the
+predicate, key, and value body, including nested copies and y-strings.
+An inner frame shadows an outer frame; lexical bindings precede ordinary
+§5.2 document search. They are not injected mapping entries, do not leak,
+and do not mutate any outer value or input item.
+
+```yapyon
+persona:
+  name: "example"
+  mind:
+    model_list: ["m1", "M/2"]
+model_rows: {
+  target: {provider: (persona.name), remote_model_id: (target)}
+  for target in persona.mind.model_list
+}
+```
+
+Here `target` computes each result key. It does not name the literal key
+"target". The inner `provider` and `remote_model_id` remain ordinary name
+keys, and their copies retain existing syntax. Block heads are equivalent:
+
+```yapyon
+persona: {name: "example", mind: {model_list: ["m1", "M/2"]}}
+model_rows:
+  target:
+    provider: (persona.name)
+    remote_model_id: (target)
+  for target in persona.mind.model_list
+```
+
+### 16.2 Construction and evaluation
+
+Evaluate in source order: bind the item, test its predicate if present,
+then evaluate its key (if keyed) and value body. An excluded item's output
+key/body is not evaluated. Syntax and static validity still apply to the
+whole document. Missing references, failed calls, and other errors are
+never silently interpreted as false or as omission.
+
+Each included item constructs fresh typed data under §5.6's observable
+linearity. Containers, None, empty values, zero, and False are not pruned.
+Generated expressions use their actual output locations for ordinary
+§5.2/relative scope, plus the lexical bindings above. References into input
+values retain those values' resolved meaning; copies do not reinterpret them.
+Pending dependencies and forward references into the surrounding document
+use §5.3's ordinary fixpoint and cycle rule, not a second evaluator.
+
+A comprehension is **eager**: its whole result is evaluated before a postfix
+operation selects from or calls on it. Selecting index zero must not hide an
+error in a later iteration. Nested comprehensions use the same binding and
+evaluation rules. They do not add a second for clause to the enclosing one.
+
+A generated dictionary/multimap key must be a string. Keep its exact text,
+without name folding or implicit string conversion. It is a non-name key
+under §7, including when its text resembles an identifier. Existing nonempty,
+non-dunder, non-@ key checks apply at the head's source position. Equal keys
+within one dictionary comprehension are duplicate-key akan. Multimap
+comprehensions preserve repeated keys and entry order.
+
+### 16.3 Conditions and operators
+
+A condition accepts **True** (include), **False** or **None** (exclude).
+Every other type is akan, including numeric 0/1, strings, bytes, and containers.
+There is no implicit caster call or Python truthiness. The explicit __bool__
+caster (§5.1.5) is unchanged and continues to refuse None and containers.
+
+`and`, `or`, and `not` use that condition rule and always return booleans.
+`and` stops at a false left operand; `or` stops at a true left operand.
+Unevaluated operands are not type-checked or executed. These are logical
+operators, not Python's operand-returning fallback selectors.
+
+Equality and inequality compare data values, not source lexemes or key kind.
+Numbers use ordinary numeric comparison, including bool as 0/1; strings and
+bytes compare their exact values, lists compare elementwise, dictionaries
+compare their data entries, and multimap equality is §7.1's entry sequence.
+Template equality compares the delivered parts, including hole reference and
+lexeme metadata (§6), without rendering them. Ordering is numeric, lexicographic for text/bytes, and lexicographic for lists
+whose compared elements support it. Incompatible ordering is akan, not host
+object ordering. A chained comparison evaluates each middle operand once and
+stops at the first failed comparison.
+
+`in`/`not in` test list values, dictionary/multimap keys, or compatible
+text/bytes containment. Unsupported containment types are akan. `is None`
+and `is not None` test absence, not general object identity. In particular,
+an explicit non-None test retains empty containers and False:
+
+```yapyon
+supported_dialects: ["responses", "chat"]
+persona: {mind: {dialects: {responses: None, chat: {}}}}
+protocol: [dialect for dialect in supported_dialects
+           if persona.mind.dialects.__get__(dialect) is not None][0]
+```
+
+### 16.4 Postfix operations, composition, and persistence
+
+Constructed values, comprehensions, groups, and call results support the same
+postfix traversal/call facilities as other expressions. Subscripts and dotted
+steps follow §5.1/§7, calls follow §13's one path, and None passthrough retains
+its receiver-chain boundary. Selecting `[0]` from an empty result is ordinary
+out-of-range akan; calling `.__get__(0)` returns None, or an explicit default.
+Neither operation converts errors during comprehension evaluation to absence.
+
+A dictionary comprehension is a **deferred dictionary contribution** for
+§15.2 merging. Retain its layer and precedence without evaluating inputs
+at merge time; once keys are known, equal keys across layers merge normally.
+For such a structural contribution, evaluate its predicate/keys to establish
+entries, then merge before resolving the retained value bodies. A replaced
+body is not evaluated, and retained references see their final overridden
+siblings. Lexical bindings belong to comprehension-authored syntax, not to
+separately authored override values. Same-input duplicates remain errors.
+List/multimap results retain whole-value
+replacement. Save an unmerged comprehension unevaluated, preserving its later
+behavior; merged dictionary contributions that cannot be represented in
+source are refused under §15.8, not flattened or evaluated.
+
+Comprehensions and expression operators require at least the ledger tier.
+Environment access, yt, slots, and declared functions raise the tier exactly
+as in any other value, even in a branch that would later be excluded. A
+record has no comprehension or expression evaluation. §5.3's expansion limits
+apply to materialized construction as well as copies/splicing; implementations
+must bound generated work rather than allocate an unbounded result first.
 
 ---
 

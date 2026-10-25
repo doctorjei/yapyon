@@ -9,6 +9,53 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## 0.5.3 — 2026-10-25
+
+Built to specification **v0.5**, amended with collection construction and data
+expressions. The operator-word compatibility change is noted below.
+
+### Compatibility
+
+- Lowercase operator words have their expression meaning in the new value
+  grammar. In particular, `not(None)` is logical negation, not a call to a
+  declared function named `not`, as it could be in 0.5.2. Use a non-operator
+  declared name (the existing uppercase naming convention avoids collisions).
+  Ordinary keys/path segments keep these words as names; hole references
+  retain their separate §5.1 grammar.
+
+### Added
+
+- **Collection comprehensions (§16)** for lists, dictionaries, and multimaps,
+  in inline and block forms. One `for` clause and one optional `if`; list
+  inputs bind one item, dictionary/multimap inputs bind each key/value pair.
+  Sources and result kinds are independent. Bindings are lexical and local;
+  output is fresh typed data. Computed result keys retain exact text, dictionary
+  duplicates are akan, and multimap repeats/order are retained.
+- **Data expressions:** comparisons, membership, `is None`/`is not None`, and
+  short-circuit boolean `and`/`or`/`not`. Conditions accept True, False, and
+  None only; None counts as false. Boolean operators return booleans, not
+  arbitrary operands. Explicit `__bool__` casting is unchanged.
+- **Postfix operations on constructed values and call results**, including
+  `[dialect for dialect in choices if condition][0]` and `.__get__(0)` for an
+  optional first result. Evaluation remains eager; selecting the first item
+  does not hide later comprehension errors. Safe receiver chains retain
+  their boundary through postfix selection and explicit grouping.
+- **Nonempty inline multimaps:** `{+ key: value, key: value}` uses one leading
+  marker and ordinary comma-separated pairs. Empty remains `{+}`; block
+  entries retain their individual markers. Literal inline multimaps are records.
+- Unfinished source saving preserves comprehensions and predicates without
+  evaluating inputs, environment references, or functions. A deferred dictionary
+  comprehension merged with another nonempty dictionary contribution is refused
+  at save time because source cannot retain both layers; empty literal layers
+  remain safe. In-memory dictionaries merge normally, before retained generated
+  value bodies resolve; lists/multimaps retain whole replacement.
+- Portable conformance cases and a complete `examples/comprehensions.yap`.
+
+### Fixed
+
+- A safe call on None skips its remaining arguments before evaluating them,
+  using the existing shared call path.
+
 ## 0.5.2 — 2026-10-24
 
 Built to specification **v0.5**, amended. **No breaking changes.** Adds

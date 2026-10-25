@@ -49,7 +49,7 @@ from .environment import STANDARD_ENV, environment
 from .lexer import (AkanError, Lexer, Ref, RefError, Yakamashiwa, fold_name,
                     is_dunder, parse_ref)
 from .multimap import OrderedMultimap
-from .parser import (Mapping, MultiMap, Pair, Parser, ResolvedTemplate,
+from .parser import (Expression, Mapping, MultiMap, Pair, Parser, ResolvedTemplate,
                      deferred_message,
                      Scalar, Sequence, YString)
 from .serializers import ENV_BUILTIN
@@ -66,6 +66,8 @@ def build(node, source: str | None = None):
     """
     if isinstance(node, Scalar):
         return node.value
+    if isinstance(node, Expression):
+        raise Yakamashiwa("unresolved expression reached the loader")
     if isinstance(node, Mapping):
         out = KeyMap()
         for pair in node.pairs:
@@ -171,7 +173,9 @@ def load(fp, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
 # them because a record admits no parentheses at all, `(1)` included
 # (operator, 2026-10-23: "parentheses suggest processing / computation").
 _DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR", "COPY", "LPAREN",
-                             "LABEL", "YKEY"})
+                             "LABEL", "YKEY", "REF", "LCOMP", "DCOMP",
+                             "MCOMP", "BCOMP", "FOR", "COMPARE", "AND", "OR",
+                             "NOT", "IS", "IN", "DOT", "SAFE_DOT"})
 
 
 def _name_of(fp, source: str | None) -> str | None:

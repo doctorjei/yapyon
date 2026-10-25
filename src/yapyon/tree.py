@@ -33,8 +33,8 @@ from ._keys import key_error, name_key
 from .assembly import FillCheck, MergedMapping, merge_nodes
 from .environment import STANDARD_ENV, environment
 from .lexer import AkanError, Lexer, Yakamashiwa, fold_name
-from .parser import (Copy, Mapping, MultiMap, Node, Pair, Parser, Scalar,
-                     Sequence, Slot, YString, children)
+from .parser import (Comprehension, Copy, Expression, Mapping, MultiMap, Node,
+                     Pair, Parser, Scalar, Sequence, Slot, YString, children)
 from .resolver import REFUSE_DEPTH, REFUSE_SIZE, resolve
 
 __all__ = ["Tree", "Handle", "Key", "parse", "parse_file", "merge"]
@@ -56,6 +56,8 @@ class Key:
 
 
 def _keys_pairs(node):
+    if isinstance(node, Expression):
+        raise TypeError("an expression has no generated keys before resolution")
     return node.walk_pairs() if isinstance(node, MergedMapping) else node.pairs
 
 
@@ -280,7 +282,8 @@ class Tree:
 # Handles
 # --------------------------------------------------------------------------- #
 _KIND = {Mapping: "mapping", Sequence: "sequence", MultiMap: "multimap",
-         Slot: "slot", Scalar: "scalar", Copy: "copy", YString: "ystring"}
+         Slot: "slot", Scalar: "scalar", Copy: "copy", YString: "ystring",
+         Comprehension: "comprehension", Expression: "expression"}
 
 
 class Handle:
@@ -377,7 +380,7 @@ class Handle:
 
     def __contains__(self, key) -> bool:
         node = self._node
-        if not isinstance(node, Mapping):
+        if isinstance(node, Expression) or not isinstance(node, Mapping):
             return False
         try:
             _pair(node, key, self.path)
@@ -547,7 +550,9 @@ def _own(value) -> Node:
 
 
 def _steps(node: Node):
-    """(step, child) for a mapping's pairs and a sequence's items."""
+    """(step, child) for materialized pairs/items, never evaluated expressions."""
+    if isinstance(node, Expression):
+        return []
     if isinstance(node, Mapping):
         return [(_key(pair), pair.value) for pair in _keys_pairs(node)]
     if isinstance(node, Sequence):
@@ -556,7 +561,7 @@ def _steps(node: Node):
 
 
 def _child(node: Node, step, where: tuple) -> Node:
-    if isinstance(node, Mapping) and isinstance(step, (str, Key)):
+    if not isinstance(node, Expression) and isinstance(node, Mapping) and isinstance(step, (str, Key)):
         return _pair(node, step, where).value
     if isinstance(node, Sequence) and isinstance(step, int) \
             and not isinstance(step, bool):
