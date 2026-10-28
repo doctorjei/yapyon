@@ -172,7 +172,7 @@ def test_dictionary_comprehensions_merge_with_later_mapping_layers():
 def test_source_roundtrip_keeps_comprehensions_unevaluated(text):
     tree = parse(text)
     saved = tree.to_source()
-    assert ' for ' in saved
+    assert 'for ' in saved
     restored = parse(saved)
     assert restored.resolve() == tree.resolve()
     assert restored.to_source() == saved
@@ -272,12 +272,12 @@ def test_ordinary_inline_multimap_is_a_record():
     assert [(e.key, e.value) for e in loads_record(doc)] == [('a', 1), ('a', 2), ('a', 3)]
 
 
-def test_dictionary_comprehension_merge_save_refuses_without_evaluation():
+def test_dictionary_comprehension_merge_saves_without_evaluation():
     tree = merge(parse('items: ["a"]\nrows: {item: {base: 1} for item in items}', source='base.yap'),
                  parse('rows: {"b": {later: 2}}'))
-    with pytest.raises(AkanError, match='cannot save.*comprehension') as exc:
-        tree.to_source()
-    assert exc.value.source == 'base.yap'
+    saved = tree.to_source()
+    assert '|' in saved and 'for item in items' in saved
+    assert parse(saved).resolve() == tree.resolve()
     assert tree.resolve()['rows'] == {'a': {'base': 1}, 'b': {'later': 2}}
 
 
@@ -305,7 +305,7 @@ def test_remaining_runtime_slot_can_be_filled_after_source_roundtrip():
 
 def test_layer_replacement_discards_unneeded_generated_body_expressions():
     tree = merge(parse('xs: ["a"]\nrows: {x: {bad: (missing)} for x in xs}'),
-                 parse('rows: {"a": None}'))
+                 parse('rows: {"a":= None}'))
     assert tree.resolve()['rows'] == {'a': None}
 
 

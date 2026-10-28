@@ -2,15 +2,12 @@
 
 import itertools
 import json
-import re
 from pathlib import Path
 
 import pytest
 
 import yapyon
 from yapyon import AkanError, merge, parse
-from yapyon._source import _could_match
-from yapyon.parser import YString
 
 
 @pytest.mark.parametrize("text", [
@@ -117,22 +114,23 @@ def test_empty_dictionary_cannot_conflict_with_computed_keys(reverse):
     ('y"x": 1', 'x: 2'),
     ('ry"{name}": 1', 'x: 2'),
 ])
-def test_potential_cross_layer_key_matches_are_akan_only_on_saving(left, right):
+def test_potential_cross_layer_key_matches_save_as_separate_layers(left, right):
     tree = merge(parse(left, source='base.yap'), parse(right, source='over.yap'))
-    with pytest.raises(AkanError, match='cannot save this dictionary merge') as err:
-        tree.to_source()
-    assert err.value.source in {'base.yap', 'over.yap'}
-    assert 'another layer' in str(err.value)
+    saved = tree.to_source()
+    assert '|' in saved
+    restored = parse(saved)
+    for candidate in (tree, restored):
+        candidate.merge(parse('name: "x"\nalias: "x"'))
+    assert restored.resolve() == tree.resolve()
     assert len(tree.keys()) >= 1
 
 
-def test_refused_source_does_not_change_successful_in_memory_resolution():
+def test_saved_layers_do_not_change_successful_in_memory_resolution():
     tree = merge(parse('name: "x"\ndata: {y"{name}": {a: 1}}'),
                  parse('data: {y"x": {b: 2}}'))
     expected = {'name': 'x', 'data': {'x': {'a': 1, 'b': 2}}}
     assert tree.resolve() == expected
-    with pytest.raises(AkanError, match='could match'):
-        tree.to_source()
+    assert parse(tree.to_source()).resolve() == expected
     assert tree.resolve() == expected
 
 
@@ -158,17 +156,20 @@ def test_checks_are_local_to_the_dictionary_being_merged():
     assert parse(tree.to_source()).resolve() == tree.resolve()
 
 
-def test_a_nested_conflict_is_refused_at_its_computed_key():
+def test_a_nested_key_merge_preserves_its_original_diagnostic_location():
     tree = merge(parse('data:\n  y"{name}": 1\n', source='base.yap'),
                  parse('data: {x: 2}'))
-    with pytest.raises(AkanError, match='could match') as err:
-        tree.to_source()
-    assert (err.value.source, err.value.line, err.value.col) == ('base.yap', 2, 2)
+    saved = tree.to_source()
+    key = tree['data'].keys()[0]
+    assert tree['data'][key].where == ('base.yap', 2, 13)
+    for candidate in (tree, parse(saved)):
+        with pytest.raises(AkanError, match="no value named 'name'"):
+            candidate.resolve()
 
 
 def test_computed_keys_in_replaced_dictionaries_do_not_prevent_saving():
-    tree = merge(parse('data: {y"{missing}": 1}'), parse('data: None'))
-    assert tree.to_source() == 'data: None\n'
+    tree = merge(parse('data: {y"{missing}": 1}'), parse('data:= None'))
+    assert parse(tree.to_source()).resolve() == {'data': None}
 
 
 def test_same_source_computed_duplicates_are_not_a_cross_layer_refusal():
@@ -193,11 +194,13 @@ def test_first_key_kind_spelling_and_order_survive_known_merges():
             candidate.resolve()
 
 
-def test_layered_slot_overrides_use_the_same_conflict_check():
+def test_layered_slot_overrides_preserve_key_layer_identity():
     tree = parse('part<base>: {y"{name}": 1}')
     tree['part'].merge(parse('x: 2'))
-    with pytest.raises(AkanError, match='could match'):
-        tree.to_source()
+    restored = parse(tree.to_source())
+    for candidate in (tree, restored):
+        candidate['part'].fill(parse('name: "x"'))
+    assert restored.resolve() == tree.resolve() == {'part': {'name': 'x', 'x': 2}}
 
 
 def test_disjoint_computed_slot_overrides_remain_deferred():
@@ -301,24 +304,6 @@ def test_reloading_uses_saved_file_positions_but_original_keeps_its_source():
         assert err.value.source == source
 
 
-def _key(pattern):
-    return YString(1, 0, 'y', [('hole', 'unknown') if ch == '*' else ('text', ch)
-                               for ch in pattern])
-
-
-def test_potential_match_checker_agrees_with_independent_finite_language_oracle():
-    patterns = [''.join(chars) for n in range(4)
-                for chars in itertools.product('ab*', repeat=n)]
-    words = [''.join(chars) for n in range(7)
-             for chars in itertools.product('ab', repeat=n)]
-    languages = {p: {w for w in words if re.fullmatch(p.replace('*', '.*'), w)}
-                 for p in patterns}
-    for left in patterns:
-        for right in patterns:
-            assert _could_match(_key(left), _key(right)) == bool(
-                languages[left] & languages[right]), (left, right)
-
-
 CORPUS = Path(__file__).resolve().parents[1] / 'docs' / 'conformance' / 'cases'
 INPUTS = [path for kind in ('record', 'full') for path in sorted((CORPUS / kind).glob('*.yap'))
           if not path.name.endswith('.expected.yap')]
@@ -344,7 +329,7 @@ def test_portable_success_corpus_can_be_saved_without_resolving(path):
 @pytest.mark.parametrize('grouped', [False, True])
 def test_collapsing_safe_layers_preserves_merge_grouping(grouped):
     first = parse('name: "x"\ny"prefix_{name}": 1\ndata: {old: 1}')
-    middle, last = parse('data: None'), parse('data: {new: 2}')
+    middle, last = parse('data: "reset"'), parse('data: {new: 2}')
     tree = merge(first, merge(middle, last)) if grouped else merge(first, middle, last)
     restored = parse(tree.to_source())
     assert restored.resolve() == tree.resolve()
@@ -356,8 +341,8 @@ def test_conflicting_save_does_not_invalidate_pending_key_handles():
     key = tree.keys()[0]
     handle = tree[key]
     before = (key, handle.value, handle.where)
-    with pytest.raises(AkanError, match='could match'):
-        tree.to_source()
+    saved = tree.to_source()
+    assert '|' in saved
     assert (tree.keys()[0], handle.value, handle.where) == before
     tree['x'].remove()
     assert 'y"{name}"' in tree.to_source()
@@ -386,15 +371,15 @@ def test_edits_must_leave_slots_attached_to_dictionary_keys(context):
         tree.to_source()
 
 
-def test_pending_override_layers_refuse_to_erase_a_dictionary_replacement_boundary():
-    tree = parse('part<base>: {config: None}', source='first.yap')
+def test_pending_override_layers_keep_a_dictionary_replacement_boundary():
+    tree = parse('part<base>: {config: "reset"}', source='first.yap')
     tree['part'].merge(parse('config: {new: 2}', source='second.yap'))
-    with pytest.raises(AkanError, match='replacement boundary') as err:
-        tree.to_source()
-    assert 'config' in str(err.value)
-    assert 'first.yap' in str(err.value) and 'second.yap' in str(err.value)
-    tree['part'].fill(parse('config: {old: 1}'))
-    assert tree.resolve() == {'part': {'config': {'new': 2}}}
+    saved = tree.to_source()
+    assert '|' in saved
+    restored = parse(saved)
+    for candidate in (tree, restored):
+        candidate['part'].fill(parse('config: {old: 1}'))
+    assert restored.resolve() == tree.resolve() == {'part': {'config': {'new': 2}}}
     assert parse(tree.to_source()).resolve() == tree.resolve()
 
 
@@ -408,13 +393,14 @@ def test_pending_override_layers_refuse_to_erase_a_dictionary_replacement_bounda
     ('config: {}', 'config<next>: {}'),
     ('config<first>: {}', 'config<last>: {}'),
     ('config<first>: {}', 'config<>: {}'),
-    ('config: {nested: None}', 'config: {nested: {new: 2}}'),
+    ('config: {nested: "reset"}', 'config: {nested: {new: 2}}'),
 ])
-def test_replacement_check_handles_nested_values_and_slot_replacements(first, last):
+def test_source_handles_nested_values_and_slot_replacements(first, last):
     tree = parse('part<base>: {' + first + '}')
     tree['part'].merge(parse(last))
-    with pytest.raises(AkanError, match='replacement boundary'):
-        tree.to_source()
+    saved = tree.to_source()
+    for filler in ('config: {old: 1}', 'config<>: {old: 1}', 'config: None'):
+        assert _finish(merge(tree), filler) == _finish(parse(saved), filler)
 
 
 @pytest.mark.parametrize('layers', [
@@ -436,7 +422,7 @@ def test_safe_override_chains_are_not_refused(layers):
 
 def test_a_premerged_override_tree_is_not_reinterpreted_as_sequential_overrides():
     tree = parse('part<base>: {}')
-    overrides = merge(parse('config: None'), parse('config: {new: 2}'))
+    overrides = merge(parse('config: "reset"'), parse('config: {new: 2}'))
     tree['part'].merge(overrides)
     restored = parse(tree.to_source())
     for candidate in (tree, restored):
@@ -455,7 +441,7 @@ def _finish(tree, filler):
         return ('akan',)
 
 
-def test_override_check_has_real_continuation_witnesses_and_admits_safe_chains(monkeypatch):
+def test_override_programs_preserve_continuations_over_a_small_exhaustive_matrix():
     choices = ['config: None', 'config: {}', 'config: {a: 1}',
                'config: {nested: None}', 'config: {nested: {a: 1}}',
                'config<chosen>: {a: 1}', 'config<>: {a: 1}']
@@ -463,24 +449,12 @@ def test_override_check_has_real_continuation_witnesses_and_admits_safe_chains(m
                'config<>: {inherited: -1}', 'config<old>: {inherited: -1}',
                'config: {nested: {inherited: -1}}',
                'config: {nested<>: {inherited: -1}}']
-    admitted = refused = 0
     for length in (2, 3):
         for layers in itertools.product(choices, repeat=length):
             tree = parse('part<base>: {}')
             for layer in layers:
                 tree['part'].merge(parse(layer))
-            try:
-                text = tree.to_source()
-                blocked = False
-                admitted += 1
-            except AkanError as exc:
-                assert 'replacement boundary' in str(exc)
-                blocked = True
-                refused += 1
-                with monkeypatch.context() as patch:
-                    patch.setattr('yapyon._source._check_overrides', lambda *args: None)
-                    text = tree.to_source()
+            text = tree.to_source()
             differences = [filler for filler in fillers
                            if _finish(merge(tree), filler) != _finish(parse(text), filler)]
-            assert bool(differences) == blocked, (layers, differences)
-    assert admitted and refused
+            assert not differences, (layers, differences)

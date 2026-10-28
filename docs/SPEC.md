@@ -1,4 +1,4 @@
-# yapyon — draft specification v0.5
+# yapyon — draft specification v0.6
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -26,12 +26,13 @@ cites `GRAMMAR §Gn` and moves on. Sections below that consist only of such a
 citation are kept at their original numbers on purpose, so that existing
 references to them still land in the right place.
 
-Sections marked *(reserved)* name syntax deliberately akan in v0.5 but held
+Sections marked *(reserved)* name syntax deliberately akan in v0.6 but held
 for future versions.
 
 A yapyon document is one of **four tiers** (ehmon 2): a **record**, in
 which every leaf element has a literal value (§12); a **ledger**, which
-also splices and applies the format's built-in functions (§5); a
+also splices, applies the format's built-in functions (§5), and composes
+values (§16.5); a
 **template**, which also holds template strings (§6) or slots (§15), or reads the
 environment of the process loading it (§5.1.3); and an **assembly**, which also calls functions declared in a
 contract (§13). Records and ledgers are **basic**: their own bytes finish
@@ -60,8 +61,8 @@ Every rule in both documents follows from seven guiding principles, the
    **record** computes nothing: every leaf is a literal, and loading one
    needs no resolver (§12). A **ledger** — a record with references to
    itself — splices named values into strings, copies named values whole
-   (§5.6), constructs collections and evaluates data expressions (§16), and
-   applies only the format's own built-ins — its encodings and casts
+   (§5.6), constructs and composes values and evaluates data expressions
+   (§16), and applies only the format's own built-ins — its encodings and casts
    (§5.1.2, §5.1.5) — and reduces to a record that is the same on every system. A **template** is finished by something outside
    the document: it may read the environment of the process loading it
    (§5.1.3), and reduces to a record given that environment, and it may
@@ -273,12 +274,28 @@ only layout and comments**. The property an implementation must satisfy is
 that **reloading its output yields data equal to reloading its input.**
 
 **Comments do not survive**, and a conforming emitter is not required to
-preserve them: comment-preserving round-trip is not specified in v0.5. An
+preserve them: comment-preserving round-trip is not specified in v0.6. An
 emitter is a normalizer, not a round-tripper. *(Reserved: comment retention —
 see §9.)*
 
+**Record normalization and unfinished-source saving are different contracts.**
+A replacement separator (§15.2; syntax in `GRAMMAR §G6`) annotates a field,
+not its data type. An authored annotation survives normalization of direct
+record source, though its input spacing need not survive. An explicit merge
+expression (§16.5) is not a record, even with literal operands; a record
+emitter must not evaluate it to make one. A proven literal record composed
+through structural tree operations may still use the established
+record-emission path without a resolver. That data-normalization path does
+not replace §15.8's stronger source-history guarantee.
+
+A source writer (§15.8) preserves unfinished contributions, field intent,
+and meaningful grouping. Copies, expansion, and data serializers instead
+consume completed composition into fresh data, retaining required literal
+lexemes and key visibility, not pasting its operation program at a new
+location. No key promotion or extra serializer wrapper is implied.
+
 *Reference implementation: `yapyon.emit`, and `python -m yapyon record`, which
-normalizes a record (§12).*
+normalizes a record (§12); `Tree.to_source()` saves unfinished source (§15.8).*
 
 ---
 
@@ -1052,14 +1069,14 @@ as well as scalar computation.
 
 ## 9. Reserved for future versions
 
-Syntax that is akan in v0.5 with the door explicitly open: `yb64` and `ytb`
+Syntax that is akan in v0.6 with the door explicitly open: `yb64` and `ytb`
 prefixes; **empty string keys**; format
 specs and conversions in holes; list interpolation; **default and variadic
 parameters** for declared functions (§13.7); positional access to a multimap's entries
 (`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
 literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
-round-tripper needs a design v0.5 does not have); **filling slots from
+round-tripper needs a design v0.6 does not have); **filling slots from
 files** (§15.1 leaves finding a filler to the consumer); slot labels with
 subscripts (`<base.items[0]>`); slots in multimap entries.
 
@@ -1094,7 +1111,7 @@ it in the message ("write `{{` for a literal brace"; "use rb").
 where it is unusual, and shiran whose suggested fix would change what a
 document means is not a warning but a trap.
 
-v0.5 specifies **five**, and none of their fixes changes what a document
+v0.6 specifies **five**, and none of their fixes changes what a document
 means. The avoidable bracket is about spelling alone. §5.3's two warn
 thresholds and §3.1's long decimal assert nothing about what the author
 intended — they report that a document is costly and may be refused
@@ -1138,6 +1155,8 @@ normative; the individual rows are cross-references to the rule's own home.
 | identifier character set | the interpreter's Unicode version | pinned to Unicode 14.0.0; no invisible characters |
 | set / tuple / complex literals | types | akan (not in the data model) |
 | `(name)` as a value | the same object | a copy of its value (§5.6) |
+| `a \| b` | bitwise OR, or dictionary union | value composition under §15.2, at the lowest value-operator precedence (§16.5) |
+| `key:= value` in a pair | no such dictionary-field form; `:=` is an assignment expression elsewhere | replace that field's earlier value with the complete incoming value (§15.2) |
 
 ---
 
@@ -1150,10 +1169,13 @@ is a ledger that splices nothing, a ledger is a template that holds no
 function. The record is the restricted form — records are implied to be
 fixed, and this one is. The tier a document needs is computable from its
 bytes: a `y`, `yb`, or `ry` literal, a copy or bare call (§5.6), any
-parenthesis, or an expression or comprehension (§16) makes it at least a
-ledger; a `yt` literal, a slot (§15), or
+parenthesis, or an expression or comprehension (§16), including either
+merge-pipe form, makes it at least a ledger; a `yt` literal, a slot (§15), or
 an environment reference (`$NAME` or a call to `__env__`) a template, and a call to a declared
-function an assembly.
+function an assembly. A replacement separator alone does not raise the tier:
+otherwise literal data annotated for replacement remains a record. An explicit
+pipe requires at least a ledger even with literal operands or in a branch that
+would not execute. Operator characters inside strings are inert.
 
 The tiers fall into two **styles**. **Basic** documents — records and
 ledgers — are finished by their own bytes: a basic document reduces to the
@@ -1182,9 +1204,11 @@ literal either (`GRAMMAR §G7`, no implicit null).
 The five literal scalar kinds (§8) and ordinary literal collections need
 no resolver. A record refuses y-family literals/keys, copies and bare calls,
 parentheses, labels, expression operators/reference atoms/postfixes, and
-comprehension markers (`GRAMMAR §G9`). Contextual words used as ordinary keys
-and punctuation inside literals do not count as computation. A nonempty
-literal flow multimap (§7.1) remains a record.
+comprehension markers (`GRAMMAR §G9`), including `PIPE` and `BPIPE`
+(`GRAMMAR §G6`). Contextual words used as ordinary keys and punctuation
+inside literals do not count as computation. Neither does a replacement
+separator's optional equals token. A nonempty literal flow multimap (§7.1)
+and a literal field annotated for replacement remain record-compatible.
 
 An implementation can test those lexical kinds without resolving anything:
 **a record is identifiable by lexing alone.** As always, subset membership
@@ -1213,7 +1237,8 @@ record" must not be read as "this value reaches the application unchanged".
 |---|---|---|
 | y-family prefixes `y` `yb` `yt` `ry` | **akan** | permitted |
 | copies and parentheses (§5.6) | **akan** | permitted |
-| expressions and comprehensions (§16) | **akan** | permitted |
+| expressions, including explicit merge pipes, and comprehensions (§16) | **akan** | permitted |
+| replacement separator on an otherwise literal field (§15.2) | permitted | permitted |
 | slots (§15) | **akan** | permitted (template and above) |
 | §5 parse-time splicing | n/a | yes |
 | §6 templates | n/a | yes |
@@ -1230,14 +1255,17 @@ it is plain keyed data rather than deferred structure; the criterion is
 
 An implementation **must state which tier it implements**. There are four:
 
-- **Record** — the whole of `GRAMMAR.md` except the y-family prefixes
-  (`§G4.6`), holes (`§G4.7`), the reference grammar (`§G5`), and computed
-  expressions/comprehensions (`§G9`); plus this
-  document's §3, §7, §10, §11, and §12.
+- **Record** — the literal subset of `GRAMMAR.md` identified by §12.2,
+  excluding y-family prefixes/keys, holes, copies, parentheses, labels,
+  computed expressions/comprehensions, and explicit merge pipes
+  (`§G4.6`–`§G4.9`, `§G5`, `§G6`, `§G9`); plus this document's §3, §7,
+  §10, §11, and §12. Literal replacement annotations are included.
 - **Ledger** — all of the above, plus `GRAMMAR §G4.7`, `§G5` except
   `ENV`, and this document's §4.4, §5 except §5.1.3–§5.1.4, and §14, and
   §13 as it applies to the built-ins other than `__env__`, and §16 with
-  `GRAMMAR §G9` excluding environment/declared-function access.
+  `GRAMMAR §G9` excluding environment/declared-function access, and §15.2's
+  value-combination rules as used by §16.5. Explicit merge pipes in
+  `GRAMMAR §G6`/`§G9` require this tier; literal replacement annotations do not.
 - **Template** — all of the above, plus `yt` (§6), `ENV`,
   §5.1.3–§5.1.4, `__env__`, `LABEL` (`GRAMMAR §G4.9`), and slots (§15).
 - **Assembly** — all of the above, plus the whole of §13: contracts, their
@@ -1409,9 +1437,9 @@ PEP 8 form: `dict[str, int]`, `int | None`.
   it are not checked; a value received as `Any` is checked again at any
   later call that declares a narrower type. It is written, never implied:
   `list[Any]`, not `list`.
-- `dict` and `multimap` write their key type, which must be `str` (keys are
-  identifiers). It is written so that a later version can admit other key
-  types without respelling.
+- `dict` and `multimap` write their key type, which must be `str`: keys are
+  strings under §7, whether names, quoted text, or computed text. It is written
+  so that a later version can admit other key types without respelling.
 - No type names a template (§6), so a `yt` value is never a valid argument
   or result.
 
@@ -1474,9 +1502,14 @@ and never discovered.
 
 ### 13.7 Not in this version
 
-Bare calls as values (`foo: f(x)`; a copy of a result, `(f(x))`, is
-§5.6); returning a node; a key or index after a call (`{f(x)[0]}`); default or variadic parameters; a template in a signature; contracts a document can
-name.
+Returning a node; a key or index after a call **inside a hole**
+(`{f(x)[0]}`, `{f(x).name}`); default or variadic parameters; a template
+in a signature; contracts a document can name.
+
+Bare calls as values (`foo: f(x)`) and copies of results (`(f(x))`) are
+already supported (§5.6). Value expressions support postfix traversal of
+call results (§16.4); hole interiors retain the narrower reference grammar
+(`GRAMMAR §G5`), where only another call may follow a call.
 
 ---
 
@@ -1727,14 +1760,22 @@ harness<claude>: {}                    # a slot with no overrides
 ```
 
 `persona`'s value is a slot with the label `llamacpp` and these
-**overrides**. A slot's overrides are a mapping, block or flow; `{}`
-says there are none, and a slot with anything else as its value is akan
-(`GRAMMAR §G7`). Whitespace may surround and fill the label
-(`persona <llamacpp>:`); `persona<llamacpp>:` is the canonical spelling.
+**overrides**. Its complete right-hand side is one structural dictionary
+override contribution: an ordinary dictionary, a dictionary comprehension,
+or a grouped/pipe combination of those forms (`GRAMMAR §G6`–`§G7`, `§G9`).
+A scalar, list, multimap, or arbitrary reference/call as the overrides is
+akan. Literal `{}` means no overrides, even for a non-dictionary filler;
+it is not an incompatible empty dictionary applied over that filler. Only
+a proven harmless literal empty override, with no retained operation or
+validation history, may be skipped. A pending comprehension is not empty
+merely because it has no known entries yet. Whitespace may surround and
+fill the label (`persona <llamacpp>:`);
+`persona<llamacpp>:` is the canonical spelling.
 
 A document that holds a slot is a **template** (§12): something outside
-finishes it. Nothing in this section is reachable from a record or a
-ledger.
+finishes it. Slot-specific operations require that tier. The shared merge
+rules (§15.2) also govern ledger value composition (§16.5); a literal
+replacement annotation alone remains record-compatible (§12).
 
 ### 15.1 A slot is passive
 
@@ -1754,56 +1795,192 @@ other way — out of the document, at something its consumer supplies.*
 
 ### 15.2 Merging
 
-Filling is defined by **merging**, the one way two trees combine. To merge
-a later tree over an earlier one:
+Filling, structural tree composition, and explicit value composition (§16.5)
+use **one merge operation**. An earlier contribution is **lower**; an incoming
+contribution is **higher**. Unset means absence of a contribution, not `None`
+and not a new literal. A single supplied field assigns its value; two absent
+fields do not create a `None` entry.
 
-- **Two mappings merge key by key.** A key in both takes the merge of its
-  two values; a key in one keeps its value. The earlier mapping's keys
-  keep their order, and the later mapping's new keys follow, in theirs.
-  Keys are compared by their resulting strings (§7), not by the spelling
-  of their expressions. Merge operations happen before resolution. When a
-  key is not yet known, retain the contributions and their layer order until
-  resolution can determine which keys match; do not resolve either input
-  early. Equal keys from different merged layers merge; duplicates within
-  one input mapping remain akan. The first occurrence keeps the key's
-  position, spelling, and name/non-name kind, as it keeps its order.
-- **Anything else is replaced whole** by the later value — across kinds
-  (a string may replace a mapping, and a mapping a string), and for
-  sequences, multimaps, y-strings, copies, and slots alike. `None` is a
-  value like any other: a later `None` replaces, it does not delete.
+**Pair separators select the field operation** (`GRAMMAR §G4.10`, `§G6`):
 
-Slots meeting in a merge follow from §15.3's definition, and are listed
-here so that no case is left to inference:
+- The ordinary separator combines the earlier and incoming values at that key.
+- The replacement separator uses the **complete incoming right-hand value**
+  and discards the earlier value, including its pending computation. A pipe
+  expression on the right belongs wholly to that value, not just its first
+  operand. Replacement works with any supplied value, including empty
+  collections, `None`, and a new slot. A replacement slot still fills normally.
+- Replacement is not deletion or immunity to later overrides. `field:= {}`
+  keeps an empty dictionary at `field`; `field:= None` forces `None` even
+  over a container. A later contribution can change either again.
+- The separator changes the value operation, not the matched key's identity,
+  position, spelling, or name/non-name kind. Replacement intent is contribution
+  information, not another data type, and is retained where later composition
+  needs it.
 
-| Earlier | Later | Result |
+For **established ordinary values**, let **A** mean `str`, `bytes`, `int`,
+`float`, `bool`, or `Template`, and **D**, **L**, and **M** mean dictionary,
+list, and multimap. `Template` is not thereby a scalar literal or record
+value. Rows are earlier/lower; columns are incoming/higher:
+
+| Earlier / incoming | None | A | D | L | M |
+|---|---|---|---|---|---|
+| None | None | incoming | incoming | incoming | incoming |
+| A | incoming None | incoming | incoming | incoming | incoming |
+| D | earlier D | incoming | dictionary merge | incoming | incoming |
+| L | earlier L | incoming | incoming | list merge | incoming |
+| M | earlier M | incoming | incoming | incoming | multimap merge |
+
+Thus `None` yields to **every container in either order**, including an empty
+one. Against a non-container it follows higher-wins precedence. Compatible
+empty collections yield rather than clear or normalize the other's authored
+repetitions. Incompatible kinds use the incoming whole value without a cast,
+even when it is an empty container of a different kind. Zero, `False`, and
+empty text are actual values, not unset. Explicit field replacement bypasses
+this ordinary matrix.
+
+Unknown keys, kinds, or values stay deferred until the operation has enough
+information. Parse, merge, and source preparation must not execute expressions
+early to obtain that information. The matrix is about eventual values, not
+parser classes: a copy or call contributes established fresh data (§5.6),
+whereas structural dictionary operands retain their unfinished bodies for
+merging before those bodies resolve (§16.4). An unfilled slot is not assigned
+a guessed ordinary-value kind; it follows §15.2.4.
+
+### 15.2.1 Dictionary matching
+
+Dictionaries match keys by their resulting strings under §7, not expression
+spelling. Each input retains its contribution identity. The earlier key
+keeps its position, spelling, and name/non-name kind; new incoming keys
+append in incoming order. Matching values combine under §15.2, or take the
+incoming field's explicit replacement. Different keys are never deduplicated
+because their values happen to match. **No merge promotes a quoted or
+computed key into a name**, including an explicit field replacement.
+
+Only dictionary unique keys provide recursive matching. A matched list or
+multimap uses §15.2.3; do not infer member identity from an index, a repeated
+multimap key, or a field named `id` or `name`.
+
+Equal keys across contributions combine; duplicates **within one contribution**
+remain akan. Statically known duplicates are parse errors, and computed
+duplicates are checked when their keys are required or resolved. A whole
+discarded contribution is not evaluated merely to discover a dynamic error
+in code that no longer contributes. Syntax and static validity still apply
+to the whole document.
+
+### 15.2.2 Typed merge equality
+
+Merge duplicate comparison is recursive data equality with **exact kind
+distinctions**. `True`, `1`, and `1.0` are distinct. Within a kind:
+
+- **None** equals `None`.
+- **Bool, int, and float** compare their same-kind values, ignoring source
+  radix, separators, and spelling. Finite float signed zeros compare equal;
+  the selected representation retains its spelling and sign.
+- **Text and bytes** compare exact decoded contents. Do not fold text or
+  infer an encoding.
+- **Lists** compare lengths and typed elements in order.
+- **Dictionaries** compare string-key/value associations using recursive
+  typed equality, independent of entry order and key kind or spelling.
+- **Multimaps** compare ordered complete entry sequences, including repeated
+  string keys and typed values. They never equal dictionaries.
+- **Templates** compare delivered text/hole structure in order. Each hole
+  has equal reference text, delivered value lexeme, and recursively typed
+  value. Diagnostic filenames and positions are not equality data. No
+  rendering occurs; equal rendered text does not imply equal templates.
+
+This equality is **specific to merge deduplication**. §16.3's ordinary
+expression equality, including its numeric behavior, is unchanged. Host
+bool/int subtyping, hashes, source-expression identity, and serialized text
+are not substitutes for this comparison. Replacement annotations do not
+make otherwise equal data unequal.
+
+### 15.2.3 Collection counts, order, and representation
+
+Lists combine **whole elements**; multimaps combine **whole key/value pairs**.
+The same multimap key with a different value is a different entry, not a
+request for recursive by-key merging. For each equal value or pair under
+§15.2.2, retain the **greater occurrence count in either input**, not the sum
+and not necessarily one. Standalone and force-replaced collections retain
+their authored repeats.
+
+The occurrence pairing is:
+
+1. Keep the earlier occurrences in their original positions.
+2. Visit incoming occurrences in incoming order, matching each to the first
+   equal, not-yet-matched occurrence from the **original earlier input**.
+3. A match keeps that position and takes the complete incoming representation.
+   Do not recursively merge matched values.
+4. With no available match, append the incoming occurrence. Appended
+   occurrences are not new match targets in this binary merge.
+5. Unmatched earlier occurrences keep their representations. One incoming
+   occurrence is not broadcast over every equal earlier repeat.
+
+For example, `["a", "b"] | ["b", "c", "b"]` yields
+`["a", "b", "c", "b"]`: the first incoming `"b"` matches, then `"c"`
+and the extra `"b"` append. `[0x1, True] | [1.0, 1]` yields
+`[1, True, 1.0]`; only the ints match, and the incoming int spelling wins.
+
+A dictionary-valued list item takes the whole higher item, including its
+key kind, order, and available lexemes, at the retained position. This is
+not direct dictionary merging, whose matched keys keep the earlier
+provenance (§15.2.1). The same whole-representation rule applies to a
+matched multimap pair. Source operation history is not an extra data kind.
+
+### 15.2.4 Slot selection and pending contributions
+
+Slot selection precedes application of the selected filler and overrides.
+An incoming explicit field replacement discards inherited slot/default
+history; if its value is a new slot, that slot fills normally. For ordinary
+combination:
+
+| Earlier | Incoming | Result |
 |---|---|---|
-| a slot `x<a>` | a mapping | the slot, the mapping added as its last overrides |
-| a slot `x<a>` | any other value, or a slot | the later value |
-| `x<>` | a slot `x<b>` | `x<b>`, with both overrides, earlier first |
-| `x<>` | `x<>` | `x<>`, with both overrides, earlier first |
-| `x<>` | any value that is not a slot | the later value |
+| a named slot `x<a>` | a dictionary | the slot, with the complete incoming dictionary appended as its last override contribution |
+| a named slot `x<a>` | None, a list, a multimap, or a value of unknown kind | retain the slot and ordered pending combination until the filler kind is known |
+| a named slot `x<a>` | a known A value, or a slot | the incoming value or slot |
+| `x<>` | a slot `x<b>` | `x<b>`, with both override histories, earlier first |
+| `x<>` | `x<>` | `x<>`, with both override histories, earlier first, retaining the abstract obligation |
+| `x<>` | any contribution that is not a slot | the incoming value, selecting that value for the abstract position |
 | anything not a slot | a slot | the slot |
+
+An unfilled named slot followed by `None` cannot simply be discarded: a
+container filler survives that `None`, while a scalar filler does not.
+Likewise, a later list combines with a list filler but replaces a dictionary
+filler. Retain any still-needed slot as discoverable and fillable; resolving
+without filling it remains akan. A dominating atomic value or explicit
+replacement that discards the slot also removes the need to fill it.
+
+A labeled field's **complete RHS is one dictionary override contribution**.
+Several sequential additions to an unfilled slot are not equivalent to one
+premerged RHS. Each later addition acts on the result of the preceding
+operation; grouping inside a contributed dictionary stays inside it. §15.8
+preserves these boundaries in saved source.
 
 ### 15.3 Filling
 
-**A slot filled with a tree becomes the merge of that tree under the
-slot's overrides**: the filler first, the overrides over it. The filler is
-copied in (§5.6's linearity): one tree may fill many slots, and each
-receives its own.
+**A slot filled with a tree applies its retained override program over
+that tree**: the filler first, then each override contribution in order,
+using §15.2. Literal empty overrides mean no operation (§15), not a cast to
+a dictionary. A premerged dictionary is one contribution, not a sequence
+of operations on the filler. The filler is copied in (§5.6's linearity):
+one tree may fill many slots, and each receives its own.
 
-> **The meaning of any assembly of fills and merges is that of filling to
-> literal, merging, and repeating.** Every slot inside a filler is filled
-> before the filler fills anything, and every merge applies to filled
-> trees. An implementation may take any route — fill in any order, keep
-> overrides waiting on a slot — that gives this result.
+> **For the same retained assembly and fixed slot selections, equivalent
+> fills give the result of filling to literal, merging, and repeating.**
+> Slot choices are selected under §15.2.4; the selected filler's nested
+> slots and override program determine the result. An implementation may
+> fill in any order or keep operations waiting, provided it preserves that
+> result.
 
 Two consequences, stated because they are easy to get wrong:
 
 - **A slot's overrides apply only if the slot is filled.** A later value
-  that replaces the slot replaces its overrides with it.
-- **Order of filling does not change the result.** A slot's overrides
-  apply in the order their documents nest, innermost first, whatever order
-  the fills are made in.
+  that discards the slot discards its overrides with it.
+- **Equivalent fill order does not change the same retained assembly.**
+  Overrides apply innermost first, preserving their contribution order.
+  This does not equate merging independently prefilled inputs with selecting
+  between unfilled slots: the former combines ordinary data, while the
+  latter may select only the higher named slot (§15.2.4).
 
 A filler that contains the slot it would fill is akan.
 
@@ -1867,9 +2044,14 @@ A fill whose overrides leave an abstract slot without a value is akan at
 that fill, naming the abstract slot. If checking the obligation requires a
 computed key's text, the comparison waits for resolution and any error still
 names the fill; it must not compare expression spellings or resolve an input
-early. An abstract slot that no fill brings
-in — at the top of the document a consumer starts from — is the
-consumer's to fill directly.
+early. Keep the responsible fill's own contributions, provenance, and error
+location while the comparison is pending. A later edit that happens to supply
+the missing key is not retroactive fulfillment by that fill. Discarding an
+obligation is valid only when the responsible branch/program is actually
+discarded, not merely because its current structural view changes.
+
+An abstract slot that no fill brings in — at the top of the document a
+consumer starts from — is the consumer's to fill directly.
 
 ### 15.6 Resolving
 
@@ -1878,9 +2060,11 @@ filled tree is part of the document it fills, and its holes follow §5.2
 from where they now sit: a hole in a filled harness finds the sibling
 persona, and `{name}` finds the nearest `name`, wherever that came from.
 
-**A slot still unfilled when the document resolves is akan** — an abstract
-slot saying it needs a label or a fill, any other naming its label. So
-`loads` refuses a document that holds a slot: nothing has filled it.
+**A retained slot still unfilled when the document resolves is akan** — an
+abstract slot saying it needs a label or a fill, any other naming its label.
+`loads` supplies no fillers, so it refuses a document whose composition
+still needs a slot. A slot discarded by a later dominating contribution
+is no longer an obligation to fill.
 
 Diagnostics name the document each value was written in, at its own line
 and column, however the tree was assembled.
@@ -1889,82 +2073,140 @@ and column, however the tree was assembled.
 
 The operations above are the format's: an implementation of the template
 tier offers a consumer a way to **parse** a document without resolving it,
-**walk** the result — every value with its lexeme (`GRAMMAR §G4`) and its
-place — **merge** trees, **fill** a slot, **remove** a value, and
-**resolve** once. Their names and shapes are the implementation's.
+**walk** its structurally known places, **merge** trees, **fill** a slot,
+**remove** a value, and **resolve** once. Their names and shapes are the
+implementation's; parser nodes need not be exposed.
+
+Known mapping views retain their string keys and locations for unresolved
+key entries. An unresolved collection's final indices, length, or iteration
+must not be guessed or forced by evaluation: effective-position operations
+are available only where the structure proves the effective view. Retained
+slots must nevertheless remain discoverable and fillable through their
+source-contribution locations, even when eventual collection positions are
+unknown. A discarded slot is not enumerated for filling.
+
+Consumer operations copy supplied content, and resolution uses a private
+working tree: editing a composition does not mutate either input, another
+fill, or the original source during resolution. Location-based handles keep
+reading their location, rather than a stale node. A removed location raises
+the implementation language's ordinary missing-location error, not an alias
+to a different contribution. A copied view of slot overrides is inspection,
+not a promise that applying one premerged dictionary to any filler replays
+the complete sequential override program.
+
+*Reference implementation: `Tree`, `Handle`, and opaque `Key` tokens provide
+these operations without exposing AST nodes. `Tree.slots` discovers
+retained slots, including those inside pending contributions. Unknown
+effective collection positions cannot be indexed as though already resolved.
+A removed handle path raises `KeyError` or `IndexError`. Handles and key tokens
+belong to their original tree; a reparse obtains fresh corresponding locations.*
 
 ### 15.8 Saving an unfinished document
 
 An implementation may offer a **source writer** for an unresolved tree.
-It writes a single parseable yapyon document, without resolving any part of
-it: no hole lookup, environment access, contract call, cast, or serializer
-runs, even when its inputs appear available. Selected slots have already
-been filled through §15.3; any others remain slots. Strings, copies, calls,
-and computed keys remain expressions, not their results. Saving does not
-change the input tree or relax §15.6's requirement for filled slots at
-resolution.
+It writes a single parseable yapyon document preserving subsequent
+equivalent fills, edits, merges, and resolution, given the same environment
+and contract. One matching current result, or a fill with an empty mapping,
+is not enough: the unfinished program's continuation behavior must survive.
 
-**Saving preserves later behavior without evaluation.** The output preserves
-the behavior of subsequent equivalent fills, merges, edits, and eventual
-resolution. An unfilled slot's overrides must therefore act on any future
-filler in the same way before and after saving, not merely produce the same
-mapping when merged with an empty one. There are four **save-time refusals**:
+**Saving never evaluates.** No hole lookup, environment access, declared or
+built-in call, cast, serializer, comprehension iteration, template rendering,
+or runtime duplicate comparison runs, even when its inputs appear available.
+The writer may inspect structural facts and re-indent source lexemes, but
+must not have a separate value-combination policy. Saving does not mutate
+the original tree, its keys, handles, warnings, or diagnostic provenance, or
+relax §15.6's requirement to fill still-needed slots at resolution.
 
-- **Potentially matching computed keys across merged dictionaries.** When a
-  dictionary contribution has a computed key and another contribution to the
-  same dictionary has a key that could match it, saving is akan. The other
-  key may be named, literal quoted, or computed. Empty dictionaries cannot
-  conflict. Known keys merge normally under §15.2, and an unmerged dictionary
-  may have computed keys. Apply this check locally at each merged dictionary,
-  including dictionaries in slot overrides, not to unrelated dictionaries
-  elsewhere in the document. For this structural check, a computed key's
-  literal text stays fixed and each hole is an unknown, possibly empty
-  string; refuse when the two resulting string patterns overlap. Do not
-  evaluate a hole or compare expression spellings as key identities. Literal
-  text may prove that the patterns cannot match, in which case this refusal
-  does not apply.
-- **A completed fill's still-undecided abstract-slot obligation (§15.5).**
-  Ordinary slot syntax does not retain the fact that an earlier fill's own
-  overrides were obliged to give a key a value. If that obligation still
-  needs a computed key's value, saving is akan at the fill. Do not silently
-  replace it with an ordinary abstract slot or evaluate the key to settle it.
-- **Pending override chains that lose a replacement boundary.** An unfilled
-  slot can retain several ordered override mappings. Combining them into one
-  mapping is not always equivalent to applying each to a future filler in
-  turn. For example, replacing a field with `None` and then with a mapping
-  discards that field's inherited keys; a single mapping override would
-  instead merge with them. Slot replacements can likewise discard inherited
-  overrides that a single slot would retain. If collapsing the pending chain
-  changes how any future filler is merged, saving is akan at the unfilled
-  slot, naming the field and contributing locations. A later whole-value
-  replacement that discards the problematic history is safe. This refusal
-  applies to pending slot overrides, not to an already-applied merge of
-  concrete trees, and it does not forbid harmless combinations of overrides.
+**Preserve operations and contribution boundaries.** Write retained
+contributions as explicit layers (`GRAMMAR §G6`, `§G9`). Keep each input's
+identity, lexical bindings, operation order, replacement intent, and
+behaviorally significant grouping. Potentially equal keys from separate
+dictionaries must not become duplicate entries in one dictionary; a
+same-contribution duplicate must not become a legal cross-layer merge.
+Comprehensions remain comprehensions, each with its own head, clauses,
+and lexical scope. Computed keys stay exact-text non-name keys; saving
+never promotes them, substitutes the environment, or compares expression
+spellings as key identities.
 
-- **A deferred dictionary comprehension with another nonempty dictionary
-  contribution (§16).** Ordinary source cannot represent the comprehension
-  and its separate merge layer, even when their keys would be disjoint.
-  Saving that combination is akan, not permission to evaluate it or discard
-  either layer. A comprehension with only empty literal dictionary layers
-  remains saveable. In-memory merging is unchanged. A future source-layer
-  representation is deferred.
+A field's separator applies to its complete right-hand value. Preserve
+right-grouped merge programs rather than flattening them as though merge
+were associative. For a postfix on a merge result, parenthesize the whole
+result rather than attaching the postfix only to the right operand. An
+authored pipe remains computation even with literal operands: source
+saving does not evaluate it to lower its tier.
 
-These refusals do not change in-memory merging, filling, or resolution. In
-particular, a refused tree may still be resolved in memory under §15.2–§15.6.
-A diagnostic explains why saving cannot preserve the state and names the
-computed key or prior fill responsible.
+**Sequential slot overrides may need surrounding dictionary layers.** A
+labeled field contributes its complete RHS as one dictionary value. Several
+sequential operations on its filler cannot generally be written inside that
+RHS. For example, these are distinct complete documents:
 
-The writer preserves literal and expression spellings, re-indenting as
-needed; layout and comments need not survive (§4.4). Redundant grouping
-parentheses need not survive. Reloading the saved document gives it the new
-source name and positions; it does not retain the former files' diagnostic
-locations. The original in-memory tree retains its provenance (§15.6).
-Opaque handles and key-location tokens belong to their original tree and do
-not transfer to the reparsed tree; subsequent operations use corresponding
-locations in that tree instead.
+```yapyon
+part<base>:
+  config: "reset"
+|
+part:
+  config:
+    new: 2
+```
+
+```yapyon
+part<base>:
+  config: "reset"
+  |
+  config:
+    new: 2
+```
+
+With a filler `config: {old: 1}`, the first yields
+`part: {config: {new: 2}}`; the second yields
+`part: {config: {old: 1, new: 2}}`. The second RHS is one premerged override;
+the first retains two sequential operations on the filler. The writer must
+not interchange them. Likewise, later `None`, list, or multimap contributions
+to a retained named slot belong outside its dictionary-only overrides, lifted
+into the nearest representable containing dictionary with grouping preserved.
+
+Explicit layers replace the former save-time refusals for potentially
+matching computed keys, pending override replacement boundaries, and a
+dictionary comprehension combined with another nonempty contribution **only
+when they faithfully represent the retained state**. The writer must not
+freeze inputs, drop contributions, or merely remove a safety check. Two
+remaining refusals are:
+
+- **A completed fill's still-undecided historical abstract-slot obligation
+  (§15.5).** If the responsible fill's own overrides still require a
+  computed-key comparison, saving remains akan at that fill until the
+  obligation is actually settled or faithfully representable. An ordinary
+  new abstract slot does not encode a condition on a prior fill. Do not
+  evaluate a key or rely on a later convenient edit to evade this refusal.
+- **An unattached slot.** A slot has source spelling only when attached to
+  its dictionary field and label. A root value that is an unattached slot
+  cannot be saved as a standalone document.
+
+Any further refusal must identify a concrete unrepresentable state, with a
+specific reason and location, not broadly reject supported layers or mixed
+forms. Save-time refusal does not change in-memory merging, filling, or
+resolution; a refused tree may still resolve in memory.
+
+**Spelling and layout.** Keep literal lexemes and required expression
+spellings. The initial generated style uses two-space indentation, ordinary
+`key: value`, replacement `key:= value`, and a standalone pipe aligned with
+its contribution heads, without automatic blank lines around it. Input
+whitespace is wider (`GRAMMAR §G4.10`). A grouped operand uses valid flow
+forms inside parentheses, where indentation is not syntax. Shared expression
+spelling applies there. Layout and comments need not survive (§4.4);
+redundant parentheses may be removed, but meaningful grouping may not.
+
+Reloading gives the saved document its new source name and positions, not
+the former files' diagnostic locations. The original in-memory tree keeps
+its provenance (§15.6). Opaque handles and key-location tokens belong to
+their original tree; continuations on the reparse obtain fresh corresponding
+locations. Normalized source is idempotent, and later equivalent operations
+must preserve successful results and expected errors alike.
 
 *Reference implementation: `Tree.to_source()` returns newline-terminated
-source text. It does not write a file. Record `emit()` remains record-only.*
+source text without writing a file. Record `emit()` remains record-only;
+it does not evaluate authored pipes. Its structural literal-record data
+path (§4.4) is not a substitute for this unfinished-source contract.*
 
 ## 16. Expressions and collection comprehensions
 
@@ -2045,7 +2287,10 @@ without name folding or implicit string conversion. It is a non-name key
 under §7, including when its text resembles an identifier. Existing nonempty,
 non-dunder, non-@ key checks apply at the head's source position. Equal keys
 within one dictionary comprehension are duplicate-key akan. Multimap
-comprehensions preserve repeated keys and entry order.
+comprehensions preserve repeated keys and entry order. A head's replacement
+annotation (`GRAMMAR §G9`) belongs to each produced entry, not the enclosing
+collection. It neither permits same-contribution dictionary duplicates nor
+introduces unique-key matching for multimap entries (§15.2.3).
 
 ### 16.3 Conditions and operators
 
@@ -2098,10 +2343,15 @@ entries, then merge before resolving the retained value bodies. A replaced
 body is not evaluated, and retained references see their final overridden
 siblings. Lexical bindings belong to comprehension-authored syntax, not to
 separately authored override values. Same-input duplicates remain errors.
-List/multimap results retain whole-value
-replacement. Save an unmerged comprehension unevaluated, preserving its later
-behavior; merged dictionary contributions that cannot be represented in
-source are refused under §15.8, not flattened or evaluated.
+List and multimap results combine by §15.2.3's whole-element/whole-pair
+comparison, counts, order, and representation rules, not recursive member
+matching. The same value-kind matrix applies to literal, copied, called,
+and constructed results. Retained comprehensions remain eager; selecting
+an early item must not hide a later error. A whole discarded contribution
+need not be evaluated merely because it was written as a comprehension.
+Save retained contributions as unevaluated layers under §15.8, preserving
+their independent scopes and later behavior rather than flattening or
+materializing them.
 
 Comprehensions and expression operators require at least the ledger tier.
 Environment access, yt, slots, and declared functions raise the tier exactly
@@ -2109,6 +2359,53 @@ as in any other value, even in a branch that would later be excluded. A
 record has no comprehension or expression evaluation. §5.3's expansion limits
 apply to materialized construction as well as copies/splicing; implementations
 must bound generated work rather than allocate an unbounded result first.
+
+### 16.5 Explicit value composition
+
+**Syntax: `GRAMMAR §G6`, `§G9`.** A merge pipe composes complete values using
+§15.2, at the **lowest value-operator precedence**, below logical `or`.
+Existing logical, comparison, and postfix operators keep their relative
+precedence. Unparenthesized pipes associate **left to right**, including
+chains mixing block and flow operands. Parentheses make one contributed
+operand; a right-grouped merge is not flattened.
+
+Merge is not generally associative across replacement boundaries. For
+example, this complete document yields `config: {new: 2}`:
+
+```yapyon
+{config: {old: 1}} | {config: "reset"} | {config: {new: 2}}
+```
+
+This different complete document retains both `old` and `new`:
+
+```yapyon
+{config: {old: 1}} | ({config: "reset"} | {config: {new: 2}})
+```
+
+An inline pipe after a pair's separator composes that pair's whole value;
+it does not implicitly merge the surrounding dictionary. Block pipes
+separate operands at the enclosing value's indentation. A pipe may be alone
+on its line or followed by a flow expression; an unbraced block operand
+begins on the following logical line. Grouping remains meaningful in every
+layout. A bare name/path may be an expression operand but remains invalid
+as a standalone ordinary value.
+
+Structural dictionary operands retain unfinished bodies at their output
+locations and merge before retained body resolution (§16.4). Copies and
+calls contribute established fresh data (§5.6), not symbols to paste into
+a different scope. Unknown result-producing operands stay deferred, and
+use the **same eventual-kind matrix**, not a second policy based on parser
+classes. Pending dependencies use §5.3's existing fixpoint and cycle path.
+Source saving preserves these operations without executing them (§15.8).
+
+An explicit pipe requires at least a ledger, even with literal operands.
+A replacement annotation alone does not (§12). This value-expression
+extension does not widen holes or call arguments: both still use
+`GRAMMAR §G5`, not arbitrary expressions, and no callable-value form is added.
+
+Necessary materialization and duplicate comparison participate in documented
+resource limits before unbounded work or allocation. Limits must account for
+work on inputs and comparisons, not only the final deduplicated output.
 
 ---
 

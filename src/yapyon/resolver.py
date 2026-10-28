@@ -45,14 +45,14 @@ from typing import NamedTuple
 
 from ._digits import REFUSE_DIGITS, decimal_text, int_from_decimal
 from ._keys import key_error, name_key
-from .assembly import MergedMapping
+from .assembly import MergedMapping, project
 from .contract import (BindError, Declared, Lender, ResultError,
                        float_misfit, result_node)
 from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
                           environment)
 from .lexer import (DOLLAR_HINT, AkanError, Call, Literal, Ref, Yakamashiwa,
                     fold_name, is_dunder, parse_ref)
-from .parser import (Comprehension, Copy, Expression, Mapping, MultiMap, Node,
+from .parser import (Comprehension, Copy, Expression, Mapping, Merge, MultiMap, Node,
                      Pair, ResolvedTemplate, Scalar, Sequence, Slot, YString,
                      children)
 from .serializers import (BUILTIN_NAMES, CASTERS, ENV_BUILTIN, GET_BUILTIN,
@@ -249,6 +249,8 @@ class Resolver:
         self._bracket_seen = set()
         self._key_reads = []
         self.rendered = 0
+        self._merge_work = 0
+        self._merge_budget = self._charge_merge
         self._depth: dict[int, int] = {}     # id(resolved Scalar) -> its depth
         self._facts: dict[int, tuple] = {}   # id(settled node) -> (node, size,
                                              # depth), for §5.6's copies
@@ -289,8 +291,24 @@ class Resolver:
                                   and (at.line, at.col) < (best_line, best_col)):
             self._deepest = here
 
+    def _charge_merge(self, node, *, depth=None):
+        if depth is not None and depth > self.max_depth:
+            self._akan(f"resolution exceeded the depth ceiling ({self.max_depth})", node)
+        self._merge_work += 1
+        if self._merge_work > self.max_size:
+            self._akan(f"merge comparison/materialization exceeds the work ceiling ({self.max_size})", node)
+
+    def _attach_merge_budgets(self):
+        pending = [self.root]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, (MergedMapping, Merge)):
+                node._merge_budget = self._merge_budget
+            pending.extend(children(node))
+
     # -- driver --------------------------------------------------------------
     def resolve(self) -> Node:
+        self._attach_merge_budgets()
         slot = _unfilled(self.root)
         if slot is not None:
             self._akan(unfilled_message(slot), slot)
@@ -579,7 +597,7 @@ class Resolver:
 
     def _clone_pair(self, pair: Pair) -> Pair:
         new = object.__new__(Pair)
-        new.__dict__ = dict(pair.__dict__, value=self._clone(pair.value))
+        new.__dict__ = dict(pair.__dict__, value=self._clone(pair.value), replace=False)
         return new
 
     # -- §5.5, the splice matrix --------------------------------------------
@@ -1268,6 +1286,15 @@ def _check_fills(node: Node):
 
 def _unfilled(node: Node) -> Slot | None:
     """The first instantiated slot left in a tree (SPEC §15.6)."""
+    if isinstance(node, Merge):
+        view = project(node)
+        if view is not node:
+            return _unfilled(view)
+        for operand in node.args:
+            found = _unfilled(operand)
+            if found is not None:
+                return found
+        return None
     if isinstance(node, Expression):
         return None
     if isinstance(node, Slot):

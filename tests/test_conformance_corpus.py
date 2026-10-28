@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
-from run_conformance import DEFAULT_CORPUS, discover, run_case  # noqa: E402
+from run_conformance import DEFAULT_CORPUS, discover, run_case, same_data  # noqa: E402
 
 CASES = discover(DEFAULT_CORPUS)
 
@@ -34,3 +34,17 @@ def test_the_corpus_is_present_and_has_all_three_kinds():
 def test_conformance_case(case):
     ok, detail = run_case(case)
     assert ok, detail
+
+
+@pytest.mark.parametrize('left,right', [(True, 1), (1, 1.0), ([True], [1]),
+                                       ({'key': 1}, {'key': 1.0})])
+def test_corpus_oracle_does_not_conflate_numeric_kinds(left, right):
+    assert not same_data(left, right)[0]
+
+
+def test_corpus_oracle_checks_types_inside_multimap_entries():
+    import yapyon
+    left, right = yapyon.OrderedMultimap(), yapyon.OrderedMultimap()
+    left.insert('key', True)
+    right.insert('key', 1)
+    assert not same_data(left, right)[0]

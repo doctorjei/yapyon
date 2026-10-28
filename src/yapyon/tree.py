@@ -30,10 +30,11 @@ from dataclasses import dataclass, field
 
 from ._digits import REFUSE_DIGITS
 from ._keys import key_error, name_key
-from .assembly import FillCheck, MergedMapping, merge_nodes
+from .assembly import (FillCheck, MergedMapping, empty_overrides, merge_nodes,
+                       project, replace_selected_slot, selected_slot)
 from .environment import STANDARD_ENV, environment
 from .lexer import AkanError, Lexer, Yakamashiwa, fold_name
-from .parser import (Comprehension, Copy, Expression, Mapping, MultiMap, Node,
+from .parser import (Comprehension, Copy, Expression, Mapping, Merge, MultiMap, Node,
                      Pair, Parser, Scalar, Sequence, Slot, YString, children)
 from .resolver import REFUSE_DEPTH, REFUSE_SIZE, resolve
 
@@ -53,6 +54,22 @@ class Key:
 
     def __repr__(self):
         return f"<key {self.lexeme}>"
+
+
+@dataclass(frozen=True)
+class _Operand:
+    index: int
+
+    def __str__(self):
+        return f"<contribution {self.index + 1}>"
+
+
+@dataclass(frozen=True)
+class _Entry:
+    index: int
+
+    def __str__(self):
+        return f"<entry {self.index + 1}>"
 
 
 def _keys_pairs(node):
@@ -155,7 +172,7 @@ class Tree:
         found = []
 
         def walk(node, path):
-            if isinstance(node, Slot):
+            if selected_slot(node) is not None:
                 found.append(Handle(self, path))
                 return
             for step, child in _steps(node):
@@ -178,15 +195,14 @@ class Tree:
                     self._node(path)          # raises the natural KeyError
                 self._place(path, node)
                 continue
-            self._replace(path, merge_nodes(self._node(path), node))
+            self._replace(path, merge_nodes(self._node(path, raw=True), node))
 
     def to_source(self) -> str:
         """Write unfinished yapyon without resolving or changing this tree.
 
-        Expressions and unfilled slots stay deferred. Potentially matching
-        computed keys across merged dictionaries, a completed fill's
-        undecided abstract-slot obligations, and pending overrides that
-        would lose replacement boundaries are akan at save time (§15.8).
+        Expressions, grouped contributions, replacement operations, and
+        unfilled slots stay deferred. A completed fill's undecided historical
+        abstract-slot obligation remains akan at save time (§15.8).
         Layout/comments and original diagnostic positions do not survive
         reloading the text; literal and expression spellings do.
         """
@@ -214,11 +230,19 @@ class Tree:
         return build(done, self.source)
 
     # -- paths ---------------------------------------------------------------
-    def _node(self, path: tuple) -> Node:
+    def _node(self, path: tuple, *, raw=False) -> Node:
         node = self._root
         for i, step in enumerate(path):
             node = _child(node, step, path[:i])
-        return node
+        return node if raw else project(node, collections=True)
+
+    def _editable(self, path):
+        stored = self._node(path, raw=True)
+        view = project(stored, collections=True)
+        if isinstance(stored, Expression) and isinstance(view, (Sequence, MultiMap)):
+            self._replace(path, copy.deepcopy(view))
+            return self._node(path)
+        return view
 
     def _has(self, path: tuple) -> bool:
         try:
@@ -231,8 +255,13 @@ class Tree:
         if not path:
             self._root = new
             return
-        parent = self._node(path[:-1])
         step = path[-1]
+        if isinstance(step, _Operand):
+            parent = self._node(path[:-1], raw=True)
+            parent.args[step.index] = new
+            parent.__dict__.pop("_projection", None)
+            return
+        parent = self._editable(path[:-1])
         if isinstance(parent, Mapping):
             pair = _pair(parent, step, path[:-1])
             if isinstance(parent, MergedMapping) and parent.layers:
@@ -246,7 +275,6 @@ class Tree:
             raise Yakamashiwa("a path step through a value with no children")
 
     def _place(self, path: tuple, new: Node) -> None:
-        parent = self._node(path[:-1])
         text = path[-1]
         why = key_error(text)
         if why:
@@ -255,15 +283,14 @@ class Tree:
         key = fold_name(text) if named else text
         pair = Pair(new.line, new.col, key, new, text if named else "", named=named)
         pair.source = new.source
-        if isinstance(parent, MergedMapping) and parent.layers:
-            parent.layers.append(Mapping(new.line, new.col, [pair]))
-        parent.pairs.append(pair)
-        parent.reindex()
+        layer = Mapping(new.line, new.col, [pair])
+        layer.source = new.source
+        self._replace(path[:-1], merge_nodes(self._node(path[:-1], raw=True), layer))
 
     def _remove(self, path: tuple) -> None:
         if not path:
             raise ValueError("the top of a tree cannot be removed")
-        parent = self._node(path[:-1])
+        parent = self._editable(path[:-1])
         step = path[-1]
         if isinstance(parent, Mapping):
             pair = _pair(parent, step, path[:-1])
@@ -314,6 +341,8 @@ class Handle:
     @property
     def kind(self) -> str:
         node = self._node
+        if selected_slot(node) is not None:
+            return "slot"
         for cls in type(node).__mro__:
             if cls in _KIND:
                 return _KIND[cls]
@@ -365,8 +394,8 @@ class Handle:
 
     @property
     def overrides(self) -> "Tree":
-        """A slot's overrides, merged as they will apply — a copy, so
-        editing it changes nothing here."""
+        """A copied, premerged inspection view, not a replay of the complete
+        sequential override program. Editing it changes nothing here."""
         node = self._slot("overrides")
         merged = Mapping(node.line, node.col, [])
         for layer in node.layers:
@@ -446,27 +475,28 @@ class Handle:
         it is. Either way a copy is taken; the slot's overrides are merged
         over it; and if what the label reaches is itself a slot, that slot
         takes this one's place, with this one's overrides over its own."""
+        original = self.tree._node(self.path, raw=True)
         slot = self._slot("fill")
         node = self._reach(slot, filler)
         if isinstance(node, Slot):
             moved = Slot(node.line, node.col, node.label,
                          node.layers + slot.layers, node.lexeme, node.key)
             moved.source = node.source
-            self.tree._replace(self.path, moved)
+            self.tree._replace(self.path, replace_selected_slot(original, moved))
             return
-        layers = [layer for layer in slot.layers if layer.pairs]
+        layers = [layer for layer in slot.layers if not empty_overrides(layer)]
         layers = copy.deepcopy(layers)
         checks = self._oblige(node, layers, slot)
         for layer in layers:
             node = merge_nodes(node, layer)
         if checks:
             node.fill_checks += tuple(checks)
-        self.tree._replace(self.path, node)
+        self.tree._replace(self.path, replace_selected_slot(original, node))
 
     # -- filling, in detail --------------------------------------------------
     def _slot(self, what: str) -> Slot:
-        node = self._node
-        if not isinstance(node, Slot):
+        node = selected_slot(self._node)
+        if node is None:
             raise TypeError(f"{self._show()} is a {self.kind}, not a slot; "
                             f"only a slot has a {what}"
                             if what != "fill" else
@@ -483,7 +513,7 @@ class Handle:
                 raise AkanError(f"{_label(slot)}: a slot cannot be filled "
                                 f"with a value that contains it (SPEC §15.3)",
                                 slot.line, slot.col, slot.source)
-            return copy.deepcopy(filler._node)
+            return copy.deepcopy(filler.tree._node(filler.path, raw=True))
         if not isinstance(filler, Tree):
             raise TypeError("fill takes a yapyon Tree or Handle")
         if filler is self.tree:
@@ -493,7 +523,8 @@ class Handle:
         node = filler._root
         steps = slot.label[1:]
         for i, step in enumerate(steps):
-            if isinstance(node, Slot):
+            node = project(node)
+            if selected_slot(node) is not None:
                 raise AkanError(
                     f"{_label(slot)}: {'.'.join(slot.label[:i + 1])} is a "
                     f"slot not yet filled, and the label goes through it; "
@@ -545,22 +576,31 @@ def _own(value) -> Node:
     if isinstance(value, Tree):
         return copy.deepcopy(value._root)
     if isinstance(value, Handle):
-        return copy.deepcopy(value._node)
+        return copy.deepcopy(value.tree._node(value.path, raw=True))
     raise TypeError("expected a yapyon Tree or Handle")
 
 
 def _steps(node: Node):
-    """(step, child) for materialized pairs/items, never evaluated expressions."""
+    """Locations in a proven view, or retained operands with no effective indices."""
+    node = project(node)
     if isinstance(node, Expression):
-        return []
+        return [(_Operand(index), child) for index, child in enumerate(node.args)
+                if isinstance(child, Node)]
     if isinstance(node, Mapping):
         return [(_key(pair), pair.value) for pair in _keys_pairs(node)]
     if isinstance(node, Sequence):
         return list(enumerate(node.items))
+    if isinstance(node, MultiMap):
+        return [(_Entry(index), pair.value) for index, pair in enumerate(node.entries)]
     return []
 
 
 def _child(node: Node, step, where: tuple) -> Node:
+    if isinstance(step, _Operand) and isinstance(node, Expression):
+        return node.args[step.index]
+    if isinstance(step, _Entry) and isinstance(node, MultiMap):
+        return node.entries[step.index].value
+    node = project(node, collections=True)
     if not isinstance(node, Expression) and isinstance(node, Mapping) and isinstance(step, (str, Key)):
         return _pair(node, step, where).value
     if isinstance(node, Sequence) and isinstance(step, int) \
@@ -610,9 +650,10 @@ def _at(node: Node) -> str:
 def _abstracts(node: Node, path: tuple = ()):
     """(path, slot) for each abstract slot in a filler, outside any other
     slot's overrides — the ones a fill brings in (SPEC §15.5)."""
-    if isinstance(node, Slot):
-        if node.abstract:
-            yield path, node
+    slot = selected_slot(node)
+    if slot is not None:
+        if slot.abstract:
+            yield path, slot
         return
     for step, child in _steps(node):
         yield from _abstracts(child, path + (step,))

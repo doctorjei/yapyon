@@ -1,0 +1,1 @@
+{"rule": "SPEC §12.2", "why": "An explicit merge pipe requires at least ledger, even with literal operands.", "loader": "record"}

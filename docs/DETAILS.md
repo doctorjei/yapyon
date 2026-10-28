@@ -2,15 +2,15 @@
 
 ## Status
 
-**`0.5.3`**, built to specification **v0.5**, including collection
-comprehensions and expressions (§16). Lexer, parser, resolver,
-loader, emitter, the four serializers, contracts, and trees with slots are
-done and tested,
-including a conformance suite that turns the splice matrix and the Python
-divergence table into executable cases, and a portable corpus in
-`docs/conformance/` that another implementation can run against itself. The
-suite is **2463 tests** on the current tree; the number here tracks the tree,
-not a release.
+**Development target: `0.6.0.dev0`**, implementing specification and grammar
+**v0.6** for merge/source composition and unfinished persistence. This status
+is not a claim of publication. The lexer, parser, resolver, loader, emitter,
+four serializers, contracts, and trees with slots share the format's merge
+rules; the suite and portable corpus exercise those contracts.
+
+The development source tree passes **3129 tests**, with zero skips on Python
+3.13, including **121 corpus cases**. This is local validation, not publication.
+The last verified published baseline remains **`0.5.3` (2026-10-25)**.
 
 **The normative specification is published, in two documents under
 [`docs/`](./):**
@@ -19,7 +19,7 @@ not a release.
 |---|---|
 | [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
-| [`docs/conformance/`](conformance/) | *does an implementation agree?* — 114 portable cases; the directory's own README is the protocol |
+| [`docs/conformance/`](conformance/) | *does an implementation agree?* — portable cases; the directory's own README is the protocol |
 
 The corpus is not a third normative document: it is **derived from** the
 other two, and where they disagree the spec wins and the case is wrong. What
@@ -90,11 +90,12 @@ starts with `-`, and a block multimap head with `+`; the trailing `for` and
 optional `if` align with that marker. Iteration bindings do not leak or become
 mapping entries; ordinary nested mapping keys/explicit copies stay unchanged.
 
-`Tree.to_source()` preserves unfinished comprehensions without evaluation.
-Dictionary comprehensions merge by key across layers before retained value
-bodies resolve. Saving a comprehension combined with another nonempty dictionary
-layer is akan: ordinary source cannot retain that deferred union. Keep that
-merge in memory, or save the unmerged pieces; empty literal layers remain safe.
+`Tree.to_source()` preserves unfinished comprehensions without evaluation,
+including compositions with other nonempty dictionary layers. It writes explicit
+pipes instead of flattening contributions or iterating a comprehension to save
+it. Dictionary comprehensions merge by key across layers before retained value
+bodies resolve, keeping each operand's lexical bindings separate. List and
+multimap results use the same typed collection rules as literal values below.
 
 ## Templates
 
@@ -194,6 +195,93 @@ and ordinary dicts use writable identifiers as names and other legal strings
 as non-name keys. `copy`, deepcopy, pickle, and unions preserve provenance;
 explicitly converting to `dict` discards it.
 
+## Merging values
+
+*The `0.6.0.dev0` development line; SPEC §15.2 and §16.5.* `|` composes
+complete values, and the same rules govern `Tree`/`Handle` merging and fills.
+A later contribution is higher precedence. A pair's ordinary `:` combines
+values; `:=` replaces the field with its **complete** incoming value:
+
+```python
+>>> doc = 'settings:\n  paths: ["base", "shared"]\n  reset: ["old"]\n  |\n  paths: ["shared", "new", "shared"]\n  reset:= []\n'
+>>> yapyon.loads(doc)
+{'settings': {'paths': ['base', 'shared', 'new', 'shared'], 'reset': []}}
+```
+
+- **Dictionaries** match resulting string keys recursively. Earlier keys keep
+  their position, spelling, and name/non-name kind; new incoming keys append
+  in incoming order. Separate layers may match, but duplicates within one
+  contribution are still akan. A quoted/computed key is never promoted to a name.
+- **Lists** combine whole typed elements; **multimaps** combine complete key/value
+  pairs, not values guessed to match by repeated key or position. Equal items
+  retain the **greater occurrence count in either input**, not the sum or
+  necessarily one. Standalone and explicitly replaced collections keep repeats.
+- **Occurrence order and spelling:** visit incoming items in order, matching each
+  to the first equal unmatched item from the original earlier input. A match
+  keeps that earlier position and takes the **whole incoming representation**,
+  including lexemes and a dictionary item's key order/kind. Unmatched incoming
+  occurrences append; appended items are not new match targets in that merge.
+  Unmatched earlier occurrences keep their own representation.
+- **Typed duplicate equality** distinguishes `True`, `1`, and `1.0`. Same-kind
+  numbers ignore spelling; text/bytes compare decoded contents. Lists and
+  multimaps compare in order; dictionary associations ignore entry order and
+  key spelling/kind. Templates compare delivered parts and hole metadata without
+  rendering. Ordinary expression `==` keeps its existing numeric behavior.
+- **None** yields to a dictionary, list, or multimap in either order, including
+  empty containers. Otherwise noncombining kinds take the higher whole value.
+  Compatible empty collections do not clear data. Zero, False, and empty text
+  are values, not absence. `field:= None` or `field:= []` explicitly replaces
+  instead of combining; neither deletes the field or blocks later overrides.
+
+```python
+>>> yapyon.loads('[0x1, True] | [1.0, 1]')
+[1, True, 1.0]
+>>> entries = yapyon.loads('{+ a: 1, a: 2} | {+ a: 1, a: 1, a: 3}')
+>>> [(entry.key, entry.value) for entry in entries]
+[('a', 1), ('a', 2), ('a', 1), ('a', 3)]
+```
+
+`:` and `=` are separate tokens: `field:= value` and `field : = value`
+are equivalent. Within flow delimiters, newlines may separate them too;
+ordinary indentation still matters outside those delimiters. Replacement
+annotates the field, not the enclosing dictionary or collection, and a pipe
+on its right belongs to the complete incoming value.
+
+**Grouping is meaningful.** A pipe has the lowest value-operator precedence,
+below `or`, and unparenthesized chains associate left to right. Block and flow
+operands can mix without changing that order. Compare these complete documents:
+
+```python
+>>> yapyon.loads('{config: {old: 1}} | {config: "reset"} | {config: {new: 2}}')
+{'config': {'new': 2}}
+>>> yapyon.loads('{config: {old: 1}} | ({config: "reset"} | {config: {new: 2}})')
+{'config': {'old': 1, 'new': 2}}
+```
+
+Parentheses keep the right-hand program as one operand; merging is not generally
+associative. `(True or False) | False` is the grouping of
+`True or False | False`. For traversal of a merge result, group the whole result
+before its postfix. Pipes are value expressions, not additions to hole/call
+argument syntax.
+
+**Compatibility:** copies and calls combine according to their eventual value
+kind, just like literal containers. Previously a deferred copy/call could replace
+an earlier mapping wholesale because its parser node was not a mapping. Now a
+returned dictionary merges by key, and returned lists/multimaps use the typed
+collection rules. Use explicit field replacement when whole replacement is meant:
+
+```python
+>>> lower = yapyon.parse('settings: {host: "local", port: 80}\n')
+>>> higher = yapyon.parse('choices: {active: {port: 443}}\nsettings: choices.__get__("active")\n')
+>>> yapyon.merge(lower, higher).resolve()["settings"]
+{'host': 'local', 'port': 443}
+```
+
+Unknown results stay deferred; constructing a merge or saving it never runs a
+call to discover its kind. A pipe makes a document at least a ledger even with
+literal operands. A replacement separator alone does not: otherwise literal
+annotated data remains a record.
+
 ## Trees and slots
 
 `yapyon.parse` reads a document **without resolving it** and returns a
@@ -210,14 +298,18 @@ place. A consumer walks it, combines trees with `merge`, and resolves once.
 {'mind': {'model': 'm2', 'endpoint': 'e'}, 'v': 3.1, 'say': 'm2 at e'}
 ```
 
-A merge recurses only where both sides are mappings; anywhere else the later
-value wins whole, and `None` is a value like any other. Holes resolve where
-their values end up, so a layer can refer to keys another layer brings.
+A merge uses the value-kind rules above: dictionary unique keys recurse,
+lists/multimaps combine whole items, and `None` yields to containers. Holes
+resolve where their values end up, so a layer can refer to keys another layer
+brings. Neither merging nor source saving resolves an input early.
 
 Before resolution, `keys()`/`items()` return a `yapyon.Key` location token
 for each computed key. Pass that token back to the same mapping to walk or
 edit its value; `.lexeme` shows the key expression without evaluating it.
 These tokens are locations, not expressions compared for data-key equality.
+An unresolved collection has no guessed final indices or length; effective-index
+operations need a structurally known view. Retained slots remain discoverable
+through `slots()` and fillable even when those final positions are unknown.
 
 ```python
 >>> pending = yapyon.parse('name: "x"\ny"{name}": 42\n')
@@ -229,8 +321,8 @@ These tokens are locations, not expressions compared for data-key equality.
 ```
 
 A **slot** marks a place the consumer fills. `persona<llamacpp>:` makes
-`persona`'s value a slot labeled `llamacpp`; the mapping under it holds
-**overrides** that win over whatever fills it (`{}` for none):
+`persona`'s value a slot labeled `llamacpp`; the dictionary under it holds
+**overrides** applied over whatever fills it (`{}` for none):
 
 ```python
 >>> agent = yapyon.parse('name: "local"\npersona<llamacpp>:\n  mind:\n    endpoint: "http://localhost:9931"\n')
@@ -245,8 +337,23 @@ The label says *what* fills the slot; finding it is the consumer's job, so
 yapyon never reads a file on a slot's behalf. A label may reach into its
 filler — `agent<base.agent>` fills with `base`'s `agent` branch — and an
 empty label, `harness<>`, is abstract: whoever fills from that document must
-give `harness` a value. A slot still unfilled when the tree resolves is akan.
-SPEC §15 has the rules.
+give `harness` a value. A retained slot still unfilled when the tree resolves
+is akan. A later dominating value or explicit replacement can discard a slot;
+`None`, a list, or a multimap may instead need to wait for the filler's kind.
+Literal empty overrides mean no operation even on a non-dictionary filler.
+`part<new>:= {}` replaces the inherited field with a fresh slot, not an empty
+dictionary that ignores its new filler. SPEC §15 has the rules.
+
+A labeled field's **complete RHS is one dictionary override contribution**.
+Several sequential additions to an unfilled slot are not interchangeable with
+one premerged RHS. For example, applying `config: "reset"` and then
+`config: {new: 2}` discards a filler's old `config` keys. Premerging those two
+dictionaries first gives just one dictionary override, which can retain the
+filler's old keys. `to_source()` preserves the distinction with surrounding
+dictionary layers where needed. A copied `overrides` view is inspection, not
+a replay of every sequential operation. Equivalent fills of the same retained
+assembly and fixed slot selections give the same result; merging independently
+prefilled inputs is not the same operation as selecting between unfilled slots.
 
 ### Save now, finish later
 
@@ -263,45 +370,50 @@ written. The original tree is unchanged.
 >>> saved = draft.to_source()
 >>> print(saved, end="")
 agent:
-  name: "local"
+  name: "base"
   desc: y"{name}"
   harness<chosen>: {}
+  |
+  name: "local"
 >>> resumed = yapyon.parse(saved, source="saved-agent.yap")
 >>> resumed["agent"]["harness"].fill(yapyon.parse('mode: "cli"'))
 >>> resumed.resolve()
 {'agent': {'name': 'local', 'desc': 'local', 'harness': {'mode': 'cli'}}}
 ```
 
-A conservative recipe is: **use literal keys in dictionaries you combine,
-and fill a slot before stacking further overrides onto it. Values may remain
-computed.** These are things an author can inspect in their definitions and
-composition steps. This is sufficient guidance, not a broader restriction:
-safe exceptions below remain accepted.
+The pipe in the saved text retains the definition and override as distinct
+contributions. Saving likewise retains computed-key collisions across layers,
+comprehensions combined with other nonempty dictionaries, collection programs,
+and sequential slot operations. It preserves replacement intent and meaningful
+right grouping rather than collapsing them to a value that happens to work for
+one current filler. No lookup, environment access, function/cast/serializer,
+comprehension iteration, template rendering, or runtime duplicate comparison
+runs to produce source.
 
-There are three save-time refusals (SPEC §15.8). A dictionary merge cannot be
-saved if a computed key could match a key in another contributing dictionary;
-flattening would turn a merge into a possible duplicate. Empty dictionaries
-cannot conflict, and fixed literal text can prove keys disjoint without
-looking up their holes. This check is local to each merged dictionary,
-including slot overrides. Computed keys in an unmerged dictionary are fine.
-Separately, a completed fill whose abstract-slot obligation still depends on
-a computed key cannot be saved: ordinary source has no way to preserve that
-prior fill's obligation. Finally, saving refuses pending override chains
-whose collapse would lose a replacement boundary: replacing a field with
-`None` and then with a dictionary, for example, must discard inherited keys,
-not merge them back in when a later filler arrives. Replacing one slot with
-another can have the same problem with inherited overrides. Fill that slot
-before saving, or retain the composition in memory. Harmless override chains
-and boundaries already discarded by a later whole-value replacement remain
-accepted. None of these refusals changes in-memory merging or resolution,
-and no expression is evaluated to make saving possible.
+Two states still have no faithful source spelling (SPEC §15.8):
 
-Remaining named and abstract slots can otherwise be saved and filled later.
-`resolve()` still requires every slot to be filled; `emit()` and the `record`
-command still accept records only. Source writing normalizes layout and
-loses comments. Reloaded diagnostics use the saved file's positions, not the
-original template files', and handles/key-location tokens belong to their
-original tree, not to its reloaded copy.
+- **A completed fill's undecided historical abstract-slot obligation.** If it
+  still needs a computed-key comparison about that fill's own overrides,
+  saving is akan at the fill. An ordinary new abstract slot cannot encode
+  that historical requirement, and a later convenient edit is not retroactive
+  fulfillment. Keep composing in memory or provide explicit overrides before
+  making the responsible fill; saving never evaluates a key to settle it.
+- **An unattached slot.** A slot must be attached to a dictionary key and label;
+  a slot extracted as a standalone root value has no source form.
+
+Remaining attached named and abstract slots can otherwise be saved and filled
+later. These refusals do not change in-memory merging or resolution.
+`resolve()` requires every still-needed slot to be filled; slots discarded by
+later replacement no longer need fillers. `emit()` and the `record` command
+remain record-only and never evaluate authored pipes to make them records.
+Data expansion/serializers consume composition into finished data instead;
+source writing preserves the unfinished program.
+
+Generated source uses two-space indentation, `key: value`, `key:= value`,
+and standalone pipes aligned with their contribution heads. It normalizes
+layout and loses comments. Reloaded diagnostics use the saved file's positions,
+not the original template files', and handles/key-location tokens belong to
+their original tree, not to its reloaded copy.
 
 ## Records
 
@@ -323,7 +435,15 @@ literals; a y-string defers its value (load with yapyon.loads for the full form)
 `loads_record` / `load_record` are the whole pipeline minus the resolver, and
 a separate function rather than a keyword argument — the safe path should not
 be one typo away from the unsafe one. `is_record` answers the question by
-lexing, without loading.
+lexing, without loading. A replacement annotation is field intent, not
+computation; an explicit pipe is computation even with literal operands:
+
+```python
+>>> yapyon.is_record('items:= []\n')
+True
+>>> yapyon.is_record('[] | []\n')
+False
+```
 
 This is why an implementation with no resolver can still be a conforming one:
 the safe subset is declared up front rather than carved out afterwards — and
@@ -342,9 +462,11 @@ than becoming `3.1`, `'x'` keeps its quotes, `b"..."` is not respelled as
 base64 — and only layout is normalized (block containers, the writer's
 indentation). It works from the parse tree for that reason; the source
 spelling is gone once a value is a Python `float`.
-**Comments do not survive**, so this is a normalizer rather than a
-round-tripper. `yapyon.emit` is the same thing as a function. A non-record is
-refused at the offending prefix, with the record rule as the reason.
+An authored replacement annotation on direct record source also survives
+normalization. **Comments do not survive**, so this is a normalizer rather
+than a round-tripper. `yapyon.emit` is the same thing as a function. A
+non-record is refused at the offending computation, with the record rule
+as the reason; authored pipes are not silently evaluated.
 
 ## Limits
 
@@ -374,8 +496,16 @@ and a resolver with no ceiling is a denial-of-service in anything that parses
 configuration it did not write. The spec declines to fix one ceiling for every
 implementation; it does not suggest having none.
 
-Both tiers are about cost alone. A **cycle or a missing target is always an
-akan** at any depth, because it can never resolve.
+Both tiers are about cost alone. A **cycle or a missing target is always
+akan** at any depth, because it can never resolve. Composition also charges
+materialization and duplicate-comparison work before unbounded allocation;
+a small deduplicated result does not make arbitrarily large inputs free.
+`max_size` also bounds merge work units: visits to projection/key-readiness
+steps, dictionary field contributions, and recursively compared values. The
+default is 4,194,304 work units, independent of the rendered-size counter;
+fixpoint retries count too. `max_depth` additionally guards retained composition
+nesting before projecting it. A refusal names the work or depth ceiling rather
+than relying on a host allocation or recursion failure.
 
 From a checkout, the stages will also dump what they see:
 

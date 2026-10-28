@@ -1,4 +1,4 @@
-# yapyon — grammar v0.5
+# yapyon — grammar v0.6
 
 > YAMLちゃうで。やぴょんやぴょん。
 > *It's not YAML. It's yapyon.*
@@ -77,10 +77,16 @@ Indentation is resolved by an **indent stack** that emits `INDENT` and
 - **A marker needs its space.** `-` and `+` open a frame only when a space or
   end of line follows. `-5` and `+5` are signed numbers, not frames.
 - **Flow suppression.** Inside `[` `]`, `{` `}`, or `(` `)`, newlines,
-  indentation and the dash and plus rules are suppressed entirely — Python's implicit line
-  joining. Commas are mandatory separators and a single trailing comma is
-  permitted. Directly inside `{` `}`, a `+` that does not begin a signed
-  number is the token `PLUS`, which spells the empty multimap (§G6).
+  indentation, and the dash and plus rules are suppressed entirely — Python's
+  implicit line joining. Commas are mandatory collection separators, and a
+  single trailing comma is permitted. Directly inside `{` `}`, a `+` that
+  does not begin a signed number is the token `PLUS`, which identifies a
+  multimap (§G6).
+- **Block pipes.** A `|` that is the first token-bearing character of a
+  logical line outside flow delimiters emits `BPIPE`. It separates operands
+  at that value's indentation (§G6); it does not open an indent frame. Every
+  other value-expression `|` emits `PIPE`. Inside flow delimiters, a newline
+  cannot create `BPIPE`.
 
 ## §G4 Tokens
 
@@ -397,8 +403,12 @@ Inside a `YSTR`, `YBSTR`, or `YTSTR` literal, braces delimit **holes**.
 
 ### §G4.8 Copies and parentheses
 
-Outside a string literal, `(` opens one of two things, decided by what
-follows it — skipping whitespace, newlines included:
+Outside a string literal, `(` opens a copy or a grouping parenthesis.
+Classify the whole parenthesized run lexically, skipping whitespace,
+newlines included. An interior that is a complete expression rather than
+one `copy_ref` — including a name-leading merge such as `(a | b)` — uses
+`LPAREN`/`RPAREN` and §G9, not a `COPY` token. Actual copies use the one
+reference grammar (§G5), not a second reference parser:
 
 - **A copy**, one token `COPY`, when the next character is `$`, or begins a
   `NAME` that is neither a keyword (§G4.1) nor a prefix touching its quote
@@ -441,7 +451,7 @@ So `port: port_text.__int__()`, `a: __int__("12")`, and
 
 ### §G4.9 Labels
 
-**After the `NAME` of a key, before its `:`**, `<` opens a **label**, one
+**After a key (§G6), before its separator**, `<` opens a **label**, one
 `LABEL` token. In an expression, `<` and `>` are comparison operators (§G9).
 A label is:
 
@@ -459,6 +469,33 @@ any two tokens inside the label, newlines included, as inside a copy
 (§G4.1). A second label after the first is akan, as is an unclosed label.
 A comparison instead requires an operand on each side; a naked `<b>` is
 neither a label in key position nor a complete comparison.
+
+### §G4.10 Pair and merge punctuation
+
+`COLON` is `:`, and `EQUAL` is a single `=` outside a string or reference
+token. Comparison operators such as `==` are recognized by longest match
+before a lone `=`. A replacement separator is the two tokens `COLON EQUAL`,
+not an inseparable `:=` token (§G6). A lone `=` is neither an expression
+nor an assignment statement.
+
+Spaces and tabs may separate tokens, including `:` and `=`. Thus `key:= 42`
+and `key : = 42` have the same tokens. Inside flow delimiters, newlines may
+separate them too:
+
+```yapyon
+{key:
+ =
+ 42}
+```
+
+Outside flow delimiters, a logical newline after `:` starts the indented
+value, not a continuation of the separator. No backslash continuation is
+added. Indentation remains spaces only (§G3).
+
+`PIPE` and `BPIPE` both spell `|` (§G3, §G6, §G9). A pipe inside a string
+or comment is content, not punctuation; §G5 does not admit pipes in a
+reference. Punctuation inside a string never becomes an operator or field
+annotation.
 
 ## §G5 Reference grammar
 
@@ -670,15 +707,16 @@ to the lexer; comprehension heads are already marked lexically (§G9).
 ```ebnf
 document    ::= block_value EOF
 
-block_value ::= block_map
-              | block_seq
-              | block_mmap
-              | block_comp
-              | flow_value NEWLINE
+block_value ::= block_segment ( BPIPE pipe_segment )*
+block_segment ::= block_map | block_seq | block_mmap | block_comp
+                | inline_chain NEWLINE
+pipe_segment ::= NEWLINE block_segment
+               | inline_chain NEWLINE
 
 block_map   ::= pair+
-pair        ::= key [ LABEL ] COLON ( flow_value NEWLINE
-                           | NEWLINE INDENT block_value DEDENT )
+pair        ::= key [ LABEL ] separator ( flow_value NEWLINE
+                               | NEWLINE INDENT block_value DEDENT )
+separator   ::= COLON [ EQUAL ]
 
 block_seq   ::= seq_item+
 seq_item    ::= DASH INDENT [ NEWLINE ] item_body DEDENT
@@ -696,7 +734,7 @@ scalar      ::= STRING | BYTES | YSTR | YBSTR | YTSTR | COPY
 group       ::= LPAREN expression RPAREN
 flow_list   ::= LBRACKET [ flow_value (COMMA flow_value)* [COMMA] ] RBRACKET
 flow_map    ::= LBRACE [ PLUS ] [ fpair (COMMA fpair)* [COMMA] ] RBRACE
-fpair       ::= key [ LABEL ] COLON flow_value
+fpair       ::= key [ LABEL ] separator flow_value
 key         ::= NAME | QKEY | YKEY
 ```
 
@@ -709,6 +747,22 @@ string-valued document from one beginning with a quoted key. Both quote
 marks and triple quoting use the ordinary string rules. A plain key has no
 prefix; `r`, bytes, `yt`, copies, and calls are not key forms.
 
+- **Every pair uses the same separator**, including a multimap entry or
+  comprehension head (§G9). An optional `EQUAL` is attached to that field or
+  produced entry, not to the enclosing collection. It does not permit a
+  duplicate key within one dictionary contribution. Labels keep their existing
+  restrictions (§G7).
+- **Block collections stop at a same-level `BPIPE`.** The next operand may be
+  a flow expression on the pipe's line, or a block/flow value beginning on the
+  following logical line at the enclosing value's indentation. An unbraced
+  block collection begins on that following line. No pipe indent frame is
+  added; dash/plus anchors and flow comma rules are unchanged.
+- **Inline and block pipes form one left-associated chain.** A block segment's
+  unparenthesized inline chain contributes its operands in lexical order;
+  it does not implicitly group the right side. Parentheses do group an
+  operand (§G9). An inline pipe after a pair's separator belongs to that
+  pair's complete value, not to the surrounding dictionary. Use braces to
+  delimit a dictionary operand in flow form.
 - The optional `NEWLINE` after a marker is the **bare-marker form** (`-` or
   `+` alone on its line); the optional `INDENT … DEDENT` covers a body
   indented deeper than the frame's anchor. Both are layout, not meaning:
@@ -749,10 +803,12 @@ parse tree to do so.
 - **Keywords are not keys.** `True: 1` is akan.
 - **Dunder keys are akan** (§G4.2). A document may not define a name that
   begins and ends with `__`.
-- **A labeled pair's value is a mapping**: a `block_map`, or a
-  `flow_map` that is not `{+}` — `{}` when it has nothing to say.
-  Anything else after a label is akan: "a slot's value is its overrides,
-  a mapping; write {} for none."
+- **A labeled pair's complete value is structural dictionary overrides**:
+  an ordinary dictionary, a dictionary comprehension, or a parenthesized/pipe
+  combination of those forms. `{}` says there are none. A list, multimap,
+  scalar, or arbitrary reference/call in place of those overrides is akan:
+  "a slot's value is its overrides, a mapping; write {} for none." A pipe
+  inside the labeled value does not move its operands outside that value.
 - **No label in a multimap entry.** A `+ ` entry's pair carries no
   `LABEL`; one there is akan. *(Reserved: slots in multimap entries.)*
 - **Duplicate statically known keys within one mapping are akan.** Name
@@ -762,8 +818,10 @@ parse tree to do so.
 - **Each `+ ` frame holds exactly one `key: value` pair.** A second key inside
   one entry is akan: "a multimap entry holds one key: value pair; indent it
   under the key, or open a new `+ ` entry."
-- **A block is a mapping, a sequence, or a multimap — never a mix.** Mixing
-  `key:`, `- ` and `+ ` markers within one block is akan.
+- **A block collection operand is a mapping, a sequence, or a multimap —
+  never a mix.** Mixing key, dash, and plus entries within one operand is
+  akan. A same-level `BPIPE` ends it and may start an operand of another
+  kind (§G6).
 - **An empty item or entry is akan** — a marker, a newline, and nothing:
   "sequence item has no value (write None)". yapyon has no implicit null, and
   layout must not smuggle one back in.
@@ -820,7 +878,10 @@ In addition to §G4's tokens:
   when its first token is `PLUS`). A `FOR` at a block's own indentation marks
   its first head with `BCOMP(kind)`: list for a `DASH`, multimap for a
   `PLUS`, otherwise dictionary. These marks are lexical tokens, not parser
-  feedback. A nested block or collection has its own head.
+  feedback. A nested block or collection has its own head. A same-level
+  `BPIPE` starts a new operand with its own comprehension classification;
+  a `PIPE` inside a head, body, or iterable expression does not reset the
+  enclosing head.
 
 A comprehension has exactly one head item or pair, one `FOR`, and at most
 one `IF`. More head entries, more clauses, and `else` are not generated.
@@ -831,7 +892,9 @@ key, dash, or plus marker, not with a marker's inner frame.
 ### §G9.2 Value expressions
 
 ```ebnf
-expression  ::= conjunction (OR conjunction)*
+expression  ::= inline_chain
+inline_chain ::= disjunction (PIPE disjunction)*
+disjunction ::= conjunction (OR conjunction)*
 conjunction ::= negation (AND negation)*
 negation    ::= NOT negation | comparison
 comparison  ::= postfix (comparison_op postfix)*
@@ -843,6 +906,16 @@ primary     ::= scalar | flow_list | flow_map | group | NAME | REF | QKEY | YKEY
 reference_tail ::= a name-led ref from §G5, without an anchor or ENV
 applied_tail   ::= a reference_tail ending in a call
 ```
+
+`PIPE` is the lowest-precedence value operator, below `OR`. Fold an
+unparenthesized chain from left to right, including mixed inline/block
+chains (§G6). Parentheses make one operand: `a | (b | c)` retains its right
+group and is not flattened to `a | b | c`. Thus `True or False | False`
+groups as `(True or False) | False`, not `True or (False | False)`.
+Existing logical, comparison, and postfix operators keep their relative
+precedence. A bare name/path may be an operand of an actual merge expression;
+it remains invalid as a standalone ordinary value. Neither pipe form is
+admitted by §G5 inside a hole or call argument.
 
 `IS` and `IS NOT` require `None` on the right; grouping that literal is
 allowed, but an arbitrary reference or call is not an identity test. An
@@ -863,8 +936,8 @@ values are not function objects.
 
 ```ebnf
 flow_comp   ::= LCOMP expression for_clause [if_clause] RBRACKET
-              | DCOMP expression COLON expression for_clause [if_clause] RBRACE
-              | MCOMP PLUS expression COLON expression for_clause [if_clause] RBRACE
+              | DCOMP expression separator expression for_clause [if_clause] RBRACE
+              | MCOMP PLUS expression separator expression for_clause [if_clause] RBRACE
 for_clause  ::= FOR binding IN expression
 binding     ::= NAME [COMMA NAME]
 if_clause   ::= IF expression
@@ -875,10 +948,9 @@ block_comp  ::= BCOMP(dict) comp_pair FOR binding IN expression NEWLINE
                 FOR binding IN expression NEWLINE [IF expression NEWLINE]
               | BCOMP(multimap) PLUS INDENT [NEWLINE] comp_pair DEDENT
                 FOR binding IN expression NEWLINE [IF expression NEWLINE]
-comp_pair   ::= expression COLON ( expression NEWLINE
-                                | NEWLINE INDENT block_value DEDENT )
-comp_item   ::= expression NEWLINE | block_map | block_seq | block_mmap | block_comp
-              | INDENT block_value DEDENT
+comp_pair   ::= expression separator ( expression NEWLINE
+                                    | NEWLINE INDENT block_value DEDENT )
+comp_item   ::= block_value | INDENT block_value DEDENT
 ```
 
 The optional deeper body indentation under a bare marker follows §G6's

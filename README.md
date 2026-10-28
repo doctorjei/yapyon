@@ -60,6 +60,7 @@ $ python -m yapyon expand examples/bridge.yap    # a ledger in, a record out
 - [Specification](https://github.com/doctorjei/yapyon/blob/main/docs/SPEC.md) — what yapyon bytes mean (normative)
 - [Grammar](https://github.com/doctorjei/yapyon/blob/main/docs/GRAMMAR.md) — which bytes are well-formed yapyon (normative)
 - [Collection comprehensions](docs/DETAILS.md#collection-comprehensions) — typed list, dictionary, and multimap construction
+- [Merging values](docs/DETAILS.md#merging-values) — composition, field replacement, and unfinished-source persistence
 - [Conformance corpus](https://github.com/doctorjei/yapyon/tree/main/docs/conformance) — portable test cases for a second implementation
 - [Changelog](https://github.com/doctorjei/yapyon/blob/main/CHANGELOG.md)
 
@@ -72,11 +73,48 @@ Verbose success prints `ええやん`.
 
 A document is one of four kinds (discoverable via `yapyon.tier_of()`):
 - **record**: literals only (no resolver / resolution process)
-- **ledger**: splices, constructs collections, and calls built-ins; resolves internally
-- **template**: incorporates external data (e.g., environment variables)
+- **ledger**: splices, constructs and composes values, and calls built-ins; resolves internally
+- **template**: holds slots or `yt` strings, or reads the loading process's environment
 - **assembly**: calls functions that a **contract** declares; can be assembled from multiple files
 
 Yapyon has no ambient scope nor includes and is built to be completely auditable / verifiable.
+
+## Value composition and unfinished source
+
+The **`0.6.0.dev0` development line** adds explicit composition and faithful
+saving of unfinished layers. `|` combines complete values; `:` uses ordinary
+combination at a field, while `:=` replaces that field's complete value:
+
+```yapyon
+settings:
+  paths: ["base", "shared"]
+  reset: ["old"]
+  |
+  paths: ["shared", "new", "shared"]
+  reset:= []
+```
+
+Here `paths` becomes `["base", "shared", "new", "shared"]`, and `reset`
+becomes `[]`. Dictionaries match unique keys recursively. Lists match whole
+typed elements, and multimaps match whole key/value pairs: each equal item
+keeps the larger count from either input, not the sum. Earlier positions
+stay; unmatched incoming occurrences append, and matches take the complete
+higher representation. `True`, `1`, and `1.0` are distinct for this comparison.
+`None` yields to containers in either order; explicit `:= None` forces it.
+Quoted/computed keys never become names through merging.
+
+A pipe has the lowest value-operator precedence and associates left to right.
+Grouping matters: `a | (b | c)` need not mean `a | b | c`. Block and flow
+operands may mix. Pipes require at least a ledger, even with literal operands;
+a replacement annotation alone can remain a record. Holes retain their
+existing reference/call grammar, without pipes.
+
+`Tree.to_source()` preserves unfinished expressions, contribution order,
+replacement intent, and meaningful grouping without resolving anything.
+Save the text and parse it again to continue filling slots and composing.
+Historical fill obligations that still need computed-key comparisons and
+unattached slots remain save-time refusals; see the
+[details](docs/DETAILS.md#save-now-finish-later).
 
 ## Element References
 
@@ -102,9 +140,11 @@ mind:
 | `{d[p]}` | the key *stored in* `p`, resolved in the y-string's own scope |
 | `{mm.k}` | every value filed under `k` in a multimap, in order, as a list |
 
-`{a["bar"]}` where a dot would do is a `shiran` — legal, but say `{a.bar}`.
-Because the enclosing string's delimiter ends it, quote a key with the other
-mark: `y"{a['b']}"`.
+`{a["bar"]}` where a dot would do is shiran — legal, but say `{a.bar}`.
+Either quote mark works inside a hole, including the enclosing string's own:
+`y"{a["b"]}"` and `y"{a['b']}"` are both valid. A hole is scanned before the
+string's closing delimiter is sought, following modern Python's quote-reuse
+rule.
 
 ## Relative References
 

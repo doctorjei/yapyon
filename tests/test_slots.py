@@ -222,7 +222,7 @@ def test_a_plain_value_replaces_an_abstract_slot(value, result):
 
 
 def test_replacing_an_ancestor_meets_the_obligation():
-    tree = parse("top<t>:\n  agent: None\n")
+    tree = parse("top<t>:\n  agent:= None\n")
     tree["top"].fill(parse("agent:\n  harness<>: {}\n"))
     assert tree.resolve() == {"top": {"agent": None}}
 

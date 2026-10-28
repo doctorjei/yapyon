@@ -38,8 +38,9 @@ from __future__ import annotations
 
 from ._digits import decimal_text
 from ._width import text_width
-from .parser import (AkanError, Copy, Mapping, MultiMap, Node, Pair, Scalar,
-                     Sequence, Slot, YString, Yakamashiwa, deferred_message)
+from .parser import (AkanError, Comprehension, Copy, Expression, Mapping, Merge,
+                     MultiMap, Node, Pair, Scalar, Sequence, Slot, YString,
+                     Yakamashiwa, deferred_message)
 
 INDENT = "  "
 WIDTH = 100          # §14.1: a container fits if its line is this wide or less
@@ -59,8 +60,70 @@ def emit(node: Node, *, source: str | None = None) -> str:
     root = getattr(node, "_root", None)          # a yapyon.Tree
     if root is not None:
         node, source = root, source if source is not None else node.source
+    node = _record_view(node, source)
     lines = _lines(node, 0, source)
     return "".join(line + "\n" for line in lines)
+
+
+def _emit_data(node, *, source=None):
+    from .parser import children
+
+    node = _record_view(node, source)
+
+    def consume(value):
+        if isinstance(value, (Mapping, MultiMap)):
+            for pair in value.pairs if isinstance(value, Mapping) else value.entries:
+                pair.replace = False
+        for child in children(value):
+            consume(child)
+
+    consume(node)
+    return "".join(line + "\n" for line in _lines(node, 0, source))
+
+
+def _record_view(node, source):
+    import copy
+    from .assembly import MergedMapping, project
+
+    node = copy.deepcopy(node)
+
+    def refuse_authored(value):
+        from .parser import children
+        if isinstance(value, Merge) and value.authored:
+            raise AkanError(deferred_message("PIPE", ""), value.line,
+                            value.col, value.source or source)
+        nested = (value.layers if isinstance(value, MergedMapping) and value.layers
+                  else children(value))
+        for child in nested:
+            refuse_authored(child)
+
+    refuse_authored(node)
+
+    def walk(value):
+        if isinstance(value, Merge):
+            if value.authored:
+                raise AkanError(deferred_message("PIPE", ""), value.line,
+                                value.col, value.source or source)
+            view = project(value, collections=True)
+            if view is value:
+                raise AkanError(deferred_message("PIPE", ""), value.line,
+                                value.col, value.source or source)
+            return walk(view)
+        if isinstance(value, MergedMapping):
+            value.finish()
+            if value.layers:
+                for layer in value.layers:
+                    walk(layer)
+            value.pairs = value.visible_pairs()
+        if isinstance(value, (Mapping, MultiMap)) and not isinstance(value, Expression):
+            pairs = value.pairs if isinstance(value, Mapping) else value.entries
+            for pair in pairs:
+                pair.value = walk(pair.value)
+        elif isinstance(value, Sequence):
+            value.items = [walk(item) for item in value.items]
+        return value
+
+    return walk(node)
 
 
 # --------------------------------------------------------------------------- #
@@ -187,7 +250,8 @@ def _inline(node: Node, level: int, source: str | None, *,
             unresolved: bool = False) -> list[str] | None:
     """The value as it appears after `key: ` or `- `, or None if it needs a
     block of its own. A list, because a block string spans lines."""
-    from .parser import Expression
+    if isinstance(node, (Merge, Comprehension)) and unresolved:
+        return None
     if isinstance(node, Expression):
         if unresolved:
             from ._expressions import source as expression_source
@@ -254,7 +318,45 @@ def _fits(line: str) -> bool:
 def _lines(node: Node, level: int, source: str | None, *,
            unresolved: bool = False) -> list[str]:
     pad = INDENT * level
-    from .parser import Expression
+    if unresolved and isinstance(node, Merge):
+        from ._expressions import source as expression_source
+
+        def left_chain(value):
+            if isinstance(value, Merge):
+                yield from left_chain(value.args[0])
+                yield value.args[1]
+            else:
+                yield value
+
+        out = []
+        for index, operand in enumerate(left_chain(node)):
+            if index:
+                out.append(pad + "|")
+            if index and isinstance(operand, Merge):
+                lines = _lexeme_lines(expression_source(operand), level)
+                out.extend([pad + lines[0]] + lines[1:])
+            else:
+                out.extend(_lines(operand, level, source, unresolved=True))
+        return out
+    if unresolved and isinstance(node, Comprehension):
+        from ._expressions import source as expression_source
+        iterable, body, predicate, key = node.args
+        if node.kind == "list":
+            out = _marked(body, pad, level, source, marker="- ", unresolved=True)
+        else:
+            head = pad + ("+ " if node.kind == "multimap" else "") + expression_source(key)
+            head += ":=" if getattr(node, "replace", False) else ":"
+            inline = _inline(body, level, source, unresolved=True)
+            if inline is None:
+                out = [head] + _lines(body, level + (2 if node.kind == "multimap" else 1),
+                                      source, unresolved=True)
+            else:
+                out = [head + " " + inline[0]] + inline[1:]
+        out.append(pad + "for " + ", ".join(getattr(node, "binding_lexemes", node.names))
+                   + " in " + expression_source(iterable))
+        if predicate is not None:
+            out.append(pad + "if " + expression_source(predicate))
+        return out
     if isinstance(node, Expression):
         inline = _inline(node, level, source, unresolved=unresolved)
         return [pad + inline[0]] + inline[1:]
@@ -299,9 +401,9 @@ def _pairs(pairs: list[Pair], pad: str, level: int, source: str | None,
         if len(key_lines) > 1:
             out.append(f"{pad}{marker}{key_lines[0]}")
             out.extend(key_lines[1:-1])
-            head = key_lines[-1] + label + ":"
+            head = key_lines[-1] + label + (":=" if pair.replace else ":")
         else:
-            head = f"{pad}{marker}{key_lines[0]}{label}:"
+            head = f"{pad}{marker}{key_lines[0]}{label}" + (":=" if pair.replace else ":")
         flow = _flow(value, source, unresolved=unresolved)
         if flow is not None and _fits(f"{head} {flow}"):
             inline = [flow]

@@ -1,0 +1,6 @@
+harness<base.harness>:
+  config_store:
+    models: {
+      model_id: {provider: (persona.name), remote_model_id: (model_id)}
+      for model_id in persona.mind.model_list
+    }

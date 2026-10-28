@@ -7,6 +7,8 @@ include CHANGELOG.md
 # specification travels for the same reason, and more so: the suite says
 # whether an implementation agrees, docs/ say what it is meant to agree with.
 recursive-include tests *.py
+# Merge/source continuation acceptance uses these four unfinished documents.
+recursive-include tests/fixtures/deferred-layer-case *.tmpl *.yap
 recursive-include examples *.yap
 recursive-include docs *.md
 # The conformance cases are .yap inputs and .json sidecars, not prose, and

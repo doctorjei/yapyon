@@ -93,8 +93,8 @@ class Yakamashiwa(Exception):
 # Tokens
 # --------------------------------------------------------------------------- #
 # kinds: NEWLINE INDENT DEDENT DASH NAME KEYWORD INT FLOAT STRING BYTES
-#        YSTR YBSTR YTSTR COPY LABEL COLON COMMA LBRACKET RBRACKET LBRACE
-#        RBRACE LPAREN RPAREN EOF
+#        YSTR YBSTR YTSTR COPY LABEL COLON EQUAL PIPE BPIPE COMMA LBRACKET
+#        RBRACKET LBRACE RBRACE LPAREN RPAREN EOF
 @dataclass
 class Token:
     kind: str
@@ -190,7 +190,7 @@ def stream_text(prefix: str, data: bytes) -> str:
                    for i in range(count))
 
 
-_KEY_RUN = _re.compile(r"([^\s:\[\]{},#]+):(?=[ \t\n]|$)")
+_KEY_RUN = _re.compile(r"([^\s:\[\]{},#]+)[ \t]*:(?=[ \t\n=]|$)")
 _NUMBER_RUN = _re.compile(r"[+-]?(?:0[xXoObB][0-9A-Za-z_]+|[0-9_]*\.?[0-9_]+"
                          r"(?:[eE][+-]?[0-9]+)?|[0-9_]+\.)")
 
@@ -403,6 +403,39 @@ def _find_copy_end(s: str, start: int) -> int:
             depth -= 1
         i += 1
     return -1
+
+
+def _has_merge_pipe(text: str) -> bool:
+    """A grouping hint only: ignore pipes in quoted literals and comments.
+
+    Actual copies and every hole still go through `parse_ref`; this scan does
+    not widen their grammar or interpret a pipe inside a literal's contents.
+    """
+    i, quote = 0, ""
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if text.startswith(quote, i):
+                i += len(quote)
+                quote = ""
+                continue
+        elif ch in "\"'":
+            quote = ch * 3 if text.startswith(ch * 3, i) else ch
+            i += len(quote)
+            continue
+        elif ch == "#":
+            end = text.find("\n", i)
+            if end < 0:
+                return False
+            i = end + 1
+            continue
+        elif ch == "|":
+            return True
+        i += 1
+    return False
 
 
 def _find_chain_end(s: str, start: int) -> int:
@@ -1196,6 +1229,8 @@ class Lexer:
                 elif tok.kind == "DEDENT":
                     if len(starts) > 1:
                         starts.pop()
+                elif tok.kind == "BPIPE":
+                    starts[-1] = i + 1          # a new independent block operand
                 elif tok.kind == "FOR":
                     start = starts[-1]
                     while self.tokens[start].kind == "NEWLINE":
@@ -1270,6 +1305,13 @@ class Lexer:
                 self._akan(f"indent {width} matches no open block "
                            f"(open: {self.indents})", col=width)
 
+        # A pipe at the logical line's first content position separates block
+        # operands. Unlike '-' and '+', it opens no indentation frame.
+        if self._peek() == "|":
+            self._emit("BPIPE", "|", lexeme="|")
+            self._advance()
+            return False
+
         # Frame markers at content start: "- " opens a sequence item, "+ " a
         # multimap entry (or bare at EOL).  Both stack and interleave.
         while self._peek() in ("-", "+") and self._peek(1) in (" ", "\n", ""):
@@ -1313,10 +1355,11 @@ class Lexer:
             reference = True
         except RefError:
             pass
+        expression = reference or _has_merge_pipe(run)
         if run.startswith("("):
             message = (f"{run!r} is not a valid key: parentheses group or "
                        f"copy a value (§5.6), and keys are names or strings")
-            if reference:
+            if expression:
                 self._key_checks.append((self.line, self.col, message))
                 return
             self._akan(message)
@@ -1338,7 +1381,7 @@ class Lexer:
             fix = "_" + fix
         message = (f"{run!r} is not a valid key: {why}. Keys are bare "
                    f"identifiers; write it as {fix!r}")
-        if reference:
+        if expression:
             self._key_checks.append((self.line, self.col, message))
         else:
             self._akan(message)
@@ -1359,6 +1402,8 @@ class Lexer:
                 if not depth:
                     return False
                 depth -= 1
+            elif not depth and tok.kind == "BPIPE":
+                return False
             elif (not depth and tok.kind == "NAME" and tok.lexeme == "for"
                   and (i + 1 == len(self.tokens) or self.tokens[i + 1].kind != "COLON")):
                 return True
@@ -1390,6 +1435,11 @@ class Lexer:
                 self._check_key_run()
             return
 
+        if ch == "|":
+            self._emit("PIPE", "|", line, col, lexeme="|")
+            self._advance()
+            return
+
         if ch in "=!<>" and ch:
             op = self.text[self.pos:self.pos + 2]
             if op not in ("==", "!=", "<=", ">="):
@@ -1397,6 +1447,10 @@ class Lexer:
             if op in ("==", "!=", "<=", ">=", "<", ">"):
                 self._emit("COMPARE", op, line, col, lexeme=op)
                 self._advance(len(op))
+                return
+            if op == "=":
+                self._emit("EQUAL", "=", line, col, lexeme="=")
+                self._advance()
                 return
         if self.text.startswith("...", self.pos):
             self._akan("'...' is reserved and has no meaning; yapyon is one document per file")
@@ -1537,7 +1591,8 @@ class Lexer:
         try:
             ref = parse_ref(text)
         except RefError as e:
-            if (_re.search(r"\b(?:and|or|not|is|in)\b|[=!<>]", text)
+            if (_has_merge_pipe(text)
+                    or _re.search(r"\b(?:and|or|not|is|in)\b|[=!<>]", text)
                     or "cannot be indexed or traversed" in str(e)):
                 self.depth += 1
                 self.brackets.append("(")

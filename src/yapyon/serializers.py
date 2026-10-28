@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .emitter import emit
+from .emitter import _emit_data
 from .writers import to_json, to_toml, to_yaml
 
 
@@ -36,13 +36,13 @@ def to_yapyon(node, *, warn=None) -> str:
     """**Record** text (SPEC §14.6, §12) for a resolved subtree: each
     value's lexeme, or its canonical form where it has none.
 
-    This is `emitter.emit`, unchanged, and that is the point: the emitter
-    already renders a record from the AST, and a second yapyon writer would
-    be the next thing to drift. The caller has checked the subtree is fully
+    The shared emitter consumes field-operation intent and writes finished
+    data, keeping literal spellings. There is no second yapyon writer to
+    drift. The caller has checked the subtree is fully
     resolved and holds no `yt` — the emitter's own refusal speaks of loading
     a record, which is the wrong problem to name from inside a hole.
     """
-    return emit(node)
+    return _emit_data(node)
 
 
 @dataclass(frozen=True)

@@ -161,7 +161,7 @@ number: `0x6869` is the integer 26729, and `hex"6869"` is two bytes.
 `f"..."`, `t"..."`, and `u"..."` are akan. In Python they evaluate against
 the surrounding program, and a data file has no surrounding program — so
 borrowing them would make the same text mean different things in Python and
-in yapyon. Everything yapyon adds is spelled with a `y` instead.
+in yapyon. The splicing string prefixes use the `y` namespace instead.
 
 ## 4. Multimaps: when keys repeat on purpose
 
@@ -246,10 +246,10 @@ inner:
 
 ### Reaching into containers
 
-After the first name, a reference walks down. `a.b` is shorthand for
-`a["b"]`, integer subscripts index lists (negative ones from the end, as
-in Python), and a subscript holding a *reference* uses that reference's
-value as the key:
+After the first name, a reference walks down. For a name key, `a.b` is
+shorthand for `a["b"]`; a quoted or computed key needs the subscript.
+Integer subscripts index lists (negative ones from the end, as in Python),
+and a subscript holding a *reference* uses that reference's value as the key:
 
 ```yapyon
 protocol: "codex"
@@ -447,8 +447,8 @@ each tier contains the one before it:
 | Level | Name | Holds | Finished by | Style |
 |---|---|---|---|---|
 | 1 | **record** | literals only | nothing: it is already data | basic |
-| 2 | **ledger** | y-strings, copies, and built-in calls | its own bytes | basic |
-| 3 | **template** | `yt` strings, or reads of the environment | the environment, or the consumer joining the parts | extra |
+| 2 | **ledger** | y-strings, copies, built-in calls, collection construction, and value composition | its own bytes | basic |
+| 3 | **template** | `yt` strings, slots, or reads of the environment | the environment, or the consumer joining parts or filling slots | extra |
 | 4 | **assembly** | calls to declared functions | a contract | extra |
 
 Records and ledgers are **basic**: their bytes are the whole story, so they
@@ -612,7 +612,135 @@ a read-only view of the document's node, in document order. And a function
 must be deterministic: the same contract, name, and arguments must give the
 same result, or the same bytes would stop meaning the same data.
 
-## 10. Resolving a reference from code
+## 10. Composing values and saving unfinished source
+
+*The `0.6.0.dev0` development line adds explicit value composition and
+faithful source layers (§15.2, §15.8, §16.5).*
+
+A pipe, `|`, combines complete values. A pair's ordinary `:` combines
+contributions at that field; `:=` takes its complete incoming value instead:
+
+```yapyon
+settings:
+  paths: ["base", "shared"]
+  reset: ["old"]
+  |
+  paths: ["shared", "new", "shared"]
+  reset:= []
+```
+
+```pycon
+>>> doc = 'settings:\n  paths: ["base", "shared"]\n  reset: ["old"]\n  |\n  paths: ["shared", "new", "shared"]\n  reset:= []\n'
+>>> yapyon.loads(doc)
+{'settings': {'paths': ['base', 'shared', 'new', 'shared'], 'reset': []}}
+```
+
+Dictionaries match unique string keys recursively. Existing keys keep their
+positions and name/non-name kind; new keys append. Quoted/computed keys do
+not become names through merging. Lists compare **whole typed elements**,
+and multimaps compare **whole key/value pairs**, not values guessed to match
+by index, repeated key, or an `id` field.
+
+For each equal item, keep the **greater count from either input**, not their
+sum. Visit incoming occurrences in order: match each to the first equal,
+unmatched occurrence from the original earlier collection. A match keeps its
+earlier position and takes the **whole higher representation**; otherwise
+append. Appended occurrences are not new match targets. Unmatched earlier
+occurrences keep their own spellings. A matched dictionary-valued list item
+is replaced whole, not recursively fused with the earlier item.
+
+Merge equality distinguishes bool, int, and float, even when ordinary numeric
+comparison would call them equal:
+
+```pycon
+>>> yapyon.loads('[0x1, True] | [1.0, 1]')
+[1, True, 1.0]
+```
+
+`None` yields to dictionaries, lists, and multimaps in either order, including
+empty ones. Compatible empty containers do not clear existing data. Other
+noncombining kinds take the higher value. `field:= None` or `field:= []`
+forces replacement, keeping the field present; a later contribution can
+still change it. Spaces may separate `:` and `=`: `field : = []` is the
+same annotation, not assignment or a new type.
+
+### Precedence and grouping
+
+The pipe has the **lowest value-operator precedence**, below `or`.
+Unparenthesized chains associate left to right, including mixed block/flow
+forms. Parentheses group an entire contribution, and that changes meaning:
+
+```pycon
+>>> yapyon.loads('{config: {old: 1}} | {config: "reset"} | {config: {new: 2}}')
+{'config': {'new': 2}}
+>>> yapyon.loads('{config: {old: 1}} | ({config: "reset"} | {config: {new: 2}})')
+{'config': {'old': 1, 'new': 2}}
+```
+
+In the first document, the middle string discards the inherited dictionary.
+In the second, the right group finishes as one dictionary before it meets
+the left operand. A pipe after a pair's separator belongs to that pair's
+whole value, not implicitly to the containing dictionary. To traverse a
+merge result, group the whole result before its postfix. Pipes do not become
+legal inside holes or call arguments; those retain their reference grammar.
+
+Copies and calls use the **eventual value kind**, not a special whole-replacement
+rule based on their syntax. A returned dictionary merges by key; returned
+lists/multimaps follow the collection rule above. Earlier versions could
+replace a dictionary wholesale when the incoming contribution was a deferred
+copy or call. Use `:=` if whole replacement is intended.
+
+A pipe requires at least a ledger, even with literal operands. A replacement
+annotation alone does not:
+
+```pycon
+>>> yapyon.tier_of('items:= []\n')
+1
+>>> yapyon.tier_of('[] | []\n')
+2
+```
+
+### Save the program, not one current result
+
+`parse` returns an unresolved `Tree`; the consumer can merge it, fill selected
+slots, save it, and continue later. A slot label names what fills it, never
+how to find a file. Here the generated dictionary remains unfinished while
+another dictionary is merged over it:
+
+```pycon
+>>> draft = yapyon.parse('persona<chosen>: {}\nmodels: {model: (model) for model in persona.models}\n')
+>>> draft["models"].merge(yapyon.parse('"extra": "manual"\n'))
+>>> saved = draft.to_source()
+>>> resumed = yapyon.parse(saved, source="saved.yap")
+>>> resumed["persona"].fill(yapyon.parse('models: ["m1"]\n'))
+>>> resumed.resolve()["models"]
+{'m1': 'm1', 'extra': 'manual'}
+```
+
+Saving runs no lookup, environment read, function, cast, serializer,
+comprehension iteration, template rendering, or runtime duplicate comparison.
+The source retains its layers, replacement intent, lexical bindings, and
+meaningful grouping. Later fillers still control generated values; saving
+neither chooses a filler nor freezes one current result. Record emission and
+data serializers are different: they write finished data, not this program.
+
+A labeled field's complete right-hand side is **one dictionary override
+contribution**. Sequential overrides of a slot are not interchangeable with
+one premerged RHS. Literal `{}` means no overrides even for a non-dictionary
+filler; `part<new>:= {}` supplies a fresh slot that still needs its own filler.
+The source writer may lift sequential slot operations into surrounding
+dictionary layers to preserve their order.
+
+Attached unfinished slots can be saved, but must be filled before their
+values are required. Two source refusals remain: an undecided historical
+abstract-slot obligation belonging to a completed fill, and a slot detached
+from its dictionary field. The writer does not evaluate or invent source
+syntax to evade either. Layout is normalized, comments are lost, and reloaded
+diagnostics name the saved file. See the
+[full persistence example](DETAILS.md#save-now-finish-later) for slot filling,
+source text, and the remaining refusal rules.
+
+## 11. Resolving a reference from code
 
 A program that builds one tree out of several loaded documents can resolve
 a reference against it by the same rules a hole uses, with `lookup` (the
@@ -630,7 +758,7 @@ The second argument is the node you are holding; the answer is the one a
 y-string written inside that node would get. It is the resolver's own
 search, so the two cannot disagree.
 
-## 11. Where next
+## 12. Where next
 
 - [`SPEC.md`](SPEC.md) — what everything means, including the parts this
   tutorial skipped: expansion limits (§5.3), identifier folding (§7), and

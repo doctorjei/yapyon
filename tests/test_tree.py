@@ -123,11 +123,11 @@ def test_merge_keeps_the_earlier_order_then_appends():
 @pytest.mark.parametrize("earlier,later,result", [
     ('a: "s"\n', "a: {x: 1}\n", {"x": 1}),      # a node replaces a string
     ("a: {x: 1}\n", 'a: "s"\n', "s"),           # and a string a node
-    ("a: [1, 2]\n", "a: [3]\n", [3]),           # sequences replace
-    ("a: {x: 1}\n", "a: None\n", None),         # None is a value
+    ("a: [1, 2]\n", "a:= [3]\n", [3]),
+    ("a: {x: 1}\n", "a:= None\n", None),
     ("a: {x: 1}\n", "a: {x: None}\n", {"x": None}),
 ])
-def test_anything_but_two_mappings_is_replaced(earlier, later, result):
+def test_incompatible_kinds_and_explicit_replacement(earlier, later, result):
     assert merge(parse(earlier), parse(later)).resolve() == {"a": result}
 
 

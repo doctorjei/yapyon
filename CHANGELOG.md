@@ -9,6 +9,82 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
+## 0.6.0.dev0 — Unreleased
+
+Development prerelease targeting specification and grammar **v0.6** for
+merge/source composition and unfinished persistence. This section records
+unreleased work, not a publication claim.
+
+### Changed — breaking
+
+- **Ordinary collection merging (§15.2)** combines lists by whole typed
+  elements and multimaps by complete key/value pairs, instead of replacing
+  them wholesale. Equal items retain the greater per-input occurrence count,
+  not the sum. Earlier positions stay; incoming occurrences match the first
+  equal unmatched original earlier occurrence or append in incoming order.
+  A match takes the complete higher representation, including lexemes and
+  a dictionary item's key order/kind, without recursive member fusion.
+  Standalone and explicitly replaced collections keep authored repetitions.
+- **Typed merge equality** distinguishes bool, int, and float: True, 1, and
+  1.0 are different items. Same-kind values ignore incidental literal spelling;
+  dictionaries compare associations independent of entry order/key kind,
+  multimaps compare ordered entry sequences, and Templates compare delivered
+  parts and hole metadata without rendering. Ordinary expression equality
+  retains its existing numeric behavior.
+- **None yields to containers in either order**, including empty dictionaries,
+  lists, and multimaps. Compatible empty inputs yield rather than clear
+  populated collections. Other noncombining kinds take the higher whole value. Use explicit
+  field replacement to force None or an empty collection over earlier data.
+- **Copies and calls merge by eventual value kind**, not parser-node class.
+  A deferred copy/call returning a dictionary now merges by key rather than
+  replacing an earlier dictionary wholesale; returned lists/multimaps use the
+  same collection operation as literals. Unknown kinds wait for resolution
+  without executing during merge or source saving.
+
+### Added
+
+- **Field replacement:** `key:= value` discards that field's earlier value,
+  including pending computation, and uses the complete incoming RHS. It is
+  not deletion or protection from later overrides. Colon and equals are
+  separate tokens, so `key : = value` is also valid; flow newlines may separate
+  them. An annotation alone does not raise the tier of otherwise literal data,
+  and direct record normalization preserves it. Same-contribution dictionary
+  duplicates remain akan; matched dictionary keys retain earlier spelling,
+  position, and name/non-name kind, without promotion.
+- **Explicit value composition (§16.5):** `|` is the lowest-precedence value
+  operator, below logical `or`, and associates left to right across mixed block
+  and flow operands. Right grouping remains meaningful; merge is not generally
+  associative. A pipe requires at least a ledger even with literal operands.
+  The hole/call-argument reference grammar is unchanged.
+- **Faithful unfinished-source layers (§15.8):** `Tree.to_source()` retains
+  computed-key dictionaries, comprehensions with nonempty contributions,
+  collection programs, replacement intent, lexical scopes, and meaningful
+  grouping as one parseable document. It does no lookup, environment access,
+  call, cast, serialization, comprehension iteration, template rendering,
+  or runtime duplicate comparison, and leaves the source tree unchanged.
+- **Slot composition preserves sequential operations.** A labeled field's
+  complete dictionary RHS is one override contribution, not a sequence to
+  apply separately to a future filler. Saving may lift sequential slot
+  operations into surrounding dictionary layers. Literal empty overrides
+  mean no operation on any filler kind; a new replacement slot still fills
+  normally. Kind-dependent named-slot contributions retain a discoverable,
+  fillable slot rather than guessing its eventual kind or final collection
+  position.
+- The former computed-key, pending replacement-boundary, and merged-dictionary-
+  comprehension save refusals are lifted where explicit layers faithfully
+  represent their state. **A completed fill's undecided historical abstract-slot
+  obligation and an unattached slot remain save-time refusals.** A later edit
+  is not retroactive fulfillment of a prior fill's own obligation. Source
+  saving remains distinct from record emission and finished-data serializers.
+
+### Documentation
+
+- Correct README quote-reuse guidance: a hole may use the enclosing string's
+  quote mark. Correct stale identifier-only-key and bare-call reservations
+  while retaining the narrower hole-interior postfix grammar. Extend the guide
+  and tutorial with typed merging, field replacement, meaningful grouping,
+  and save/reload continuations.
+
 ## 0.5.3 — 2026-10-25
 
 Built to specification **v0.5**, amended with collection construction and data

@@ -85,8 +85,9 @@ covered: how a slot is written, and that one left unfilled is akan.
 **Saving an unfinished tree (§15.8)** is also an implementation API operation,
 not a fourth kind of loading case. The Python source-writer tests reuse every
 successful input here for source/parse/idempotence and eventual-value checks;
-consumer fills, later edits, and the three save-time refusals have dedicated
-continuation tests rather than being disguised as loader refusals.
+consumer fills, later edits, grouped composition, and the remaining historical-
+fill refusal have dedicated continuation tests rather than being disguised as
+loader refusals.
 
 ---
 
@@ -172,7 +173,10 @@ inert gate look identical from outside, and only the break tells them apart.
   references `__PARENT__` / `__KEY__` (§5.1.1), named and subscript
   traversal, computed keys, negative indices, and the multimap list view
   (§5.1), chained splices through the fixpoint (§5.3), and all four
-  serializers including TOML arrays of tables (§5.1.2).
+  serializers including TOML arrays of tables (§5.1.2). Composition cases (§15.2,
+  §16.5) pin None/container behavior, explicit replacement, typed occurrence counts,
+  whole-element representation, significant grouping, and independent comprehension
+  layers. Literal replacement separators also appear in the record cases.
 - **`error/` — the major refusals.** Non-canonical base64, invalid base64,
   duplicate keys including duplicates that appear only after folding, tab
   indentation, unknown escapes, empty keys, dunder keys, computed duplicates,

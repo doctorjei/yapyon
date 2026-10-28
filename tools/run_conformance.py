@@ -127,9 +127,19 @@ def same_data(a, b) -> tuple[bool, str]:
             if not ok:
                 return False, f"[{i}] {why}"
         return True, ""
-    if a == b:
+    if isinstance(a, yapyon.OrderedMultimap) and isinstance(b, yapyon.OrderedMultimap):
+        if len(a) != len(b):
+            return False, f"entry count: got {len(a)}, expected {len(b)}"
+        for i, (left, right) in enumerate(zip(a, b)):
+            if left.key != right.key:
+                return False, f"entry {i}: got key {left.key!r}, expected {right.key!r}"
+            ok, why = same_data(left.value, right.value)
+            if not ok:
+                return False, f"entry {i} {why}"
         return True, ""
-    return False, f"got {a!r}, expected {b!r}"
+    if type(a) is type(b) and a == b:
+        return True, ""
+    return False, f"got {a!r} ({type(a).__name__}), expected {b!r} ({type(b).__name__})"
 
 
 def run_case(case: Case) -> tuple[bool, str]:

@@ -4,8 +4,8 @@ import copy
 import operator
 
 from .lexer import Ref, Yakamashiwa, parse_ref
-from .parser import (Comprehension, Copy, Expression, Mapping, MultiMap, Node,
-                     Pair, Scalar, Sequence, Slot, YString, children)
+from .parser import (Comprehension, Copy, Expression, Mapping, Merge, MultiMap,
+                     Node, Pair, Scalar, Sequence, Slot, YString, children)
 
 
 class _Waiting(Exception):
@@ -14,9 +14,16 @@ class _Waiting(Exception):
 
 def source(node):
     """Expression source, never evaluation; ordinary nested maps keep key kinds."""
+    from .assembly import MergedMapping
+
+    if isinstance(node, MergedMapping) and node.layers:
+        return "(" + " | ".join(map(source, node.layers)) + ")"
+    if isinstance(node, Merge):
+        return "(" + " | ".join(map(source, node.args)) + ")"
     if isinstance(node, Comprehension):
         iterable, body, predicate, key = node.args
-        head = source(body) if node.kind == "list" else source(key) + ": " + source(body)
+        separator = ":= " if getattr(node, "replace", False) else ": "
+        head = source(body) if node.kind == "list" else source(key) + separator + source(body)
         tail = " for " + ", ".join(getattr(node, "binding_lexemes", node.names)) + " in " + source(iterable)
         if predicate is not None:
             tail += " if " + source(predicate)
@@ -29,7 +36,8 @@ def source(node):
             text, safe = node.value
             return source(node.args[0]) + ("?." if safe else ".") + text
         if node.op == "group":
-            return "(" + source(node.args[0]) + ")"
+            text = source(node.args[0])
+            return text if isinstance(node.args[0], Merge) else "(" + text + ")"
         if node.op == "not":
             return "(not " + source(node.args[0]) + ")"
         if node.op in ("and", "or"):
@@ -59,7 +67,7 @@ def source(node):
             if isinstance(value, Slot):
                 key += value.lexeme
                 value = value.layers[0]
-            out.append(key + ": " + source(value))
+            out.append(key + (":= " if pair.replace else ": ") + source(value))
         return "{" + ("+ " if isinstance(node, MultiMap) and pairs else
                       "+" if isinstance(node, MultiMap) else "") + ", ".join(out) + "}"
     raise Yakamashiwa(f"cannot write expression node {type(node).__name__}")
@@ -75,7 +83,7 @@ def _ready(resolver, owner, index, site):
         replace = lambda new: holder.__setitem__(0, new)
         if isinstance(holder[0], YString):
             sites.append(_Site(holder[0], site.chain, replace, key=site.key,
-                               bindings=site.bindings))
+                               bindings=getattr(holder[0], "_bindings", site.bindings)))
         else:
             _collect(holder[0], site.chain, sites, replace, site.bindings)
         slot = _unfilled(holder[0])
@@ -250,7 +258,8 @@ def _comprehend(resolver, node, site):
                 _charge(resolver, node.args[3], node)
                 key = copy.deepcopy(node.args[3])
                 _bind(key, bindings)
-                pair = Pair(key.line, key.col, key, body, source(node.args[3]), named=False)
+                pair = Pair(key.line, key.col, key, body, source(node.args[3]),
+                            named=False, replace=getattr(node, "replace", False))
                 pair.source = key.source
                 target = node._output.pairs if node.kind == "dict" else node._output.entries
                 target.append(pair)
@@ -317,10 +326,54 @@ def _receiver(resolver, owner, site):
     return value
 
 
+def _merge(resolver, node, site):
+    from .assembly import _PENDING, _combine, kind
+    from .resolver import _Site
+
+    earlier, later = node.args
+    resolver._merge_budget(node, depth=1)
+    out = _combine(earlier, later, charge=resolver._merge_budget)
+    if out is not _PENDING:
+        return _result(resolver, node, out)
+    for index in (1, 0):
+        operand = node.args[index]
+        if kind(operand) is not None:
+            continue
+        if not isinstance(operand, YString):
+            raise _Waiting
+        local = _Site(operand, site.chain,
+                      lambda new, i=index: node.args.__setitem__(i, new),
+                      key=site.key, bindings=getattr(operand, "_bindings", site.bindings))
+        value = resolver._try(local)
+        site.reads.extend(local.reads)
+        if value is None:
+            raise _Waiting
+        node.args[index] = value
+        out = _combine(*node.args, charge=resolver._merge_budget)
+        if out is not _PENDING:
+            return _result(resolver, node, out)
+    earlier = _ready(resolver, node, 0, site)
+    later = _ready(resolver, node, 1, site)
+    _charge(resolver, earlier, node)
+    _charge(resolver, later, node)
+
+    out = _combine(earlier, later, collections=True, charge=resolver._merge_budget)
+    if out is _PENDING:
+        raise _Waiting
+    return _result(resolver, node, out)
+
+
 def _evaluate(resolver, site):
     node = site.node
+    if isinstance(node, Merge):
+        return _merge(resolver, node, site)
     if isinstance(node, Comprehension):
         return _comprehend(resolver, node, site)
+    if node.op == "group":
+        from .assembly import project
+        view = project(node.args[0])
+        if isinstance(view, Mapping):
+            return _result(resolver, node, view)
     left = (_receiver(resolver, node, site) if node.op in ("subscript", "suffix")
             else _ready(resolver, node, 0, site))
     if node.op in ("and", "or", "not"):

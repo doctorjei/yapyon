@@ -40,7 +40,7 @@ import os
 import sys
 
 from ._cli import run
-from .emitter import emit
+from .emitter import _emit_data as emit
 from .environment import ENV_ALL, STANDARD_ENV, environment
 from ._digits import REFUSE_DIGITS
 from .lexer import AkanError, Lexer

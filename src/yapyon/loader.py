@@ -114,7 +114,9 @@ def loads(text: str, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
     where the bytes came from, and every akan reports `name:line:col`.
     `max_depth`, `max_size`, and `max_digits` are this implementation's
     refusal ceilings (SPEC §5.3, §3.1); past the spec's warn thresholds a
-    document draws shiran, past these it is akan. `contract` (from
+    document draws shiran, past these it is akan. `max_size` also bounds
+    merge projection/comparison work units independently of rendered size;
+    `max_depth` guards retained composition nesting. `contract` (from
     `loads_contract`) declares the functions the document may call, and
     `provide` maps a `symbol` to the code for each declared without `from`
     (SPEC §13.2).
@@ -175,7 +177,7 @@ def load(fp, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
 _DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR", "COPY", "LPAREN",
                              "LABEL", "YKEY", "REF", "LCOMP", "DCOMP",
                              "MCOMP", "BCOMP", "FOR", "COMPARE", "AND", "OR",
-                             "NOT", "IS", "IN", "DOT", "SAFE_DOT"})
+                             "NOT", "IS", "IN", "DOT", "SAFE_DOT", "PIPE", "BPIPE"})
 
 
 def _name_of(fp, source: str | None) -> str | None:

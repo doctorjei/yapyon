@@ -54,6 +54,37 @@ class Node:
     source = None
     fill_checks = ()
 
+    def __deepcopy__(self, memo):
+        """Copy retained programs without spending the host's recursion stack."""
+        pending, originals = [self], []
+        while pending:
+            node = pending.pop()
+            if id(node) in memo:
+                continue
+            memo[id(node)] = object.__new__(type(node))
+            originals.append(node)
+            pending.extend(children(node))
+            if isinstance(node, (Mapping, MultiMap)):
+                pending.extend(node.pairs if isinstance(node, Mapping) else node.entries)
+            elif isinstance(node, Pair):
+                pending.append(node.value)
+                if isinstance(node.key, Node):
+                    pending.append(node.key)
+            elif isinstance(node, ResolvedTemplate):
+                pending.extend(part[2] for part in node.parts if part[0] == "hole")
+        for node in originals:
+            out = memo[id(node)]
+            fields = {key: value for key, value in node.__dict__.items()
+                      if key not in ("_projection", "_views", "_merge_budget")}
+            out.__dict__ = copy.deepcopy(fields, memo)
+            if "_views" in node.__dict__:
+                out._views = {}
+            if "_merge_budget" in node.__dict__:
+                out._merge_budget = node._merge_budget
+            if isinstance(node, Pair):
+                out.identity = next(_pair_ids)
+        return memo[id(self)]
+
 
 @dataclass
 class Scalar(Node):
@@ -126,12 +157,12 @@ class Slot(Node):
 
     `label` is the tuple of folded names, empty for an abstract slot
     (`<>`); `lexeme` is the label as written. `layers` holds the override
-    mappings, innermost first: one as parsed, more once merges and moved
+    dictionary programs, innermost first: one as parsed, more once merges and moved
     slots stack them (§15.2, §15.4). A slot is never resolved — filling
     replaces it, and one left at resolution is akan (§15.6)."""
 
     label: tuple
-    layers: list = field(default_factory=list)   # list[Mapping]
+    layers: list = field(default_factory=list)   # list[Node], dictionary structure
     lexeme: str = ""
     key: str = ""             # the key as written, for diagnostics
 
@@ -148,7 +179,8 @@ class Pair(Node):
     """One `key: value`. `key` is its identity, or a pending y-string.
     `named` distinguishes names from data keys (SPEC §7); `lexeme` keeps
     the spelling (§4.4), and `key_node` keeps a resolved key's dependencies.
-    `identity` is an unresolved Tree location, never data-key equality."""
+    `identity` is an unresolved Tree location, never data-key equality.
+    `replace` retains the authored field separator, independently of its value."""
 
     key: str | YString
     value: Node
@@ -157,13 +189,10 @@ class Pair(Node):
     key_node: Scalar | None = None
     identity: int = field(default_factory=lambda: next(_pair_ids), compare=False,
                           repr=False)
+    replace: bool = False
 
     def __deepcopy__(self, memo):
-        out = object.__new__(type(self))
-        memo[id(self)] = out
-        out.__dict__ = copy.deepcopy(self.__dict__, memo)
-        out.identity = next(_pair_ids)
-        return out
+        return super().__deepcopy__(memo)
 
 
 @dataclass
@@ -222,13 +251,22 @@ class Expression(YString):
         return "expression"
 
 
+class Merge(Expression):
+    """An ordered binary merge program; operand boundaries remain significant."""
+
+    def __init__(self, line, col, earlier, later, *, authored=True):
+        super().__init__(line, col, op="merge", args=[earlier, later])
+        self.authored = authored
+
+
 class Comprehension(Expression):
     """Unevaluated collection construction with one lexical binding frame."""
 
     def __init__(self, line, col, kind, names, iterable, body, predicate=None,
-                 key=None):
+                 key=None, *, replace=False):
         super().__init__(line, col, "comprehension", [iterable, body, predicate, key])
         self.kind, self.names = kind, tuple(names)
+        self.replace = replace
 
 
 class DictionaryComprehension(Comprehension, Mapping):
@@ -247,6 +285,8 @@ def deferred_message(kind: str, prefix: str) -> str:
     """Why a record refuses this token (SPEC §12)."""
     if kind in ("BCOMP", "LCOMP", "DCOMP", "MCOMP", "FOR"):
         return "a record holds no comprehensions; collection construction needs the resolver"
+    if kind in ("PIPE", "BPIPE"):
+        return "a record holds no merges; a merge pipe needs the resolver"
     if kind in ("REF", "COMPARE", "AND", "OR", "NOT", "IS", "IN", "DOT", "SAFE_DOT"):
         return "a record holds no expressions; computation needs the resolver"
     if kind == "LPAREN":
@@ -274,7 +314,8 @@ _DESCRIBE = {
     "NEWLINE": "end of line", "EOF": "end of file",
     "INDENT": "an indented block", "DEDENT": "the end of a block",
     "DASH": "a sequence item ('- ')", "PLUS": "a multimap's '+'",
-    "COLON": "':'", "COMMA": "','",
+    "COLON": "':'", "EQUAL": "'='", "COMMA": "','",
+    "PIPE": "'|'", "BPIPE": "a block merge pipe ('|')",
     "LBRACKET": "'['", "RBRACKET": "']'",
     "LBRACE": "'{'", "RBRACE": "'}'",
     "LPAREN": "'('", "RPAREN": "')'", "COPY": "a copy",
@@ -341,6 +382,8 @@ def children(node: Node) -> list:
     included. The one walk every tree pass shares."""
     if isinstance(node, Expression):
         return [arg for arg in node.args if isinstance(arg, Node)]
+    if isinstance(node, Mapping) and getattr(node, "layers", None):
+        return list(node.layers)
     if isinstance(node, (Mapping, MultiMap)):
         pairs = node.pairs if isinstance(node, Mapping) else node.entries
         return [child for pair in pairs
@@ -430,17 +473,36 @@ class Parser:
 
     # -- block level ---------------------------------------------------------
     def _block_value(self) -> Node:
+        value = self._block_segment()
+        while self._at("BPIPE"):
+            pipe = self._advance()
+            if self._at("NEWLINE"):
+                self._advance()
+                value = self._block_segment(earlier=value, pipe=pipe)
+            else:
+                value = self._inline_segment(earlier=value, pipe=pipe)
+        return value
+
+    def _block_segment(self, *, earlier=None, pipe=None) -> Node:
         if self._at("BCOMP"):
-            return self._block_comprehension()
-        if self._at("DASH"):
-            return self._block_seq()
-        if self._at("PLUS"):
-            return self._block_mmap()
-        if self._at_key():
-            return self._block_map()
+            value = self._block_comprehension()
+        elif self._at("DASH"):
+            value = self._block_seq()
+        elif self._at("PLUS"):
+            value = self._block_mmap()
+        elif self._at_key():
+            value = self._block_map()
+        else:
+            return self._inline_segment(earlier=earlier, pipe=pipe)
+        return (value if earlier is None else
+                Merge(pipe.line, pipe.col, earlier, value))
+
+    def _inline_segment(self, *, earlier=None, pipe=None) -> Node:
         start = self._peek()
-        value = self._flow_value()
-        if self._at("COLON"):                    # `"a": 1`, `1: 2`, `True: 1`
+        # Seed the inline chain rather than combining its completed result:
+        # A BPIPE B PIPE C means (A | B) | C, not A | (B | C).
+        value = self._expression(allow_ref=False, earlier=earlier, pipe=pipe)
+        if self._at("COLON"):                    # `1: 2`, `True: 1`
             self._akan(_bad_key_msg(start), start)
         self._expect("NEWLINE",
                      f"expected end of line after the value, found "
@@ -453,7 +515,7 @@ class Parser:
         first_line: dict[str, tuple[int, str]] = {}
         while self._at_key():
             pairs.append(self._pair(first_line))
-        if not self._at("DEDENT", "EOF"):
+        if not self._at("BPIPE", "DEDENT", "EOF"):
             tok = self._peek()
             if tok.kind in ("DASH", "PLUS"):
                 self._akan_mixed("NAME", tok)
@@ -495,10 +557,18 @@ class Parser:
         first_line[key] = (key_tok.line, key_tok.lexeme or key)
         return key
 
+    def _separator(self, message: str) -> bool:
+        """The field separator is COLON [EQUAL], with ordinary token spacing."""
+        self._expect("COLON", message)
+        if self._at("EQUAL"):
+            self._advance()
+            return True
+        return False
+
     def _pair(self, first_line: dict[str, tuple[int, str]]) -> Pair:
-        key_tok = self._advance()                # NAME
+        key_tok = self._advance()                # NAME, QKEY, or YKEY
         label = self._advance() if self._at("LABEL") else None
-        self._advance()                          # COLON
+        replace = self._separator("expected ':' after the key")
         key = self._check_key(key_tok, first_line)
 
         if self._at("NEWLINE"):                  # value is an indented block
@@ -516,7 +586,7 @@ class Parser:
                          f"found {_describe(self._peek())}")
         return Pair(key_tok.line, key_tok.col, key,
                     self._slot(label, value, key_tok), key_tok.lexeme,
-                    named=key_tok.kind == "NAME")
+                    named=key_tok.kind == "NAME", replace=replace)
 
     def _slot(self, label: Token | None, value: Node, key_tok: Token) -> Node:
         """GRAMMAR §G7: a labeled pair's value is its slot's overrides, a
@@ -524,12 +594,22 @@ class Parser:
         if label is None:
             return value
         key = key_tok.lexeme or key_tok.value
-        if not isinstance(value, Mapping):
+        if not self._dictionary_structure(value):
             self._akan(f"{key}{label.lexeme}: a slot's value is its "
                        f"overrides, a mapping; write {{}} for none",
                        _at_node(value, label))
         return Slot(label.line, label.col, label.value, [value],
                     label.lexeme, key)
+
+    def _dictionary_structure(self, value: Node) -> bool:
+        """Known dictionary syntax, without evaluating a call or a copy."""
+        if isinstance(value, Mapping):           # includes dictionary comprehensions
+            return True
+        if isinstance(value, Merge):
+            return all(self._dictionary_structure(arg) for arg in value.args)
+        if isinstance(value, Expression) and value.op == "group":
+            return self._dictionary_structure(value.args[0])
+        return False
 
     def _frame_body(self, marker: Token, parse_body, what: str) -> Node:
         """`MARKER INDENT [ NEWLINE ] body DEDENT` (GRAMMAR §G6).
@@ -561,7 +641,7 @@ class Parser:
         while self._at("DASH"):
             items.append(self._frame_body(self._advance(), self._block_value,
                                           "sequence item"))
-        if not self._at("DEDENT", "EOF"):
+        if not self._at("BPIPE", "DEDENT", "EOF"):
             tok = self._peek()
             if tok.kind == "PLUS" or self._at_key():
                 self._akan_mixed("DASH", tok)
@@ -575,7 +655,7 @@ class Parser:
         while self._at("PLUS"):
             entries.append(self._frame_body(self._advance(), self._mmap_entry,
                                             "multimap entry"))
-        if not self._at("DEDENT", "EOF"):
+        if not self._at("BPIPE", "DEDENT", "EOF"):
             tok = self._peek()
             if tok.kind == "DASH" or self._at_key():
                 self._akan_mixed("PLUS", tok)
@@ -605,8 +685,13 @@ class Parser:
     def _flow_value(self) -> Node:
         return self._expression(allow_ref=False)
 
-    def _expression(self, *, allow_ref=True) -> Node:
+    def _expression(self, *, allow_ref=True, earlier=None, pipe=None) -> Node:
         value = self._or_expression()
+        if earlier is not None:
+            value = Merge(pipe.line, pipe.col, earlier, value)
+        while self._at("PIPE"):
+            op = self._advance()
+            value = Merge(op.line, op.col, value, self._or_expression())
         if isinstance(value, Copy) and getattr(value, "implicit", False):
             if not allow_ref:
                 text = value.ref
@@ -626,10 +711,20 @@ class Parser:
                 self._akan(str(exc), _at_node(value, self._peek()))
         return value
 
+    def _set_expression_lexeme(self, node):
+        # Merge source spelling belongs to the shared source writer, not
+        # parse-time normalization. Keep containing expressions' lexemes empty
+        # too; their source is written from the retained binary program.
+        def has_merge(value):
+            return isinstance(value, Merge) or any(has_merge(child)
+                                                   for child in children(value))
+        if not has_merge(node):
+            from ._expressions import source
+            node.lexeme = source(node)
+
     def _expr(self, at, op, args, value=None):
-        from ._expressions import source
         node = Expression(at.line, at.col, op, args, value)
-        node.lexeme = source(node)
+        self._set_expression_lexeme(node)
         return node
 
     def _or_expression(self):
@@ -725,7 +820,7 @@ class Parser:
             return node
         self._akan(f"expected a value, found {_describe(tok)}")
 
-    def _clause(self, at, kind, body, key=None, *, block=False):
+    def _clause(self, at, kind, body, key=None, *, block=False, replace=False):
         self._expect("FOR", "expected one for clause after the comprehension head")
         names, spellings = [], []
         while True:
@@ -754,10 +849,10 @@ class Parser:
         if self._at("FOR", "IF"):
             self._akan("a comprehension has one for clause and at most one if clause")
         cls = DictionaryComprehension if kind == "dict" else Comprehension
-        node = cls(at.line, at.col, kind, names, iterable, body, predicate, key)
+        node = cls(at.line, at.col, kind, names, iterable, body, predicate, key,
+                   replace=replace)
         node.binding_lexemes = tuple(spellings)
-        from ._expressions import source
-        node.lexeme = source(node)
+        self._set_expression_lexeme(node)
         return node
 
     def _flow_comprehension(self):
@@ -766,19 +861,19 @@ class Parser:
         if kind == "multimap":
             self._expect("PLUS", "expected '+' marking the multimap")
         head = self._expression()
-        key = None
+        key, replace = None, False
         if kind != "list":
             key = head
-            self._expect("COLON", "expected ':' between the computed key and value")
+            replace = self._separator("expected ':' between the computed key and value")
             head = self._expression()
-        node = self._clause(at, kind, head, key)
+        node = self._clause(at, kind, head, key, replace=replace)
         self._expect("RBRACKET" if kind == "list" else "RBRACE",
                      "expected the end of the comprehension")
         return node
 
     def _block_comprehension(self):
         at = self._advance()
-        key = None
+        key, replace = None, False
         if at.value == "list":
             marker = self._expect("DASH", "a block list comprehension has one '-' head")
             def item():
@@ -791,9 +886,9 @@ class Parser:
         else:
             marker = self._advance() if at.value == "multimap" else None
             def head():
-                nonlocal key
+                nonlocal key, replace
                 key = self._expression()
-                self._expect("COLON", "expected ':' after the comprehension key")
+                replace = self._separator("expected ':' after the comprehension key")
                 if self._at("NEWLINE"):
                     self._advance()
                     self._expect("INDENT", "indent the comprehension's value")
@@ -804,7 +899,7 @@ class Parser:
                     self._expect("NEWLINE", "expected end of line after the head")
                 return value
             body = self._frame_body(marker, head, "comprehension entry") if marker else head()
-        return self._clause(at, at.value, body, key, block=True)
+        return self._clause(at, at.value, body, key, block=True, replace=replace)
 
     def _group(self) -> Node:
         """`(value)` is the value (SPEC §5.6), as in Python. A tuple is not:
@@ -822,7 +917,7 @@ class Parser:
         self._expect("RPAREN", f"expected ')' to close the '(' at line "
                      f"{opener.line}, col {opener.col}, found "
                      f"{_describe(self._peek())}")
-        if isinstance(value, Expression) and value.op in ("subscript", "suffix"):
+        if isinstance(value, Expression) and value.op in ("merge", "subscript", "suffix"):
             return self._expr(opener, "group", [value])
         return value
 
@@ -873,14 +968,15 @@ class Parser:
                 self._akan(_bad_key_msg(key_tok), key_tok)
             self._advance()
             label = self._advance() if self._at("LABEL") else None
-            self._expect("COLON", f"expected ':' after the key "
-                                  f"{key_tok.value!r}")
+            replace = self._separator(f"expected ':' after the key "
+                                      f"{key_tok.value!r}")
             if multimap and label is not None:
                 self._akan("a slot in a multimap entry is reserved (SPEC §9)", label)
             key = self._check_key(key_tok, {} if multimap else first_line)
             value = self._slot(label, self._flow_value(), key_tok)
             pairs.append(Pair(key_tok.line, key_tok.col, key, value,
-                              key_tok.lexeme, named=key_tok.kind == "NAME"))
+                              key_tok.lexeme, named=key_tok.kind == "NAME",
+                              replace=replace))
             if self._at("COMMA"):
                 self._advance()                  # trailing comma is fine
             elif not self._at("RBRACE"):
