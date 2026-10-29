@@ -218,8 +218,8 @@ def test_a_resolution_error_survives_the_loader():
 
 
 def test_the_package_exposes_the_everyday_api():
-    for name in ("load", "loads", "dump", "dumps", "Template", "OrderedMultimap",
-                 "parse", "Tree", "merge"):
+    for name in ("load", "loads", "dump", "dumps", "dump_safe", "Template",
+                 "OrderedMultimap", "parse", "Tree", "merge"):
         assert name in yapyon.__all__ and hasattr(yapyon, name)
 
 

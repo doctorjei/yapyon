@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ._digits import decimal_text
+from ._digits import decimal_digits, decimal_text
 from ._width import text_width
 from .parser import (AkanError, Comprehension, Copy, Expression, Mapping, Merge,
                      MultiMap, Node, Pair, Scalar, Sequence, Slot, YString,
@@ -54,6 +54,7 @@ _SHORT = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
 class _Limit:
     def __init__(self, maximum):
         self.maximum, self.used = maximum, 0
+        self.flow_failures = {}
 
     def check(self, size):
         if size > self.maximum - self.used:
@@ -246,12 +247,17 @@ def _block_lines(value: str, level: int, limit=None) -> list[str]:
     """
     anchor = _pad(level + 1, limit)
     body, size = ['"""'], 4
-    start = 0
+    start, first_content = 0, True
     while True:
         end = value.find("\n", start)
         last = end < 0
         text = value[start:] if last else value[start:end]
-        line = _join((anchor, _escape_str(text, limit=limit)), limit) if text else ""
+        spelling = _escape_str(text, limit=limit)
+        if text and first_content:
+            if text.startswith(" "):
+                spelling = _join(("\\x20", spelling[1:]), limit)
+            first_content = False
+        line = _join((anchor, spelling), limit) if text else ""
         if last:
             line = _join((line or anchor, '"""'), limit)
         if limit is not None:
@@ -263,17 +269,55 @@ def _block_lines(value: str, level: int, limit=None) -> list[str]:
         start = end + 1
 
 
+def _scalar_parts(node):
+    if node.type == "int":
+        yield decimal_text(node.value)
+    elif node.type in ("float", "bool", "none"):
+        yield repr(node.value)
+    elif node.type in ("str", "bytes"):
+        yield '"' if node.type == "str" else 'b"'
+        yield from _escaped(node.value, '"', binary=node.type == "bytes")
+        yield '"'
+    else:
+        raise Yakamashiwa(f"cannot emit scalar of type {node.type!r}")
+
+
 def _scalar(node: Scalar, limit=None) -> str:
     """Canonical form (§4.4), for a scalar that has no lexeme."""
-    if node.type == "int":                    # §3.1: never the host's limit
-        return decimal_text(node.value)
-    if node.type in ("float", "bool", "none"):
-        return repr(node.value)
-    if node.type == "bytes":
-        return _join(('b"', _escape_bytes(node.value, limit=limit), '"'), limit)
-    if node.type == "str":
-        return _join(('"', _escape_str(node.value, limit=limit), '"'), limit)
-    raise Yakamashiwa(f"cannot emit scalar of type {node.type!r}")
+    return _join(_scalar_parts(node), limit)
+
+
+def _flow_scalar(node, width, limit):
+    failures = limit.flow_failures if limit is not None else {}
+    if failures.get(id(node), -1) >= width:
+        return None
+
+    def refuse(ceiling=width):
+        failures[id(node)] = max(failures.get(id(node), -1), ceiling)
+        return None
+
+    if node.lexeme:
+        if "\n" in node.lexeme:
+            return refuse(WIDTH)
+        parts = (node.lexeme[start:start + 1024]
+                 for start in range(0, len(node.lexeme), 1024))
+    else:
+        if node.type == "int" and decimal_digits(node.value) + (node.value < 0) > width:
+            return refuse()
+        parts = _scalar_parts(node)
+    out, measured, size = [], 0, 0
+    for part in parts:
+        measured += text_width(part)
+        if measured > width:
+            return refuse()
+        if limit is not None:
+            size += len(part.encode("utf-8"))
+            if size > limit.maximum - limit.used:
+                return refuse(WIDTH)
+        out.append(part)
+    if not node.lexeme and node.type == "str" and _block_ok(node.value):
+        return refuse(WIDTH)
+    return _join(out, limit)
 
 
 def _lexeme_lines(lexeme: str, level: int) -> list[str]:
@@ -383,6 +427,10 @@ def _flow(node: Node, source: str | None, *, unresolved=False, limit=None):
             pending.append(("items", (iter(value.items), True)))
         elif isinstance(value, (Mapping, MultiMap)):
             return None
+        elif isinstance(value, Scalar):
+            text = _flow_scalar(value, WIDTH - width, limit)
+            if text is None:
+                return None
         else:
             lines = _inline(value, 0, source, unresolved=unresolved, limit=limit)
             if lines is None or len(lines) != 1:

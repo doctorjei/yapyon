@@ -69,6 +69,25 @@ def test_multimap_order_repetition_and_key_kind_survive():
         ("same", True), ("same", False), ("other", True)]
 
 
+def test_duplicate_string_payloads_cannot_emit_an_invalid_dictionary():
+    class Separate(str):
+        __hash__ = object.__hash__
+        __eq__ = object.__eq__
+
+    first, second = Separate("same"), Separate("same")
+    value = {first: 1, second: 2}
+    assert len(value) == 2
+    with pytest.raises(ValueError, match="duplicate exact string-key"):
+        yapyon.dumps(value)
+
+
+def test_invalid_multimap_key_provenance_is_refused():
+    value = yapyon.OrderedMultimap()
+    value.insert("name", 1)._named = "not-a-flag"
+    with pytest.raises(ValueError, match="provenance"):
+        yapyon.dumps(value)
+
+
 def test_empty_multimap_round_trips():
     value = yapyon.OrderedMultimap()
     assert yapyon.dumps(value) == "{+}\n"

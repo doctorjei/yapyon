@@ -25,7 +25,7 @@ from .loader import (is_record, load, load_record, loads, loads_record,
                     lookup, tier_of)
 from .tree import Handle, Key, Tree, merge, parse, parse_file
 from .emitter import emit
-from .export import dump, dumps
+from .export import dump, dump_safe, dumps
 from .expand import expand_record
 from .contract import Contract, load_contract, loads_contract
 from .environment import (ENV_ALL, POSIX_STANDARD_ENV, STANDARD_ENV,
@@ -42,7 +42,7 @@ __all__ = [
     # what this install's identifier tables are (GRAMMAR §G4.1)
     "UNICODE_VERSION",
     # the everyday API
-    "load", "loads", "dump", "dumps", "Template", "Hole", "OrderedMultimap",
+    "load", "loads", "dump", "dumps", "dump_safe", "Template", "Hole", "OrderedMultimap",
     # records — the fixed, literal-only form
     "load_record", "loads_record", "is_record",
     # a document read but not resolved: walk, merge, fill, resolve (SPEC §15)

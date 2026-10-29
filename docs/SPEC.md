@@ -253,7 +253,9 @@ of a call — the writer uses its **canonical form**:
   value contains a newline and the block form can hold it unambiguously — that
   is, no whitespace-only-but-non-empty line, no `"""` in the content, and no
   trailing `"`. A value ending in a newline puts the closing delimiter on its
-  own line at the anchor.
+  own line at the anchor. If the first nonempty content line begins with a
+  data space, write its first space as `\x20`, so the scanner's dedent anchor
+  counts only the writer's indentation, not the string's leading data.
 - **Escape only what must be escaped**: `\` and the enclosing quote, plus
   characters below U+0020 and U+007F. Everything else stays literal, so UTF-8
   remains readable — `"café"`, never `"café"`.
