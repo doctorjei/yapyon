@@ -551,7 +551,10 @@ atomic file replacement.
 `dump_safe(value, path, ...)` accepts a string or `os.PathLike` returning a string
 and writes UTF-8. Its verified protection implementation is currently **Linux-only**;
 other platforms raise `OSError` with `ENOTSUP` before changing the destination.
-The following complete example runs where those protections are supported:
+Unrecognized filesystem access metadata, including NFSv4 ACLs, also causes a
+safe refusal; verified support covers ordinary Linux mode bits and POSIX ACLs,
+not every filesystem mounted on Linux. The following complete example runs
+where those protections are supported:
 
 ```python
 from pathlib import Path

@@ -421,6 +421,26 @@ def test_ownership_preservation_is_verified_not_assumed_after_chown(tmp_path, mo
     _recovery(caught.value, 1)
 
 
+def test_unknown_filesystem_acl_is_refused_with_complete_private_recovery(tmp_path, monkeypatch):
+    destination = tmp_path / "unknown-acl.yap"
+    destination.write_bytes(b"old")
+    identity = destination.stat().st_ino
+    original = _safe.os.listxattr
+
+    def attributes(fd):
+        if isinstance(fd, int) and os.fstat(fd).st_ino == identity:
+            return ["system.nfs4_acl"]
+        return original(fd)
+
+    monkeypatch.setattr(_safe.os, "listxattr", attributes)
+    with pytest.raises(OSError) as caught:
+        yapyon.dump_safe(42, destination)
+    assert caught.value.errno == errno.ENOTSUP
+    assert "unrecognized filesystem access metadata" in str(caught.value)
+    assert destination.read_bytes() == b"old"
+    _recovery(caught.value, 42)
+
+
 def test_security_label_mismatch_is_refused_without_changing_original(tmp_path, monkeypatch):
     destination = tmp_path / "labeled.yap"
     destination.write_bytes(b"old")
