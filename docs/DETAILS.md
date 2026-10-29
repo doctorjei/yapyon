@@ -6,8 +6,11 @@
 merge/source composition and unfinished persistence, with host-value record
 export. The lexer, parser, resolver, loader, emitter, four serializers,
 contracts, and trees with slots share the format's merge rules; the suite and
-**121 portable corpus cases** exercise those contracts. Python 3.11 is the
-minimum supported version. Core runtime dependencies are the standard library.
+**121 portable corpus cases** exercise those contracts. The validated source
+suite executes **3540 tests**, with zero skips on Python 3.11, 3.13, and 3.14
+using the supported POSIX test filesystem. Unsupported-ACL refusal and recovery
+are tested separately as well. Python 3.11 is the minimum supported version.
+Core runtime dependencies are the standard library.
 
 **The normative specification is published, in two documents under
 [`docs/`](./):**
