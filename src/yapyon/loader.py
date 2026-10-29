@@ -44,6 +44,7 @@ import os
 
 from ._keys import KeyMap, is_named, key_error, name_key
 from ._digits import REFUSE_DIGITS
+from ._values import PathAkan as _PathAkan, scalar_kind
 from .contract import Functions
 from .environment import STANDARD_ENV, environment
 from .lexer import (AkanError, Lexer, Ref, RefError, Yakamashiwa, fold_name,
@@ -304,19 +305,6 @@ def load_record(fp, *, warn=None, max_digits: int = REFUSE_DIGITS,
 # --------------------------------------------------------------------------- #
 # §5.2's scope search, over a loaded tree
 # --------------------------------------------------------------------------- #
-class _PathAkan(AkanError):
-    """An akan located by a path in a loaded tree, which has no lines.
-
-    Still an `AkanError`, so a consumer's existing handler catches it; `line`
-    and `col` are None because there is no source text to point into.
-    """
-
-    def __init__(self, msg: str, where: str):
-        Exception.__init__(self, f"akan: at {where}: {msg}")
-        self.msg, self.line, self.col, self.source = msg, None, None, None
-        self.where = where
-
-
 class _PathResolver(Resolver):
     """The resolver, reporting at a path instead of a line and column.
 
@@ -441,19 +429,12 @@ def _wrap(value, current, chain: list, path: list, hits: list):
     elif isinstance(value, list):
         node = Sequence(0, 0, [_wrap(item, current, chain, path + [i], hits)
                                for i, item in enumerate(value)])
-    elif isinstance(value, bool):                # before int: bool is an int
-        node = Scalar(0, 0, "bool", value)
-    elif value is None:
-        node = Scalar(0, 0, "none", None)
     else:
-        for kind, types in (("str", str), ("bytes", (bytes, bytearray)),
-                            ("int", int), ("float", float)):
-            if isinstance(value, types):
-                node = Scalar(0, 0, kind, value)
-                break
-        else:
+        kind = scalar_kind(value, allow_bytearray=True)
+        if kind is None:
             raise _PathAkan(f"a {type(value).__name__} is not yapyon data, "
                             f"so the tree cannot be searched", _where(path))
+        node = Scalar(0, 0, kind, value)
     if value is current:
         hits.append((node, chain, path))
     return node

@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .parser import Mapping, MultiMap, Node, ResolvedTemplate, Scalar, Sequence
+from ._values import scalar_kind
 
 SCALARS = ("str", "bytes", "int", "float", "bool", "None", "Any")
 CONTAINERS = ("list", "dict", "multimap")
@@ -243,14 +244,9 @@ def _node_children(node: Node) -> list:
 def value_kind(value) -> str:
     """The §13.3 name of a host value a function returned."""
     from .multimap import OrderedMultimap
-    if value is None:
-        return "None"
-    if isinstance(value, bool):
-        return "bool"
-    for py, name in ((int, "int"), (float, "float"), (str, "str"),
-                     (bytes, "bytes")):
-        if isinstance(value, py):
-            return name
+    kind = scalar_kind(value)
+    if kind is not None:
+        return "None" if kind == "none" else kind
     if isinstance(value, OrderedMultimap):
         return "multimap"
     if isinstance(value, dict):
