@@ -24,7 +24,7 @@ WARN_DIGITS = 4300
 #: threshold and documented, and this is the documentation.
 REFUSE_DIGITS = 4 * WARN_DIGITS
 
-_CHUNK = 1000          # digits per host conversion: far below any host limit
+_CHUNK = 500           # CPython permits a conversion ceiling as low as 640.
 
 
 def int_from_decimal(digits: str) -> int:

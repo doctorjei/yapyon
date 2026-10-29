@@ -12,7 +12,7 @@ import math
 from ._digits import REFUSE_DIGITS, WARN_DIGITS, decimal_digits
 from ._keys import KeyMap, key_error, name_key
 from ._values import PathAkan, scalar_kind
-from .emitter import _lines
+from .emitter import _emit_prepared
 from .lexer import fold_name
 from .multimap import OrderedMultimap
 from .parser import Mapping, MultiMap, Pair, Scalar, Sequence
@@ -35,7 +35,7 @@ def _options(max_digits, max_depth, max_size, warn):
                                  ("max_size", max_size, 1)):
         if not isinstance(value, int) or isinstance(value, bool):
             raise TypeError(f"{name} must be an integer")
-        if value < minimum:
+        if int.__int__(value) < minimum:
             raise ValueError(f"{name} must be at least {minimum}")
     if warn is not None and not callable(warn):
         raise TypeError("warn must be callable or None")
@@ -90,6 +90,8 @@ def _key(value, named, path, budget):
     if why:
         raise ValueError(f"at {path}: {why}")
     exact_name = name_key(value) and fold_name(value) == value
+    if named is not None and not isinstance(named, bool):
+        raise ValueError(f"at {path}: inconsistent key-kind provenance")
     if named is None:
         named = exact_name
     elif named and not exact_name:
@@ -215,15 +217,7 @@ def _adapt(value, options):
 
 
 def _prepare(value, options):
-    node = _adapt(value, options)
-    out, size = [], 0
-    for line in _lines(node, 0, None):
-        size += len(line.encode("utf-8")) + 1
-        if size > options.max_size:
-            raise ValueError(f"serialized UTF-8 exceeds max_size of "
-                             f"{options.max_size} bytes")
-        out.append(line + "\n")
-    return "".join(out)
+    return _emit_prepared(_adapt(value, options), options.max_size)
 
 
 def dumps(value, *, max_digits=REFUSE_DIGITS, max_depth=MAX_DEPTH,
