@@ -9,11 +9,13 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ---
 
-## 0.6.0.dev0 — Unreleased
+## Unreleased
+
+## 0.6.0.dev0 — 2026-10-29
 
 Development prerelease targeting specification and grammar **v0.6** for
-merge/source composition and unfinished persistence. This section records
-unreleased work, not a publication claim.
+merge/source composition and unfinished persistence. Host-value `dump`/`dumps`
+APIs are not included.
 
 ### Changed — breaking
 
