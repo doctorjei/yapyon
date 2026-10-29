@@ -758,7 +758,59 @@ The second argument is the node you are holding; the answer is the one a
 y-string written inside that node would get. It is the resolver's own
 search, so the two cannot disagree.
 
-## 12. Where next
+## 12. Exporting Python data
+
+When the starting point is Python values rather than unfinished document source,
+`dumps` writes a record using the same canonical emitter:
+
+```pycon
+>>> settings = {"name": "gw", "ports": [8080, 8443], "enabled": True}
+>>> text = yapyon.dumps(settings)
+>>> print(text, end="")
+name: "gw"
+ports: [8080, 8443]
+enabled: True
+>>> yapyon.loads_record(text) == settings
+True
+```
+
+All nine record data kinds are supported, including bytes and ordered multimaps.
+Keys keep their exact string values and known loaded name/non-name kind. Nothing
+is pruned, merged, implicitly stringified, or evaluated. A `Template`, unresolved
+`Tree`, or unsupported host object is refused instead of guessed at.
+
+Python code can supply the same mutable container in two places. Export writes
+its contents independently, not an alias:
+
+```pycon
+>>> shared = [1, 2]
+>>> restored = yapyon.loads_record(yapyon.dumps({"first": shared, "second": shared}))
+>>> restored["first"].append(3)
+>>> restored["second"]
+[1, 2]
+>>> shared
+[1, 2]
+```
+
+A container containing itself is a cycle and raises `AkanError` with a data path.
+Export limits bound container depth, decimal digits, and actual output UTF-8
+bytes, including the final newline. These are not the resolver's dependency
+metrics. Input is not mutated or locked: callers who need a consistent view during
+concurrent mutation must use their own shared lock.
+
+`dump(value, fp)` writes to a caller-owned text stream, without closing or flushing
+it. `dump_safe(value, path)` adds checked UTF-8 file replacement: preserve the
+original until complete output is ready, follow destination symlinks, and retain
+private recovery data with useful native errors if replacement fails. Verified
+file-protection support is currently Linux-only; unsupported platforms fail
+without replacing the destination. See the [complete safe-file example and
+limits](DETAILS.md#exporting-python-values).
+
+Keep the three jobs separate: `Tree.to_source()` saves unfinished source,
+`emit()` preserves record-tree lexemes, and the export functions write host data
+whose authored literal spellings are no longer available.
+
+## 13. Where next
 
 - [`SPEC.md`](SPEC.md) — what everything means, including the parts this
   tutorial skipped: expansion limits (§5.3), identifier folding (§7), and

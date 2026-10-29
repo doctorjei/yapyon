@@ -31,7 +31,7 @@ from .contract import Contract, load_contract, loads_contract
 from .environment import (ENV_ALL, POSIX_STANDARD_ENV, STANDARD_ENV,
                           WINDOWS_STANDARD_ENV)
 
-__version__ = "0.6.0.dev0"
+__version__ = "0.6.0"
 
 #: GRAMMAR §G4.1 asks every implementation to document where its identifier
 #: tables come from. yapyon's are generated from this Unicode version by

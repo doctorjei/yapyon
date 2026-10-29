@@ -44,6 +44,23 @@ It can be quickly tested, too:
 
 The `loads` and `load` functions return plain Python. Types include builtin Python types as well as `OrderedMultimap` (`+`-syntax) and `Template` (`yt`-string).
 
+Python data can be saved as a record, without evaluating document expressions:
+
+```python
+>>> text = yapyon.dumps({"name": "gw", "ports": [8080, 8443]})
+>>> print(text, end="")
+name: "gw"
+ports: [8080, 8443]
+>>> yapyon.loads_record(text)
+{'name': 'gw', 'ports': [8080, 8443]}
+```
+
+`dump(value, fp)` writes to an already-open text stream. `dump_safe(value, path)`
+adds checked file replacement and recovery reporting; its verified file-protection
+support is currently Linux-only. See [exporting Python values](docs/DETAILS.md#exporting-python-values)
+for limits, permissions, recovery, and caller-owned input synchronization.
+Use `Tree.to_source()` instead when unfinished expressions or slots must survive.
+
 Some other quick commands:
 ```
 $ python -m yapyon record examples/registry.yap  # A Yapyon record
@@ -81,7 +98,7 @@ Yapyon has no ambient scope nor includes and is built to be completely auditable
 
 ## Value composition and unfinished source
 
-The **`0.6.0.dev0` development line** adds explicit composition and faithful
+The **`0.6.0` line** adds explicit composition and faithful
 saving of unfinished layers. `|` combines complete values; `:` uses ordinary
 combination at a field, while `:=` replaces that field's complete value:
 

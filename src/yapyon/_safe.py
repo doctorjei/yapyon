@@ -207,6 +207,8 @@ def _recover(candidate, data, error):
     if retained and candidate.complete:
         return candidate
     if not isinstance(error, OSError):
+        if candidate.path is None:
+            _discard(candidate, error)
         return candidate if retained else _Candidate()
     fallback = _Candidate()
     fallback_retained = False
@@ -228,10 +230,15 @@ def _recover(candidate, data, error):
                 _discard(fallback, error)
             return candidate
         if fallback_retained:
-            error.add_note(f"Original staging data may remain at {candidate.directory!r}")
+            if candidate.path is None:
+                _discard(candidate, error)
+            else:
+                error.add_note(f"Original staging data may remain at {candidate.directory!r}")
             return fallback
         for item in (candidate, fallback):
-            if item.path is not None:
+            if item.path is None:
+                _discard(item, error)
+            else:
                 error.add_note(f"Staging data may remain at {item.path!r}; "
                                "privacy, accessibility, and completeness are unverified")
         return _Candidate()

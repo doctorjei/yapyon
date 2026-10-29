@@ -11,6 +11,60 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+## 0.6.0 — 2026-10-29
+
+Built to specification and grammar **v0.6**. Includes the merge/source changes
+introduced in 0.6.0.dev0 and adds host-value export. The published development
+artifacts remain unchanged.
+
+### Changed — breaking
+
+- **Collection merging (§15.2)** combines lists by complete typed elements and
+  multimaps by complete key/value pairs. Equal items keep the greater per-input
+  occurrence count, stable earlier positions, and the complete higher
+  representation. This is not positional merging or accumulating duplicates.
+  Merge equality distinguishes `True`, `1`, and `1.0`.
+- **None and compatible empty containers yield** to populated containers under
+  ordinary combination. Use field replacement to force `None` or an empty
+  collection. Other noncombining kinds retain the higher complete value.
+- **Copies and calls merge by eventual value kind**, as literal contributions
+  do, rather than by their parser-node class. No computation runs during merging
+  or unfinished-source saving.
+
+### Added
+
+- **Field replacement and grouped composition:** `key:= value` replaces a
+  complete field; `|` composes complete values at the lowest value-expression
+  precedence. Grouping preserves non-associative composition. Faithful source
+  layers retain deferred keys, comprehensions, replacement, lexical scope, and
+  sequential slot operations. See the dev0 entry for the complete merge/source
+  semantics and remaining historical-fill/unattached-slot save refusals.
+- **`dumps(value)` and conventional `dump(value, fp)`** export supported Python
+  data as canonical, newline-terminated records. Exact keys and loaded key-kind
+  provenance survive. Types, order, repetitions, empty values, and `None` are
+  preserved without evaluation, pruning, sorting, or implicit adapters.
+  Shared acyclic inputs become independent occurrences; actual cycles are
+  path-located akan. Configurable decimal-digit, container-depth, and actual
+  UTF-8 output limits are enforced before unbounded preparation/emission.
+- **`dump_safe(value, path)`** wraps shared preparation with checked UTF-8 file
+  replacement. It follows symlinks, stages inside a private directory, preserves
+  verified access controls, and retains private recovery data with native errors,
+  recovery paths, and honest replacement-outcome notes. Protection verification
+  is currently **Linux-only**; unsupported platforms/protections are refused
+  rather than silently weakened. No filesystem lock or sudden-power-loss
+  durability is promised. Caller-owned synchronization protects mutable input.
+
+### Fixed
+
+- Canonical block strings preserve backslashes, control characters, and leading
+  data spaces on their anchor-setting line. Such spaces no longer disappear or
+  make emitted source impossible to reload.
+- Shared decimal conversion works even when CPython's configurable conversion
+  limit is set to its minimum of 640 digits.
+- Shared emission traverses deeply nested record data without depending on the
+  host recursion limit, and speculative flow layout stops formatting values that
+  cannot fit instead of repeatedly materializing large rejected bodies.
+
 ## 0.6.0.dev0 — 2026-10-29
 
 Development prerelease targeting specification and grammar **v0.6** for

@@ -819,6 +819,91 @@ def test_partial_local_write_prefers_complete_fallback_when_retry_succeeds(
     assert list(tmp_path.iterdir()) == [destination]
 
 
+@pytest.mark.parametrize("exception_type", [PermissionError, KeyboardInterrupt])
+def test_failure_before_record_creation_cleans_owned_empty_staging_directories(
+        tmp_path, monkeypatch, private_fallback_directory, exception_type):
+    destination = tmp_path / "existing.yap"
+    destination.write_bytes(b"old")
+    failure = exception_type("directory protection failed")
+    original = _safe._private
+    calls = []
+
+    def private(fd, mode=0o600):
+        if mode == 0o700:
+            calls.append(fd)
+            if len(calls) == 1:
+                raise failure
+            raise PermissionError("fallback protection failed")
+        return original(fd, mode)
+
+    monkeypatch.setattr(_safe, "_private", private)
+    with pytest.raises(exception_type) as caught:
+        yapyon.dump_safe(42, destination)
+    assert caught.value is failure
+    assert failure.recovery_path is None
+    assert destination.read_bytes() == b"old"
+    assert list(tmp_path.iterdir()) == [destination]
+    assert list(private_fallback_directory.iterdir()) == []
+
+
+def test_uncreated_primary_record_is_cleaned_when_only_partial_fallback_survives(
+        tmp_path, monkeypatch, private_fallback_directory):
+    destination = tmp_path / "existing.yap"
+    destination.write_bytes(b"old")
+    failure = PermissionError("primary protection failed")
+    original = _safe._private
+    first = []
+
+    def private(fd, mode=0o600):
+        if mode == 0o700 and not first:
+            first.append(True)
+            raise failure
+        return original(fd, mode)
+
+    def write(*args):
+        raise OSError(errno.ENOSPC, "fallback write failed")
+
+    monkeypatch.setattr(_safe, "_private", private)
+    monkeypatch.setattr(_safe.os, "write", write)
+    with pytest.raises(PermissionError) as caught:
+        yapyon.dump_safe(42, destination)
+    assert caught.value is failure
+    assert destination.read_bytes() == b"old"
+    assert list(tmp_path.iterdir()) == [destination]
+    path = Path(failure.recovery_path)
+    assert path.parent.parent == private_fallback_directory
+    assert path.read_bytes() == b""
+    assert "not confirmed complete" in _notes(failure)
+
+
+def test_empty_directory_cleanup_failure_is_reported_without_masking_original(
+        tmp_path, monkeypatch):
+    destination = tmp_path / "existing.yap"
+    destination.write_bytes(b"old")
+    failure = PermissionError("directory protection failed")
+    original = _safe._private
+
+    def private(fd, mode=0o600):
+        if mode == 0o700:
+            raise failure
+        return original(fd, mode)
+
+    def remove(*args, **kwargs):
+        raise OSError(errno.EACCES, "directory cleanup denied")
+
+    monkeypatch.setattr(_safe, "_private", private)
+    monkeypatch.setattr(_safe.os, "rmdir", remove)
+    with pytest.raises(PermissionError) as caught:
+        yapyon.dump_safe(42, destination)
+    assert caught.value is failure
+    assert failure.recovery_path is None
+    assert destination.read_bytes() == b"old"
+    remaining = [path for path in tmp_path.iterdir() if path != destination]
+    assert len(remaining) == 1
+    assert str(remaining[0]) in _notes(failure)
+    assert "cleanup failed" in _notes(failure)
+
+
 def test_unverified_platform_is_refused_without_claiming_private_recovery(tmp_path, monkeypatch):
     destination = tmp_path / "new.yap"
     with monkeypatch.context() as patch:

@@ -2,15 +2,12 @@
 
 ## Status
 
-**Development target: `0.6.0.dev0`**, implementing specification and grammar
-**v0.6** for merge/source composition and unfinished persistence. This status
-is not a claim of publication. The lexer, parser, resolver, loader, emitter,
-four serializers, contracts, and trees with slots share the format's merge
-rules; the suite and portable corpus exercise those contracts.
-
-The development source tree passes **3129 tests**, with zero skips on Python
-3.13, including **121 corpus cases**. This is local validation, not publication.
-The last verified published baseline remains **`0.5.3` (2026-10-25)**.
+**Version `0.6.0`**, implementing specification and grammar **v0.6** for
+merge/source composition and unfinished persistence, with host-value record
+export. The lexer, parser, resolver, loader, emitter, four serializers,
+contracts, and trees with slots share the format's merge rules; the suite and
+**121 portable corpus cases** exercise those contracts. Python 3.11 is the
+minimum supported version. Core runtime dependencies are the standard library.
 
 **The normative specification is published, in two documents under
 [`docs/`](./):**
@@ -467,6 +464,138 @@ normalization. **Comments do not survive**, so this is a normalizer rather
 than a round-tripper. `yapyon.emit` is the same thing as a function. A
 non-record is refused at the offending computation, with the record rule
 as the reason; authored pipes are not silently evaluated.
+
+## Exporting Python values
+
+Use `dumps` for text, conventional `dump` for an already-open text stream, and
+`dump_safe` for checked file replacement:
+
+```python
+>>> value = {"name": "gw", "ports": [8080, 8443], "enabled": True}
+>>> text = yapyon.dumps(value)
+>>> print(text, end="")
+name: "gw"
+ports: [8080, 8443]
+enabled: True
+>>> yapyon.loads_record(text) == value
+True
+>>> import io
+>>> fp = io.StringIO()
+>>> yapyon.dump(value, fp)
+>>> fp.getvalue() == text
+True
+>>> fp.closed
+False
+```
+
+All three functions share the same adaptation and canonical emitter. They write
+records without environment access, function calls, merging, or expression
+resolution. `Tree.to_source()` saves unfinished source; `emit()` normalizes a
+record tree and preserves its authored lexemes; host export has no authored
+literal spellings to preserve.
+
+### Data and keys
+
+Accepted recursively: `str`, `int`, finite `float`, `bool`, `None`, `bytes`,
+`list`, `dict`, and `OrderedMultimap`. Any supported value may be the root.
+Order, repetitions, empty containers, `None`, zero, and `False` survive. There
+is no pruning, sorting, implicit string conversion, or custom-adapter protocol.
+`Template`, unresolved `Tree`, tuples, sets, bytearrays, memoryviews, and arbitrary
+objects are not implicitly converted. Explicitly adapt other host objects first.
+
+Keys remain exact strings. A plain Python dictionary uses a bare name only
+when that spelling preserves the exact key; otherwise it quotes the key.
+Known loaded name/non-name provenance survives. Quoted keys do not become names,
+and invalid or inconsistent provenance is refused rather than silently folded.
+Non-string, empty, dunder, and `@`-prefixed keys remain invalid.
+
+Shared acyclic Python containers are accepted as independently serialized
+occurrences. Reloading does not preserve their mutable identity. Actual container
+cycles raise `AkanError` with the current and ancestor data paths, without
+invented source coordinates. Unsupported kinds/non-string keys/options are
+`TypeError`; invalid text, nonfinite numbers, invalid provenance, and exceeded
+export limits are `ValueError`. Text cannot contain lone surrogates.
+
+### Export limits and input consistency
+
+Each function accepts the same keyword options:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `max_digits` | 17,200 | Maximum decimal integer digits; at least 4,300 |
+| `max_depth` | 128 | Nested container levels; root container is 1, scalar root is 0 |
+| `max_size` | 4 MiB | Actual serialized UTF-8 bytes, including layout, escapes, and final newline |
+| `warn` | `None` | Optional warning callback; integers above 4,300 decimal digits warn |
+
+Limits require integers, not booleans; depth and size must be positive. `warn`
+is `None` or callable. These are export-specific metrics, not resolver dependency
+or expansion metrics. They are independent of CPython's decimal conversion setting
+and of an eventual stream's encoding. Adaptation and shared emission are bounded
+before unbounded graph expansion or output allocation. Callback failures propagate.
+
+**The exporter does not mutate or lock its input.** Keep the entire input stable
+until serialization completes. If another thread can mutate it and you need a
+consistent view, use your own shared lock around saving and every mutation.
+Copying data during an unsynchronized traversal is not an atomic snapshot.
+Safe file replacement does not synchronize the Python input.
+
+### Streams and safe files
+
+`dump(value, fp, ...)` validates/prepares complete text before one `fp.write`.
+It does not close, flush, or retry the caller's stream. A reported integer short
+or inconsistent count is `OSError`; a writer returning `None` follows that
+protocol. Native write/encoding failures propagate. Opening a file with `"w"`
+may already truncate it before `dump` runs; conventional stream output is not
+atomic file replacement.
+
+`dump_safe(value, path, ...)` accepts a string or `os.PathLike` returning a string
+and writes UTF-8. Its verified protection implementation is currently **Linux-only**;
+other platforms raise `OSError` with `ENOTSUP` before changing the destination.
+The following complete example runs where those protections are supported:
+
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import yapyon
+
+value = {"port": 8080}
+with TemporaryDirectory() as directory:
+    path = Path(directory) / "settings.yap"
+    yapyon.dump_safe(value, path)
+    with path.open(encoding="utf-8") as fp:
+        restored = yapyon.load_record(fp)
+    print(restored)
+```
+
+Output:
+
+```text
+{'port': 8080}
+```
+
+The destination is not truncated while output is prepared. A complete candidate
+is written and closed inside a private `0700` staging directory; replacement
+publishes it only afterward. New destinations are owner-only (`0600`). Existing
+Linux ownership, permission bits, POSIX access ACLs, and security labels must be
+preserved or verified equal; unsupported protections and special-mode targets
+are refused rather than silently weakened. The directory keeps the candidate
+private even while its final access permissions are being prepared.
+
+Existing destination symlinks are followed and left intact; replacement affects
+the selected target. Other hard links to an old inode continue naming that old
+file. Detected destination/path changes cause failure rather than a blind
+replacement, but these checks are not a filesystem lock or protection against
+hostile last-instant pathname races. No sudden-power-loss durability is promised.
+
+On filesystem failure the native exception is preserved and gains `recovery_path`
+(a retained file path, or `None`) and explanatory exception notes. Notes identify
+the actual target, failed operation, retained data, completeness, and observed or
+uncertain replacement outcome. Recoverable files remain private; if local staging
+fails or is incomplete, a complete private fallback is attempted when possible.
+An interruption closes owned descriptors without heavy fallback retries. A rename
+error is not falsely described as proof that no replacement occurred, and cleanup
+errors after publication explicitly report that replacement completed. The library
+does not print errors; callers decide how to show or handle them.
 
 ## Limits
 
