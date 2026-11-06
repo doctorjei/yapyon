@@ -201,6 +201,14 @@ def _combine(earlier, later, *, collections=False, charge=None, depth=1):
         return earlier
     if a is not None and b is not None:
         if a == b and a in ("list", "multimap"):
+            original = earlier.items if a == "list" else earlier.entries
+            incoming = later.items if a == "list" else later.entries
+            if not original or not incoming:
+                kept = original or incoming
+                if charge is not None:
+                    for item in kept:
+                        charge(item)
+                return _collection_result(earlier, later, list(kept))
             return collection_merge(earlier, later, charge=charge) if collections else _PENDING
         return later
     return _PENDING
@@ -290,6 +298,14 @@ def _fingerprint(node, charge=None):
     raise Yakamashiwa("duplicate comparison reached an unfinished value")
 
 
+def _collection_result(earlier, later, items):
+    cls = MultiMap if isinstance(earlier, MultiMap) else Sequence
+    result = cls(earlier.line, earlier.col, items)
+    result.source = earlier.source
+    result.fill_checks = earlier.fill_checks + later.fill_checks
+    return result
+
+
 def collection_merge(earlier, later, *, charge=None):
     multimap = isinstance(earlier, MultiMap)
     original = earlier.entries if multimap else earlier.items
@@ -308,11 +324,7 @@ def collection_merge(earlier, later, *, charge=None):
             out[matches.popleft()] = item
         else:
             out.append(item)
-    cls = MultiMap if multimap else Sequence
-    result = cls(earlier.line, earlier.col, out)
-    result.source = earlier.source
-    result.fill_checks = earlier.fill_checks + later.fill_checks
-    return result
+    return _collection_result(earlier, later, out)
 
 
 class FillCheck:

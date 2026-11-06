@@ -964,23 +964,24 @@ def test_reloaded_pending_layers_use_saved_locations_without_mutating_original_e
     assert handle.value == 3
 
 
-@pytest.mark.parametrize("text,record,tier", [
-    ("field:= {a: [1, 1]}", True, 1),
-    ("{field:\n =\n []}", True, 1),
-    ("{+ a:= 1, a: 1}", True, 1),
-    ('text: "| :=" # | {}', True, 1),
-    ("{} | {}", False, 2),
-    ("field: [1] | [2]", False, 2),
-    ("True or ({} | {})", False, 2),
-    ('field: yt"literal"', False, 3),
-    ("part<base>:= {}", False, 3),
+@pytest.mark.parametrize("text,record,tier,saved_tier", [
+    ("field:= {a: [1, 1]}", True, 1, 1),
+    ("{field:\n =\n []}", True, 1, 1),
+    ("{+ a:= 1, a: 1}", True, 1, 1),
+    ('text: "| :=" # | {}', True, 1, 1),
+    ("{} | {}", False, 2, 2),
+    ("field: [1] | [2]", False, 2, 2),
+    ("True or ({} | {})", False, 2, 2),
+    ('field: yt"literal"', False, 3, 3),
+    ("part<base>:= {}", False, 3, 3),
 ])
-def test_replacement_is_record_but_explicit_pipe_is_syntactically_at_least_ledger(text, record, tier):
+def test_replacement_is_record_but_explicit_pipe_is_syntactically_at_least_ledger(
+        text, record, tier, saved_tier):
     assert yapyon.is_record(text) is record
     assert yapyon.tier_of(text) == tier
     tree = parse(text)
     restored = _reload(tree)
-    assert yapyon.tier_of(tree.to_source()) == tier
+    assert yapyon.tier_of(tree.to_source()) == saved_tier
     if record:
         _assert_value(yapyon.loads_record(text), tree.resolve())
         normalized = yapyon.emit(tree)
@@ -1001,7 +1002,7 @@ def test_literal_api_record_emission_does_not_confuse_structural_merging_with_au
     authored = parse("{data: {a: 1}} | {data: {b: 2}}")
     with pytest.raises(AkanError, match="record"):
         yapyon.emit(authored)
-    assert "|" in authored.to_source()
+    assert authored.to_source() == 'data:\n  a: 1\n  b: 2\n  | {}\n| {}\n'
 
 
 def test_adding_a_key_to_an_explicit_pipe_edits_the_stored_program():

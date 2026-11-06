@@ -7,7 +7,7 @@ merge/source composition and unfinished persistence, with host-value record
 export. The lexer, parser, resolver, loader, emitter, four serializers,
 contracts, and trees with slots share the format's merge rules; the suite and
 **121 portable corpus cases** exercise those contracts. The validated source
-suite executes **3540 tests**, with zero skips on Python 3.11, 3.13, and 3.14
+suite executes **3650 tests**, with zero skips on Python 3.11, 3.13, and 3.14
 using the supported POSIX test filesystem. Unsupported-ACL refusal and recovery
 are tested separately as well. Python 3.11 is the minimum supported version.
 Core runtime dependencies are the standard library.
@@ -370,25 +370,54 @@ written. The original tree is unchanged.
 >>> saved = draft.to_source()
 >>> print(saved, end="")
 agent:
-  name: "base"
+  name: "local"
   desc: y"{name}"
   harness<chosen>: {}
-  |
-  name: "local"
+  | {}
 >>> resumed = yapyon.parse(saved, source="saved-agent.yap")
 >>> resumed["agent"]["harness"].fill(yapyon.parse('mode: "cli"'))
 >>> resumed.resolve()
 {'agent': {'name': 'local', 'desc': 'local', 'harness': {'mode': 'cli'}}}
 ```
 
-The pipe in the saved text retains the definition and override as distinct
-contributions. Saving likewise retains computed-key collisions across layers,
-comprehensions combined with other nonempty dictionaries, collection programs,
-and sequential slot operations. It preserves replacement intent and meaningful
-right grouping rather than collapsing them to a value that happens to work for
-one current filler. No lookup, environment access, function/cast/serializer,
-comprehension iteration, template rendering, or runtime duplicate comparison
-runs to produce source.
+The superseded `name` disappears, but `desc` remains an expression and the
+harness remains a slot. Saving uses the merge operation's structural facts to
+combine known-key dictionaries, select proven winners, and remove compatible
+empty-collection identities. It does not need to know what `name` resolves to
+in a later composition. Earlier key spelling, name/non-name kind, entry order,
+and explicit replacement intent survive.
+
+The small `| {}` marker is intentional. A dictionary program emptied by later
+edits must still behave as a program when reused as slot overrides, not become
+harmless literal `{}` that a slot skips. Keeping this distinction can require
+a marker even while the dictionary currently has fields. A plain dictionary
+selected by an incompatible-kind merge does not acquire such history. Thus
+compaction removes obsolete definitions without promising entirely pipe-free
+output.
+
+Simplification is conservative, not unconditional flattening. Computed-key
+validation domains, comprehensions combined with other nonempty dictionaries,
+nonempty collection comparisons, and sequential slot operations retain their
+necessary layers. An uncertain child can stay layered inside an otherwise
+simplified dictionary. A reset inside a sequential slot program must not become
+one premerged override; an ordinary kind reset must not invent `:=`. No lookup,
+environment access, function/cast/serializer, comprehension iteration, template
+rendering, or runtime duplicate comparison runs to produce source.
+
+Redundant authored pipes may disappear too. The output can therefore have a
+lower syntactic tier and less resource cost; a former resource-limit refusal
+need not recur. Semantic errors and later fill/edit/merge behavior still matter.
+The original tree's tier and the record-only emitter's rules are unchanged:
+
+```python
+>>> layered = yapyon.parse('1 | 2')
+>>> print(layered.to_source(), end="")
+2
+>>> yapyon.is_record(layered.to_source())
+True
+>>> yapyon.tier_of('1 | 2')
+2
+```
 
 Two states still have no faithful source spelling (SPEC §15.8):
 
@@ -409,8 +438,17 @@ remain record-only and never evaluate authored pipes to make them records.
 Data expansion/serializers consume composition into finished data instead;
 source writing preserves the unfinished program.
 
+**Known continuation limitation:** lifting sequential slot operations into
+surrounding dictionary layers does not preserve an originally literal parent's
+empty-override identity after every edit. If all of that parent's fields are
+removed after reloading and the emptied parent is then reused as another slot's
+overrides, a scalar filler may be replaced by `{}` where the unsaved parent
+leaves it intact. This implementation gap predates conservative compaction; it
+is not a new merge rule or a claim that ordinary saved-slot filling fails.
+
 Generated source uses two-space indentation, `key: value`, `key:= value`,
-and standalone pipes aligned with their contribution heads. It normalizes
+and pipes aligned with their contribution heads (`| {}` for a compact empty
+dictionary operand). It normalizes
 layout and loses comments. Reloaded diagnostics use the saved file's positions,
 not the original template files', and handles/key-location tokens belong to
 their original tree, not to its reloaded copy.

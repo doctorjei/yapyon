@@ -719,10 +719,18 @@ another dictionary is merged over it:
 
 Saving runs no lookup, environment read, function, cast, serializer,
 comprehension iteration, template rendering, or runtime duplicate comparison.
-The source retains its layers, replacement intent, lexical bindings, and
-meaningful grouping. Later fillers still control generated values; saving
-neither chooses a filler nor freezes one current result. Record emission and
-data serializers are different: they write finished data, not this program.
+The source retains necessary layers, replacement intent, lexical bindings,
+and meaningful grouping. Structurally redundant layers collapse: known-key
+dictionaries can combine, proven overwritten values disappear, and compatible
+empty collections yield without comparing elements. A minimal `| {}` can remain
+because a dictionary program must not become harmless literal empty slot
+overrides after later edits. Uncertain keys, generated
+entries, and sequential slot programs retain the boundaries they need. Later
+fillers still control generated values; saving neither chooses a filler nor
+freezes one current result. Removing redundant operations can lower the saved
+text's tier or resource cost; the original document's tier is unchanged. Record
+emission and data serializers are different: they write finished data, not
+this program.
 
 A labeled field's complete right-hand side is **one dictionary override
 contribution**. Sequential overrides of a slot are not interchangeable with

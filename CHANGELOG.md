@@ -11,6 +11,23 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+### Changed
+
+- **Conservative unfinished-source simplification (§15.8):** `Tree.to_source()`
+  combines structurally known dictionary contributions and removes proven
+  overwritten values and compatible empty-collection identities without
+  resolving expressions or comparing unfinished collection elements. Necessary
+  computed-key/comprehension boundaries, replacement intent, key provenance,
+  order, and sequential named/abstract-slot programs survive. Uncertain cases
+  remain layered; historical-fill and unattached-slot refusals are unchanged.
+  Minimal `| {}` markers retain dictionary-program identity even after later
+  edits empty a dictionary before it is reused as slot overrides. Output is
+  compact, not necessarily pipe-free.
+- Saved source may contain fewer authored pipes, have a lower syntactic tier,
+  and avoid resource refusals through reduced work. Original parsing, merge
+  meaning, `tier_of`, and record-only `emit()` behavior are unchanged. Source
+  text/layout compatibility is not promised; semantic continuation behavior is.
+
 ## 0.6.0 — 2026-10-29
 
 Built to specification and grammar **v0.6**. Includes the merge/source changes

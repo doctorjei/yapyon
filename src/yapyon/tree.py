@@ -200,11 +200,13 @@ class Tree:
     def to_source(self) -> str:
         """Write unfinished yapyon without resolving or changing this tree.
 
-        Expressions, grouped contributions, replacement operations, and
-        unfilled slots stay deferred. A completed fill's undecided historical
-        abstract-slot obligation remains akan at save time (§15.8).
-        Layout/comments and original diagnostic positions do not survive
-        reloading the text; literal and expression spellings do.
+        Structurally redundant merges collapse; expressions and necessary
+        contribution boundaries, replacement intent, and slot programs stay
+        deferred. No expression or collection duplicate comparison runs.
+        Output may have a lower syntactic tier or resource cost. A completed
+        fill's undecided historical abstract-slot obligation remains akan
+        (§15.8). Layout/comments and original diagnostic positions do not
+        survive reloading; retained literal and expression spellings do.
         """
         from ._source import to_source
         return to_source(self._root, source=self.source)

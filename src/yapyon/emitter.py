@@ -518,6 +518,9 @@ def _plan_lines(node, level, source, unresolved, limit):
             value = value.args[0]
         operands.append(value)
         for index, operand in enumerate(reversed(operands)):
+            if index and type(operand) is Mapping and not operand.pairs:
+                yield _join((pad, "| {}"), limit)
+                continue
             if index:
                 yield _join((pad, "|"), limit)
             if index and isinstance(operand, Merge):

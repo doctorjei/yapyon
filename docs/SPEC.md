@@ -2119,23 +2119,52 @@ must not have a separate value-combination policy. Saving does not mutate
 the original tree, its keys, handles, warnings, or diagnostic provenance, or
 relax §15.6's requirement to fill still-needed slots at resolution.
 
-**Preserve operations and contribution boundaries.** Write retained
-contributions as explicit layers (`GRAMMAR §G6`, `§G9`). Keep each input's
-identity, lexical bindings, operation order, replacement intent, and
-behaviorally significant grouping. Potentially equal keys from separate
-dictionaries must not become duplicate entries in one dictionary; a
-same-contribution duplicate must not become a legal cross-layer merge.
-Comprehensions remain comprehensions, each with its own head, clauses,
-and lexical scope. Computed keys stay exact-text non-name keys; saving
-never promotes them, substitutes the environment, or compares expression
-spellings as key identities.
+**Simplify only where structure proves equivalence.** A source writer may
+remove redundant merge operations using the same structural facts as §15.2,
+without evaluating an expression. Ordinary dictionaries with statically known
+keys may share one contribution, retaining the earlier key's position,
+spelling, and name/non-name kind and the field's replacement intent. Matched
+values still combine by §15.2; an unresolved child may retain its own layers.
+A proven winning value or compatible empty-collection identity may replace
+its redundant merge, retaining the selected value's source. Empty values are
+not pruned, and an ordinary kind change never invents explicit replacement.
+
+**A dictionary program is not necessarily a literal dictionary.** In particular,
+a literal empty slot override is harmless (§15), while a composed dictionary
+program that yields an empty dictionary still applies its ordinary kind.
+Preserve that distinction even for a currently nonempty dictionary: subsequent
+edits may remove its last field before it is reused as slot overrides. A
+normalized dictionary program may retain a minimal `| {}` marker for this
+reason. A merge that structurally selects a plain dictionary must not gain such
+history merely because its input used a pipe. The same structural projection
+that selects the value determines whether a dictionary-program marker is needed.
+
+**Preserve necessary operations and contribution boundaries.** Write retained
+contributions as explicit layers (`GRAMMAR §G6`, `§G9`) wherever their
+boundaries still affect subsequent behavior. Keep each input's validation
+domain, lexical bindings, operation order, replacement intent, and behaviorally
+significant grouping. Potentially equal keys from separate dictionaries must
+not become duplicate entries in one dictionary; a same-contribution duplicate
+must not become a legal cross-layer merge. Pending key locations and their
+edit/removal behavior survive even when an expression looks constant.
+Comprehensions remain comprehensions, each with its own head, clauses, and
+lexical scope. Computed keys stay exact-text non-name keys; saving never
+promotes them, substitutes the environment, or compares expression spellings
+as key identities. A rewrite not established safe leaves the layers in place;
+it is not a new save-time refusal.
 
 A field's separator applies to its complete right-hand value. Preserve
 right-grouped merge programs rather than flattening them as though merge
-were associative. For a postfix on a merge result, parenthesize the whole
-result rather than attaching the postfix only to the right operand. An
-authored pipe remains computation even with literal operands: source
-saving does not evaluate it to lower its tier.
+were associative. For a postfix on a retained merge result, parenthesize the
+whole result rather than attaching the postfix only to the right operand.
+An authored pipe makes its original document computation, even with literal
+operands (§16.5). Source normalization may remove a structurally redundant
+pipe and thereby lower the **output's** syntactic tier. It does not change
+whether the original source is a record or permit a record emitter to evaluate
+that source. Removing unnecessary work may also avoid a former resource-limit
+refusal; identical resource cost or diagnostics are not promised. Semantic
+errors, including duplicate-key, missing-reference, and retained unfilled-slot
+failures, must still survive equivalent continuations.
 
 **Sequential slot overrides may need surrounding dictionary layers.** A
 labeled field contributes its complete RHS as one dictionary value. Several
@@ -2191,8 +2220,9 @@ resolution; a refused tree may still resolve in memory.
 
 **Spelling and layout.** Keep literal lexemes and required expression
 spellings. The initial generated style uses two-space indentation, ordinary
-`key: value`, replacement `key:= value`, and a standalone pipe aligned with
-its contribution heads, without automatic blank lines around it. Input
+`key: value`, replacement `key:= value`, and pipes aligned with their contribution heads, without automatic blank
+lines around them. An empty dictionary operand may share the pipe's line as
+`| {}`, including a minimal dictionary-program marker. Input
 whitespace is wider (`GRAMMAR §G4.10`). A grouped operand uses valid flow
 forms inside parentheses, where indentation is not syntax. Shared expression
 spelling applies there. Layout and comments need not survive (§4.4);
@@ -2351,9 +2381,10 @@ matching. The same value-kind matrix applies to literal, copied, called,
 and constructed results. Retained comprehensions remain eager; selecting
 an early item must not hide a later error. A whole discarded contribution
 need not be evaluated merely because it was written as a comprehension.
-Save retained contributions as unevaluated layers under §15.8, preserving
-their independent scopes and later behavior rather than flattening or
-materializing them.
+Save necessary deferred contributions as unevaluated layers under §15.8,
+preserving their independent scopes and later behavior rather than
+materializing generated entries. Structurally redundant surrounding dictionary
+operations may simplify without combining comprehension validation domains.
 
 Comprehensions and expression operators require at least the ledger tier.
 Environment access, yt, slots, and declared functions raise the tier exactly
@@ -2398,7 +2429,8 @@ calls contribute established fresh data (§5.6), not symbols to paste into
 a different scope. Unknown result-producing operands stay deferred, and
 use the **same eventual-kind matrix**, not a second policy based on parser
 classes. Pending dependencies use §5.3's existing fixpoint and cycle path.
-Source saving preserves these operations without executing them (§15.8).
+Source saving preserves necessary operations without executing them and may
+remove structurally redundant operations under §15.8.
 
 An explicit pipe requires at least a ledger, even with literal operands.
 A replacement annotation alone does not (§12). This value-expression

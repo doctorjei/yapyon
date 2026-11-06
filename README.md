@@ -126,9 +126,15 @@ operands may mix. Pipes require at least a ledger, even with literal operands;
 a replacement annotation alone can remain a record. Holes retain their
 existing reference/call grammar, without pipes.
 
-`Tree.to_source()` preserves unfinished expressions, contribution order,
-replacement intent, and meaningful grouping without resolving anything.
-Save the text and parse it again to continue filling slots and composing.
+`Tree.to_source()` simplifies structurally redundant merge layers without
+resolving anything. Unfinished expressions, necessary contribution boundaries,
+replacement intent, and meaningful grouping survive. Unknown keys, collection
+comparisons, and sequential slot operations stay layered where needed; saving
+never freezes one current result. A minimal `| {}` may remain to preserve a
+dictionary program's behavior after later edits or slot reuse. The normalized
+text may have a lower tier
+and less resource cost than its input. Save it and parse it again to continue
+filling slots and composing.
 Historical fill obligations that still need computed-key comparisons and
 unattached slots remain save-time refusals; see the
 [details](docs/DETAILS.md#save-now-finish-later).
