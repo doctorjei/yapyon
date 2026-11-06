@@ -125,7 +125,7 @@ def _prepare(node, history):
         out = node
         for layer in tails:
             out = _chain(out, layer)
-        return _marked(out) if tails else out
+        return _marked(out) if tails or node.retained_program else out
     if isinstance(node, Slot):
         node.layers = [_prepare(layer, history) for layer in node.layers]
     elif isinstance(node, Sequence):

@@ -28,6 +28,15 @@ before it needed `pip install yapyon --pre` to be seen.
   meaning, `tier_of`, and record-only `emit()` behavior are unchanged. Source
   text/layout compatibility is not promised; semantic continuation behavior is.
 
+### Fixed
+
+- Retain the containing dictionary's program identity when a nested slot gains
+  sequential overrides or a pending combination. Previously, removing all of
+  that parent's fields and reusing it as slot overrides could treat the unsaved
+  parent as harmless literal `{}` while its saved/reloaded counterpart still
+  applied a dictionary program. Copies, later edits, and source writing now
+  preserve the same history without changing literal-empty override semantics.
+
 ## 0.6.0 — 2026-10-29
 
 Built to specification and grammar **v0.6**. Includes the merge/source changes

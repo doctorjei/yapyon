@@ -166,7 +166,8 @@ def kind(node):
 
 
 def empty_overrides(node):
-    return (type(node) is Mapping and not node.pairs and not node.fill_checks)
+    return (type(node) is Mapping and not node.pairs and not node.fill_checks
+            and not node.retained_program)
 
 
 _PENDING = object()
@@ -262,6 +263,18 @@ def literal(node):
 
 
 def selected_slot(node):
+    """Find a retained root slot without projecting a slot-free program."""
+    pending = [node]
+    while pending:
+        candidate = pending.pop()
+        if isinstance(candidate, Slot):
+            break
+        if isinstance(candidate, Merge):
+            pending.extend(candidate.args)
+        elif isinstance(candidate, Expression) and candidate.op == "group":
+            pending.append(candidate.args[0])
+    else:
+        return None
     node = project(node)
     if isinstance(node, Slot):
         return node

@@ -271,6 +271,11 @@ class Tree:
             else:
                 pair.value = new
                 parent.reindex()
+            if type(parent) is Mapping:
+                slot = selected_slot(new)
+                if slot is not None and (len(slot.layers) > 1
+                                         or isinstance(project(new), Merge)):
+                    parent.retained_program = True
         elif isinstance(parent, Sequence):
             parent.items[_index(parent, step, path[:-1])] = new
         else:

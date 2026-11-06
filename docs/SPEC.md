@@ -2135,9 +2135,15 @@ program that yields an empty dictionary still applies its ordinary kind.
 Preserve that distinction even for a currently nonempty dictionary: subsequent
 edits may remove its last field before it is reused as slot overrides. A
 normalized dictionary program may retain a minimal `| {}` marker for this
-reason. A merge that structurally selects a plain dictionary must not gain such
-history merely because its input used a pipe. The same structural projection
-that selects the value determines whether a dictionary-program marker is needed.
+reason. The immediate parent of a selected slot's sequential overrides or
+pending combination retains its enclosing program identity when the tree is
+edited, not only when it is saved. Removing its last field does not retroactively
+make that parent harmless literal empty overrides. Whole-value replacement with
+a fresh literal discards the former program; unrelated ancestors do not acquire
+its history. Original and reparsed trees must agree on this distinction.
+A merge that structurally selects a literal dictionary must not gain history
+merely because its input used a pipe. Structural projection and retained history
+together determine whether a dictionary-program marker is needed.
 
 **Preserve necessary operations and contribution boundaries.** Write retained
 contributions as explicit layers (`GRAMMAR §G6`, `§G9`) wherever their

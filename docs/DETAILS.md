@@ -7,7 +7,7 @@ merge/source composition and unfinished persistence, with host-value record
 export. The lexer, parser, resolver, loader, emitter, four serializers,
 contracts, and trees with slots share the format's merge rules; the suite and
 **121 portable corpus cases** exercise those contracts. The validated source
-suite executes **3650 tests**, with zero skips on Python 3.11, 3.13, and 3.14
+suite executes **3770 tests**, with zero skips on Python 3.11, 3.13, and 3.14
 using the supported POSIX test filesystem. Unsupported-ACL refusal and recovery
 are tested separately as well. Python 3.11 is the minimum supported version.
 Core runtime dependencies are the standard library.
@@ -438,13 +438,26 @@ remain record-only and never evaluate authored pipes to make them records.
 Data expansion/serializers consume composition into finished data instead;
 source writing preserves the unfinished program.
 
-**Known continuation limitation:** lifting sequential slot operations into
-surrounding dictionary layers does not preserve an originally literal parent's
-empty-override identity after every edit. If all of that parent's fields are
-removed after reloading and the emptied parent is then reused as another slot's
-overrides, a scalar filler may be replaced by `{}` where the unsaved parent
-leaves it intact. This implementation gap predates conservative compaction; it
-is not a new merge rule or a claim that ordinary saved-slot filling fails.
+When sequential slot operations need surrounding dictionary layers, their
+immediate parent retains that program identity **in memory as well as in saved
+source**. Removing the parent's last field does not turn it back into harmless
+literal empty overrides. Whole-value replacement with a fresh literal discards
+the former program; unrelated ancestors do not acquire its history. Saving does
+not introduce or repair this distinction as a side effect:
+
+```python
+>>> program = yapyon.parse('part<base>: {config: "reset"}')
+>>> program["part"].merge(yapyon.parse('config: {new: 2}'))
+>>> restored = yapyon.parse(program.to_source())
+>>> for candidate in (program, restored):
+...     candidate["part"].remove()
+...     target = yapyon.parse('target<base>: {}')
+...     target["target"].merge(candidate)
+...     target["target"].fill(yapyon.parse('7'))
+...     print(target.resolve())
+{'target': {}}
+{'target': {}}
+```
 
 Generated source uses two-space indentation, `key: value`, `key:= value`,
 and pipes aligned with their contribution heads (`| {}` for a compact empty

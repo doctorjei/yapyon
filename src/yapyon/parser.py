@@ -198,6 +198,7 @@ class Pair(Node):
 @dataclass
 class Mapping(Node):
     pairs: list = field(default_factory=list)   # list[Pair], in source order
+    retained_program = False
 
     def __post_init__(self):
         self.reindex()
