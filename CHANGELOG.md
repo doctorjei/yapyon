@@ -11,6 +11,10 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+## 0.6.1 — 2026-11-06
+
+Built to specification and grammar **v0.6**. No new syntax or public API.
+
 ### Changed
 
 - **Conservative unfinished-source simplification (§15.8):** `Tree.to_source()`
