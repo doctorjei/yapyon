@@ -743,7 +743,32 @@ while a non-dictionary filler is replaced with `{}`. This changed in 0.6.2;
 previously literal empty overrides skipped the merge. `part<new>:= {}` selects
 a fresh slot whose overrides apply normally after filling.
 The source writer may lift sequential slot operations into surrounding
-dictionary layers to preserve their order.
+dictionary layers to preserve their order. Safe empty-initial overrides are a
+special case: the following dictionary already performs the necessary kind reset,
+so the slot can keep that complete dictionary as its one override contribution.
+This applies recursively at known dictionary keys, not by evaluating a filler:
+
+```pycon
+>>> draft = yapyon.parse('agent: {persona<base.persona>: {}}\n|\nagent: {persona: {name: "local"}}')
+>>> print(draft.to_source(), end="")
+agent:
+  persona<base.persona>:
+    name: "local"
+>>> resumed = yapyon.parse(draft.to_source())
+>>> for slot in resumed["agent"].slots("base.persona"):
+...     slot.fill(yapyon.parse('persona: {name: "base", model: "demo"}'))
+>>> resumed.resolve()
+{'agent': {'persona': {'name': 'local', 'model': 'demo'}}}
+```
+
+Use known field keys or complete labels to select slots. `Tree.slots(label)`
+returns every matching label in document order; `Handle.slots(label)` scopes the
+search. A label can be dotted text or a tuple of names; empty text/tuple selects
+abstract slots. Repeated labels never silently select only one match. An unfilled
+slot hides its nested overrides until filled. Advanced positional/source handles
+remain available, but normalized source operands need not keep their old indices.
+Retained independent dictionary contributions stay near their matching field;
+uncertain key/validation boundaries remain explicit.
 
 Attached unfinished slots can be saved, but must be filled before their
 values are required. Two source refusals remain: an undecided historical

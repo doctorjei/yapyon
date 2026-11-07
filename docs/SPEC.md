@@ -1956,8 +1956,8 @@ without evaluating it; an incoming copy or call of unknown kind must still
 wait for its eventual value.
 
 A labeled field's **complete RHS is one dictionary override contribution**.
-Several sequential additions to an unfilled slot are not equivalent to one
-premerged RHS. Each later addition acts on the result of the preceding
+Several sequential additions to an unfilled slot are not generally equivalent
+to one premerged RHS. Each later addition acts on the result of the preceding
 operation; grouping inside a contributed dictionary stays inside it. §15.8
 preserves these boundaries in saved source.
 
@@ -2100,8 +2100,13 @@ not a promise that applying one premerged dictionary to any filler replays
 the complete sequential override program.
 
 *Reference implementation: `Tree`, `Handle`, and opaque `Key` tokens provide
-these operations without exposing AST nodes. `Tree.slots` discovers
-retained slots, including those inside pending contributions. Unknown
+these operations without exposing AST nodes. `Tree.slots(label)` discovers all
+retained slots matching a complete label, or every slot when no filter is supplied;
+`Handle.slots(label)` scopes the same discovery to that subtree. Labels may repeat,
+so discovery returns every match in document order, including slots inside pending
+contributions. Labels are dotted text or tuples of names, using §7's name identity;
+an empty string or tuple selects abstract slots. A slot inside another unfilled
+slot's overrides is not yet exposed, even when the outer label fails the filter. Unknown
 effective collection positions cannot be indexed as though already resolved.
 A removed handle path raises `KeyError` or `IndexError`. Handles and key tokens
 belong to their original tree; a reparse obtains fresh corresponding locations.*
@@ -2131,6 +2136,49 @@ values still combine by §15.2; an unresolved child may retain its own layers.
 A proven winning value or compatible empty-collection identity may replace
 its redundant merge, retaining the selected value's source. Empty values are
 not pruned, and an ordinary kind change never invents explicit replacement.
+
+Known-key dictionary merging is **pointwise**: union the keys, preserve their
+first appearance order and provenance, and combine matching values in their
+original operation order. This applies recursively. Necessary child layers may
+remain even when their containing dictionaries share one contribution. Independent
+known-key contributions may be scheduled beside their first field rather than
+collected in a distant tail. Do not split a computed-key validation domain or
+cross a meaningful grouping or historical-fill boundary to improve locality.
+
+**A named slot's genuinely empty initial dictionary may absorb a following
+dictionary override.** These complete documents have equivalent logical
+continuations:
+
+```yapyon
+endpoint: "https://example.invalid"
+dialect<base.dialect>: {}
+|
+dialect:
+  api_uri: y"{endpoint}/messages"
+```
+
+```yapyon
+endpoint: "https://example.invalid"
+dialect<base.dialect>:
+  api_uri: y"{endpoint}/messages"
+```
+
+For an external document `dialect: [1]`, both replace that list with the local
+dictionary; with `dialect: {kept: 1}`, both retain `kept`. The empty dictionary
+is not an identity on arbitrary fillers: it is redundant before this following
+dictionary. Preserve the complete following contribution, including any computed
+keys, comprehension validation, lexical bindings, and grouping. A pending
+comprehension is never classified as empty merely because it exposes no entries.
+
+The same reasoning can apply at nested known-key paths. Disjoint dictionary
+fields are independent; shared dictionary values need their own structural proof.
+A higher atomic winner may also make an earlier operation redundant. Nonempty
+kind resets, collection comparisons, uncertain keys, and replacement histories
+that affect fill obligations retain their necessary boundaries. This is a
+sufficient structural subset, not universal merge associativity or permission to
+premerge arbitrary nonempty slot programs. An abstract slot followed by ordinary
+data selects that data (§15.2.4), and explicit replacement may discard a named
+slot; neither case is rewritten by preserving the old label.
 
 **Empty dictionary contents do not retain an extra operation identity.** A
 literal `{}` and a dictionary program whose remaining structure is equivalent
@@ -2234,8 +2282,14 @@ Reloading gives the saved document its new source name and positions, not
 the former files' diagnostic locations. The original in-memory tree keeps
 its provenance (§15.6). Opaque handles and key-location tokens belong to
 their original tree; continuations on the reparse obtain fresh corresponding
-locations. Normalized source is idempotent, and later equivalent operations
-must preserve successful results and expected errors alike.
+locations. Source operands may be removed, split, or regrouped by proven
+normalization; their raw ordinal positions are not persistent identities.
+Equivalent continuations select the corresponding logical fields and slot labels
+in the reloaded tree, rather than assuming an unchanged source-operand array.
+Deliberate advanced access to retained source contributions remains available;
+editing one such operand is not necessarily the same operation as editing the
+normalized logical value. Normalized source is idempotent, and later equivalent
+operations must preserve successful results and expected errors alike.
 
 *Reference implementation: `Tree.to_source()` returns newline-terminated
 source text without writing a file. Record `emit()` remains record-only;

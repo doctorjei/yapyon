@@ -2,7 +2,7 @@
 
 import copy
 
-from .assembly import MergedMapping, project, selected_slot
+from .assembly import MergedMapping, kind, merge_nodes, project, selected_slot
 from .lexer import AkanError
 from .parser import (Expression, Mapping, Merge, MultiMap, Sequence, Slot,
                      children)
@@ -27,12 +27,13 @@ def _chain(earlier, later):
     return node
 
 
-def _slot_program(node):
+def _slot_program(node, history):
     if isinstance(node, Slot):
+        layers = node.layers if node.abstract else _coalesce_overrides(node.layers, history)
         first = copy.copy(node)
-        first.layers = [node.layers[0]]
+        first.layers = [layers[0]]
         tails = []
-        for layer in node.layers[1:]:
+        for layer in layers[1:]:
             if node.abstract:
                 later = copy.copy(node)
                 later.layers = [layer]
@@ -41,11 +42,11 @@ def _slot_program(node):
                 tails.append(layer)
         return first, tails
     if isinstance(node, Merge):
-        first, tails = _slot_program(node.args[0])
+        first, tails = _slot_program(node.args[0], history)
         return first, tails + [node.args[1]]
     view = project(node)
     if isinstance(view, Slot):
-        return _slot_program(view)
+        return _slot_program(view, history)
     raise AkanError("cannot save this slot program: its selected slot has no "
                     "attached field representation (SPEC §15.8)",
                     node.line, node.col, node.source)
@@ -75,6 +76,12 @@ def _collapse(node, history):
     view = project(node)
     if isinstance(view, MergedMapping):
         if view.pending_key() is not None:
+            if view.layers and not _has_history(view, history):
+                earlier, later = view.layers
+                if type(earlier) is Mapping and not earlier.pairs:
+                    return later
+                if type(later) is Mapping and not later.pairs:
+                    return earlier
             return node
         view.finish()
         if _has_history(view, history):
@@ -83,6 +90,45 @@ def _collapse(node, history):
         out.source = view.source
         return out
     return view
+
+
+def _can_coalesce(earlier, later, history):
+    """Prove sequential dictionary overrides safe for an unknown filler."""
+    pending = [(earlier, later)]
+    while pending:
+        earlier, later = (_collapse(value, history) for value in pending.pop())
+        if type(earlier) is not Mapping or not isinstance(later, Mapping):
+            return False
+        if _has_history(earlier, history) or _has_history(later, history):
+            return False
+        if not earlier.pairs:
+            continue
+        if type(later) is not Mapping:
+            return False
+        if earlier.pending_key() is not None or later.pending_key() is not None:
+            return False
+        originals = {pair.key: pair for pair in earlier.pairs}
+        for incoming in later.pairs:
+            original = originals.get(incoming.key)
+            if original is None or kind(project(incoming.value)) == "atom":
+                continue
+            if original.replace or incoming.replace:
+                return False
+            pending.append((original.value, incoming.value))
+    return True
+
+
+def _coalesce_overrides(layers, history):
+    out = [_collapse(layers[0], history)]
+    for layer in layers[1:]:
+        later = _collapse(layer, history)
+        earlier = out[-1]
+        if _can_coalesce(earlier, later, history):
+            out[-1] = (later if not earlier.pairs else
+                       _collapse(merge_nodes(earlier, later), history))
+        else:
+            out.append(later)
+    return out
 
 
 def _prepare(node, history):
@@ -100,22 +146,28 @@ def _prepare(node, history):
             return node.args[0]
         return _chain(*node.args) if isinstance(node, Merge) else node
     if isinstance(node, Mapping):
-        tails = []
+        nearby = node.pending_key() is None and not _has_history(node, history)
+        groups, tails = [[]], []
         for pair in node.pairs:
+            groups[-1].append(pair)
             if selected_slot(pair.value) is not None:
-                first, additions = _slot_program(pair.value)
+                first, additions = _slot_program(pair.value, history)
                 pair.value = _prepare(first, history)
                 for addition in additions:
                     later = copy.copy(pair)
                     later.value, later.replace = _prepare(addition, history), False
-                    layer = Mapping(node.line, node.col, [later])
-                    layer.source = node.source
-                    tails.append(layer)
+                    if nearby:
+                        groups.append([later])
+                    else:
+                        tails.append([later])
             else:
                 pair.value = _prepare(pair.value, history)
+        node.pairs = groups[0]
         node.reindex()
         out = node
-        for layer in tails:
+        for pairs in groups[1:] + tails:
+            layer = Mapping(node.line, node.col, pairs)
+            layer.source = node.source
             out = _chain(out, layer)
         return out
     if isinstance(node, Slot):

@@ -7,7 +7,7 @@ merge/source composition and unfinished persistence, with host-value record
 export. The lexer, parser, resolver, loader, emitter, four serializers,
 contracts, and trees with slots share the format's merge rules; the suite and
 **121 portable corpus cases** exercise those contracts. The validated source
-suite executes **3962 tests**, with zero skips on Python 3.11, 3.13, and 3.14
+suite executes **4112 tests**, with zero skips on Python 3.11, 3.13, and 3.14
 using the supported POSIX test filesystem. Unsupported-ACL refusal and recovery
 are tested separately as well. Python 3.11 is the minimum supported version.
 Core runtime dependencies are the standard library.
@@ -341,10 +341,34 @@ A **slot** marks a place the consumer fills. `persona<llamacpp>:` makes
 >>> agent = yapyon.parse('name: "local"\npersona<llamacpp>:\n  mind:\n    endpoint: "http://localhost:9931"\n')
 >>> [(slot.key, slot.label) for slot in agent.slots()]
 [('persona', ('llamacpp',))]
->>> agent["persona"].fill(yapyon.parse('mind:\n  endpoint: "remote"\n  model: "q4"\ndesc: y"{name}"\n'))
+>>> for slot in agent.slots("llamacpp"):
+...     slot.fill(yapyon.parse('mind:\n  endpoint: "remote"\n  model: "q4"\ndesc: y"{name}"\n'))
 >>> agent.resolve()
 {'name': 'local', 'persona': {'mind': {'endpoint': 'http://localhost:9931', 'model': 'q4'}, 'desc': 'local'}}
 ```
+
+Prefer ordinary field-key handles when the place is already known, or filter by
+its **complete label** when choosing which filler to supply. `slots("base.persona")`
+and `slots(("base", "persona"))` match the same label, using folded name identity;
+they do not match a prefix. `Tree.slots()` returns all retained slots, and
+`Handle.slots()` restricts discovery to that subtree. Repeated labels are legal,
+so every match is returned in document order, never an implicit first choice:
+
+```python
+>>> group = yapyon.parse('agents: {one<base.persona>: {}, two<base.persona>: {}}')
+>>> [slot.key for slot in group["agents"].slots("base.persona")]
+['one', 'two']
+>>> definition = yapyon.parse('persona: {model: "demo"}')
+>>> for slot in group["agents"].slots(("base", "persona")):
+...     slot.fill(definition)
+>>> group.resolve()
+{'agents': {'one': {'model': 'demo'}, 'two': {'model': 'demo'}}}
+```
+
+An empty string or tuple filters for abstract slots. Discovery stops at an unfilled
+slot, even when its label does not match: nested overrides belong to that slot's
+fill. Advanced source-contribution and positional handles remain supported when
+you deliberately need them; they are not the ordinary way to identify a slot.
 
 The label says *what* fills the slot; finding it is the consumer's job, so
 yapyon never reads a file on a slot's behalf. A label may reach into its
@@ -408,6 +432,61 @@ composed, or emptied by edits. Since 0.6.2, literal empty slot overrides no
 longer bypass that rule: filling `part<base>: {}` with `7`, `None`, a list,
 or a multimap gives `part: {}`. A dictionary filler keeps its contents.
 Necessary layers still survive; output is not unconditionally pipe-free.
+
+Normalization is recursive and pointwise: dictionaries union their known keys,
+while each matching field keeps its own ordered merge program. Safe empty named-
+slot overrides can absorb the following dictionary, without knowing the filler.
+Here is the complete three-slot document and its saved form:
+
+```python
+>>> original = '''persona:
+...   mind:
+...     endpoint: "https://api.minimax.io"
+...     dialects:
+...       chat<chat.dialect>: {}
+...       responses<responses.dialect>: {}
+...       anthropic<anthropic.dialect>: {}
+...       |
+...       anthropic:
+...         api_uri: y"{endpoint}/anthropic"
+... '''
+>>> pending = yapyon.parse(original)
+>>> compact = pending.to_source()
+>>> print(compact, end="")
+persona:
+  mind:
+    endpoint: "https://api.minimax.io"
+    dialects:
+      chat<chat.dialect>: {}
+      responses<responses.dialect>: {}
+      anthropic<anthropic.dialect>:
+        api_uri: y"{endpoint}/anthropic"
+>>> resumed = yapyon.parse(compact)
+>>> files = {"chat": yapyon.parse('dialect: {}'), "responses": yapyon.parse('dialect: {}'), "anthropic": yapyon.parse('dialect: [1]')}
+>>> for name, filler in files.items():
+...     for slot in resumed.slots((name, "dialect")):
+...         slot.fill(filler)
+>>> resumed.resolve()["persona"]["mind"]["dialects"]["anthropic"]
+{'api_uri': 'https://api.minimax.io/anthropic'}
+```
+
+A dictionary filler retains its unoverridden fields; the local dictionary replaces
+a non-dictionary filler. `{}` is not an identity on arbitrary data: it is redundant
+*before this following dictionary*. The same check applies at nested known-key
+paths. A pending comprehension is not an empty dictionary just because no entries
+are exposed; its validation and lexical scope remain intact.
+
+Where slot layers must remain, independent known-key contributions are placed
+beside their first field, rather than collected after unrelated fields. The first
+key's spelling, visibility, and order still win. Computed-key domains and historical
+fill checks can prevent this redistribution. A retained pipe alone is not a reason
+to warn. Source and API construction can produce identical state, so the writer
+does not guess how a program originated.
+
+After reloading, rediscover corresponding fields or labels: proven normalization
+may remove or split raw source operands, so an old operand index is not a persistent
+identity. Deliberately editing a retained source operand remains supported, but is
+not necessarily the same operation as editing its normalized logical value.
 
 Simplification is conservative, not unconditional flattening. Computed-key
 validation domains, comprehensions combined with other nonempty dictionaries,

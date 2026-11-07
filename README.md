@@ -134,7 +134,13 @@ never freezes one current result. Literal and composed empty dictionaries
 use the same merge rule, including as slot overrides; no history marker is
 needed just to distinguish them. The normalized text may have a lower tier
 and less resource cost than its input. Save it and parse it again to continue
-filling slots and composing.
+filling slots and composing. Safe empty named-slot overrides absorb a following
+dictionary recursively; meaningful reset programs remain layered. Retained
+known-key contributions stay near their matching field where independent.
+Use field-key handles or `tree.slots("base.persona")` to find slots by their
+complete label; `handle.slots(label)` scopes discovery, and repeated labels
+return all matches. Advanced source-contribution access remains supported, but
+normalized operand positions are not stable identities.
 Historical fill obligations that still need computed-key comparisons and
 unattached slots remain save-time refusals; see the
 [details](docs/DETAILS.md#save-now-finish-later).

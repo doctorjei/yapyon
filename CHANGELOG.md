@@ -11,6 +11,37 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+## 0.6.3 — 2026-11-07
+
+Built to specification and grammar **v0.6**. No new syntax or merge-matrix change.
+
+### Changed
+
+- **Recursive source normalization (§15.8):** known-key dictionaries merge
+  pointwise, and safe sequential dictionary overrides of named slots share one
+  right-hand side. Genuinely empty initial overrides absorb a following dictionary,
+  including safe nested variants, without evaluating it. Meaningful resets,
+  replacement/fill-obligation histories, computed-key validation domains,
+  comprehension scopes, and collection comparisons remain explicit where needed.
+- Retained known-key slot contributions stay beside their matching field when
+  independent, preserving first-key order, provenance, and operation order. Saved
+  source operands are not persistent positional identities; corresponding logical
+  fields and labels remain the normal continuation interface.
+
+### Added
+
+- `Tree.slots(label)` filters discovery by a complete dotted or tuple label, and
+  `Handle.slots(label)` scopes it to a subtree. Repeated labels return every match
+  in document order; no first match is silently selected. Existing no-argument
+  discovery and deliberate advanced source-contribution handles remain supported.
+
+### Fixed
+
+- Retained slot handles follow their actual source route through grouped pending
+  collections, dictionary-comprehension winners, and projected multimap entries.
+  Discovery no longer returns handles that fail when their labels are read or
+  slots are filled, and discarded lower slots remain undiscoverable.
+
 ## 0.6.2 — 2026-11-07
 
 Built to specification and grammar **v0.6**. No new syntax or public API.

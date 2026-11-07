@@ -165,20 +165,15 @@ class Tree:
             handle = handle[step]
         return handle
 
-    def slots(self) -> list["Handle"]:
-        """Every slot still to fill, in document order (SPEC §15.6). A slot
-        inside another slot's overrides is not listed: it belongs to that
-        slot's fill."""
-        found = []
+    def slots(self, label: str | tuple[str, ...] | None = None) -> list["Handle"]:
+        """All retained slots, optionally matching a complete label (§15.6).
 
-        def walk(node, path):
-            if selected_slot(node) is not None:
-                found.append(Handle(self, path))
-                return
-            for step, child in _steps(node):
-                walk(child, path + (step,))
-        walk(self._root, ())
-        return found
+        Labels are dotted text or tuples of names; empty text/tuple selects
+        abstract slots. Repeated labels return every match in document order.
+        Scope discovery with a subtree handle's slots() method. Slots inside
+        another unfilled slot's overrides belong to its fill and stay hidden.
+        """
+        return self.root.slots(label)
 
     # -- editing -------------------------------------------------------------
     def merge(self, *layers, at=()) -> None:
@@ -448,6 +443,30 @@ class Handle:
     def items(self) -> list:
         return [(key, self[key]) for key in self.keys()]
 
+    def slots(self, label: str | tuple[str, ...] | None = None) -> list["Handle"]:
+        """Retained slots within this place; filtering matches complete labels.
+
+        As with Tree.slots(), an unfilled slot hides its nested overrides,
+        whether or not its own label matches the filter.
+        """
+        if label is not None:
+            if isinstance(label, str):
+                label = tuple(label.split('.')) if label else ()
+            if not isinstance(label, tuple) or not all(isinstance(part, str) for part in label):
+                raise TypeError("slot label must be dotted text or a tuple of names")
+            label = tuple(fold_name(part) for part in label)
+        found = []
+        pending = [(self.tree._node(self.path, raw=True), self.path)]
+        while pending:
+            node, path = pending.pop()
+            slot = selected_slot(node)
+            if slot is not None:
+                if label is None or slot.label == label:
+                    found.append(Handle(self.tree, path))
+                continue
+            pending.extend((child, path + (step,)) for step, child in reversed(_steps(node)))
+        return found
+
     def key_lexeme(self) -> str | None:
         """The key this value sits under, as written."""
         if not self.path or isinstance(self.path[-1], int):
@@ -583,7 +602,11 @@ def _own(value) -> Node:
 
 def _steps(node: Node):
     """Locations in a proven view, or retained operands with no effective indices."""
-    node = project(node)
+    view = project(node)
+    if isinstance(view, Expression) and view is not node:
+        index = 1 if isinstance(node, Merge) else 0
+        return [(_Operand(index), node.args[index])]
+    node = view
     if isinstance(node, Expression):
         return [(_Operand(index), child) for index, child in enumerate(node.args)
                 if isinstance(child, Node)]
@@ -599,9 +622,9 @@ def _steps(node: Node):
 def _child(node: Node, step, where: tuple) -> Node:
     if isinstance(step, _Operand) and isinstance(node, Expression):
         return node.args[step.index]
+    node = project(node, collections=True)
     if isinstance(step, _Entry) and isinstance(node, MultiMap):
         return node.entries[step.index].value
-    node = project(node, collections=True)
     if not isinstance(node, Expression) and isinstance(node, Mapping) and isinstance(step, (str, Key)):
         return _pair(node, step, where).value
     if isinstance(node, Sequence) and isinstance(step, int) \
