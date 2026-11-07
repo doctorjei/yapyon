@@ -223,7 +223,11 @@ out a `None` and records it. A reader that knows the conventions gets the
 yapyon value back; one that does not still gets correct plain data. YAML
 scalars are quoted unless every reader would read them as strings, so `"no"`
 and `"3"` survive as strings. `{cfg.__as_json__(lexemes=False)}` writes the
-plain values alone.
+plain values alone. To remove None values explicitly before serialization,
+use `cfg.__not_none__().__as_json__()` (or chain another serializer). This
+transforms a separate copy, recursively removing None-valued dictionary keys,
+multimap entries, and list elements; the original stays unchanged. See
+[the guide](docs/DETAILS.md#removing-none-values-before-serialization).
 
 `__as_yapyon__()` writes the block as a yapyon **record**, every value as
 written: `3.10` still spelled `3.10`, multimaps and bytes as themselves. The

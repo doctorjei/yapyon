@@ -11,6 +11,19 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+## 0.6.4 — 2026-11-07
+
+Built to specification and grammar **v0.6**. No new syntax or merge-matrix change.
+
+### Added
+
+- `__not_none__(value)` / `value.__not_none__()` returns a separate recursive
+  copy with None-valued dictionary keys, multimap entries, and list elements
+  removed (§5.1.6). Chain it into a serializer, such as
+  `foo.__not_none__().__as_json__()`, to emit cleaned data without changing
+  the original. Other false-like values and empty containers stay; serializers
+  and host-value export do not prune implicitly.
+
 ## 0.6.3 — 2026-11-07
 
 Built to specification and grammar **v0.6**. No new syntax or merge-matrix change.

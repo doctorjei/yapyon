@@ -2,7 +2,7 @@
 
 ## Status
 
-**Version `0.6.2`**, implementing specification and grammar **v0.6** for
+**Version `0.6.4`**, implementing specification and grammar **v0.6** for
 merge/source composition and unfinished persistence, with host-value record
 export. The lexer, parser, resolver, loader, emitter, four serializers,
 contracts, and trees with slots share the format's merge rules; the suite and
@@ -164,6 +164,33 @@ too — unless the call follows `?.`, which skips the rest of the chain:
 
 `__get__(key, default=None)` is `dict.get`, for lists too, and gives a
 multimap's list view of the key. SPEC §5.1.5 has every rule.
+
+## Removing None values before serialization
+
+`foo.__not_none__()` returns a recursive copy with None-valued dictionary keys,
+multimap entries, and list elements removed. It is a data transformation, not a
+serializer: chain it into the output format you want.
+
+```python
+>>> doc = 'foo: {name: "gw", token: None, options: [None, {limit: None, enabled: False}]}\nbody: foo.__not_none__().__as_json__()\n'
+>>> d = yapyon.loads(doc)
+>>> d["body"]
+'{"name": "gw", "options": [{"enabled": false}]}'
+>>> d["foo"]["token"] is None
+True
+>>> d["foo"]["options"]
+[None, {'limit': None, 'enabled': False}]
+```
+
+The original stays unchanged. Only actual `None` values are removed: `False`,
+`0`, `""`, the string `"None"`, and empty containers stay. Remaining list elements
+keep their order, with their indices shifted. Values resolve before removal,
+so computed None values are removed too. `__not_none__(foo)` is the equivalent
+function spelling; it takes no keywords. SPEC §5.1.6 has the rules.
+
+Use `foo.__not_none__().__as_toml__()`, `.__as_yaml__()`, or `.__as_yapyon__()`
+for other formats. Without an explicit transformation, serializers keep their
+usual behavior; host-value `dump`/`dumps`/`dump_safe` are unchanged.
 
 ## String keys
 

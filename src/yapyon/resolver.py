@@ -56,7 +56,7 @@ from .parser import (Comprehension, Copy, Expression, Mapping, Merge, MultiMap, 
                      Pair, ResolvedTemplate, Scalar, Sequence, Slot, YString,
                      children)
 from .serializers import (BUILTIN_NAMES, CASTERS, ENV_BUILTIN, GET_BUILTIN,
-                          SERIALIZERS, YEETED_YT)
+                          NOT_NONE_BUILTIN, SERIALIZERS, YEETED_YT)
 from .typespec import check, parse_type, show
 
 # §5.3 defines two tiers, and they are not the same number.
@@ -749,6 +749,8 @@ class Resolver:
             result = self._env_call(args, kwargs, ref, site)
         elif builtin is GET_BUILTIN:
             result = self._get(call, args, kwargs, ref, site)
+        elif builtin == NOT_NONE_BUILTIN:
+            result = self._not_none(args[0], site)
         elif isinstance(builtin, str) and builtin in CASTERS:
             result = self._cast(call.name, args[0], ref, site)
         elif isinstance(builtin, Declared):
@@ -777,7 +779,7 @@ class Resolver:
             return self._env_shape(call, ref, site)
         if call.name == GET_BUILTIN:
             return self._get_shape(call, ref, site)
-        if call.name in CASTERS:
+        if call.name in CASTERS or call.name == NOT_NONE_BUILTIN:
             if len(call.args) != 1 or call.kwargs:
                 self._akan(f"{{{ref}}}: {call.name}() takes one value and no "
                            f"keywords, not {len(call.args)} argument"
@@ -929,6 +931,39 @@ class Resolver:
                        f"before the call to pass None through)", at)
         self._akan(f"{{{ref}}}: __get__() takes a mapping, list, or "
                    f"multimap", container)
+
+    def _not_none(self, node: Node, site: _Site) -> Node:
+        """Copy resolved data, removing None-valued entries (§5.1.6)."""
+        facts = self._settled(node)
+        if facts is None:
+            raise Yakamashiwa("__not_none__() reached an unresolved argument")
+        # Bound the copy before allocating it, including calls nested in a chain.
+        self.rendered += facts[0]
+        if self.rendered > self.max_size:
+            self._akan(f"document exceeds the rendered-size ceiling "
+                       f"({self.max_size}) -- raise max_size to accept it",
+                       site.node)
+        result = self._clone(node)
+
+        def keep(value):
+            return not (isinstance(value, Scalar) and value.type == "none")
+
+        pending = [result]
+        while pending:
+            current = pending.pop()
+            if isinstance(current, Mapping):
+                current.pairs = [p for p in current.pairs if keep(p.value)]
+                current.reindex()
+            elif isinstance(current, MultiMap):
+                current.entries = [p for p in current.entries if keep(p.value)]
+            elif isinstance(current, Sequence):
+                current.items = [item for item in current.items if keep(item)]
+            if isinstance(current, ResolvedTemplate):
+                pending.extend(part[2] for part in current.parts
+                               if part[0] == "hole")
+            else:
+                pending.extend(_children(current))
+        return result
 
     # -- §5.1.3 the environment ------------------------------------------------
     def _env_shape(self, call: Call, ref: str, site: _Site) -> str:

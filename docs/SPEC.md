@@ -419,8 +419,8 @@ both are legal (§13.1). A result is a `str`, and a chain is checked like
 any call: `{a.__as_json__().__as_yaml__()}` writes the JSON text as a YAML
 string, while `{a.__as_json__().__as_toml__()}` is a type error at the
 second link, since `__as_toml__` takes a table. **A dunder call that names
-no built-in — these four, `__env__` (§5.1.3), or the casters and
-`__get__` (§5.1.5) — is akan** at the call,
+no built-in — these four, `__env__` (§5.1.3), the casters and
+`__get__` (§5.1.5), or `__not_none__` (§5.1.6) — is akan** at the call,
 naming the built-ins that exist: a dunder call names a built-in or
 nothing.
 
@@ -487,8 +487,9 @@ no marker carries yapyon's name. In brief (§14 has the detail):
 **An implementation must not prune silently.** Dropping a key because its
 value is `None` or `""` is a silent reinterpretation (ehmon 7), and "the
 same bytes mean the same data" has to survive a serializer. A consumer
-wanting that pruning does it to its own tree first. **The one omission the
-format makes is TOML's `None`:** TOML has no null, so `__as_toml__()`
+wanting None removal can explicitly transform a copy with `__not_none__()`
+(§5.1.6) before serializing it; other pruning is the consumer's own policy.
+**The one omission the format makes is TOML's `None`:** TOML has no null, so `__as_toml__()`
 leaves the key out of its table and records it in that table's
 `@_lexemes` as `"None"`, from which a yapyon-aware reader restores it.
 Nothing is lost; a plain TOML reader sees the key absent, as TOML tools
@@ -695,6 +696,45 @@ never used. `default` may be given by position or keyword.
 loaded value never changes another. That is what can be observed, not how
 it is built — an implementation shares whatever cannot be told apart,
 every single value included.
+
+### 5.1.6 Removing None values
+
+`__not_none__(value)` returns a **separate, recursive copy** with None-valued
+entries removed. The receiver spelling is `value.__not_none__()`. It takes
+exactly one positional argument and no keywords; it is a data transformation,
+not a serializer, and needs no contract.
+
+- In a **dictionary**, omit each key whose resolved value is `None`.
+- In a **multimap**, omit each individual entry whose resolved value is `None`;
+  retain the order and repeated keys of the remaining entries.
+- In a **list**, omit each element that is `None`, retaining the order of the
+  remaining elements. Their indices therefore shift.
+- Recurse into retained values, including collections nested inside lists or
+  template holes. A template keeps its parts and is not rendered.
+- Keep every other value, including `False`, `0`, `""`, the string `"None"`, and
+  empty containers. A container emptied by this operation stays present; it is
+  not `None`. A scalar argument, including `None` itself, keeps its value.
+
+The whole argument resolves **before** the transformation (§13.1), in its
+original scope. The original is unchanged, and retained literals keep their
+lexemes and keys keep their name/non-name provenance, as in a copy (§5.6).
+Copying counts toward §5.3's resource limits.
+
+The canonical use chains the result into a serializer:
+
+```yapyon
+foo:
+  name: "gw"
+  token: None
+  options: [None, {limit: None, enabled: False}]
+body: foo.__not_none__().__as_json__()
+```
+
+`body` is the JSON text `{"name": "gw", "options": [{"enabled": false}]}`.
+This removal is **explicit**: `foo.__as_json__()` still includes the nulls,
+and `__not_none__()` itself returns data, not text. The result may instead
+be passed to TOML, YAML, or yapyon serialization under each serializer's
+ordinary rules. No serializer or host-value export prunes implicitly.
 
 ### 5.2 Resolution scope: nearest wins
 
@@ -1303,7 +1343,7 @@ a record; `yapyon.is_record` performs the §12.2 test without loading.*
 A document may **call functions** inside a hole (`GRAMMAR §G5`):
 `{match_first(supported, mind.dialects)}`, or in the receiver form
 `{supported.match_first(mind.dialects)}`. A dunder name calls a
-**built-in**, defined by this specification (§5.1.2, §5.1.3); any other name calls a
+**built-in**, defined by this specification (§5.1.2–§5.1.6); any other name calls a
 function **declared** in a **contract** (§13.2) that the program loading the
 document supplies.
 

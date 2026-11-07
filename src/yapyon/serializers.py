@@ -17,10 +17,10 @@ value — and every writer is stdlib-only, by the rule the core keeps.
 **Approximate, never refuse** (§5.1.2): a multimap, bytes, a non-decimal
 integer, TOML's `None` — each is written as plain data the target format
 can carry, with what it cannot say recorded beside it by that format's own
-means. **yapyon does not prune**: dropping a key because its value is `None`
-or `""` would be a silent reinterpretation (ehmon 7), so a consumer wanting
-that prunes its own tree first. TOML's `None` is the one omission, and it is
-recorded.
+means. **Serializers do not prune implicitly**: dropping a key because its
+value is `None` or `""` would be a silent reinterpretation (ehmon 7). An
+explicit `__not_none__()` call can remove None values before serialization.
+TOML's `None` is the one serializer omission, and it is recorded.
 """
 
 from __future__ import annotations
@@ -97,6 +97,8 @@ CASTERS = {"__str__": "str", "__int__": "int", "__float__": "float",
 #: SPEC §5.1.5's getter: `__get__(container, key, default=None)`.
 GET_BUILTIN = "__get__"
 
-#: Every built-in a dunder call may name (SPEC §5.1.2, §5.1.3, §5.1.5).
+NOT_NONE_BUILTIN = "__not_none__"
+
+#: Every built-in a dunder call may name (SPEC §5.1.2–§5.1.6).
 BUILTIN_NAMES = (SERIALIZER_NAMES + (ENV_BUILTIN,) + tuple(CASTERS)
-                 + (GET_BUILTIN,))
+                 + (GET_BUILTIN, NOT_NONE_BUILTIN))
