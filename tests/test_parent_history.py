@@ -1,4 +1,4 @@
-"""Retained slot operations make their containing dictionary a program."""
+"""Empty parent dictionaries do not retain hidden override operations."""
 
 import pytest
 
@@ -51,31 +51,31 @@ def _empty_and_reuse(tree, layout, filler):
 @pytest.mark.parametrize('layout', LAYOUTS)
 @pytest.mark.parametrize('action', ACTIONS)
 @pytest.mark.parametrize('filler', FILLERS)
-def test_parent_retains_program_identity_after_save_remove_and_slot_reuse(layout, action, filler):
+def test_emptied_parent_has_no_overrides_after_save_remove_and_slot_reuse(layout, action, filler):
     tree = _make(layout, action)
     saved = tree.to_source()
     restored = parse(saved, source='saved.yap')
     assert restored.to_source() == saved
-    supplied = yapyon.loads_record(filler)
-    expected = supplied if isinstance(supplied, dict) else {}
+    expected = {'seed': 1} if filler == 'seed: 1' else {}
     assert _empty_and_reuse(tree, layout, filler) == expected
     assert _empty_and_reuse(restored, layout, filler) == expected
 
 
 @pytest.mark.parametrize('action', ACTIONS)
-def test_parent_history_is_retained_by_the_edit_without_a_prior_save(action):
+def test_emptied_parent_has_no_hidden_overrides_without_a_prior_save(action):
     tree = _make('root', action)
     assert _empty_and_reuse(tree, 'root', '7') == {}
 
 
 @pytest.mark.parametrize('layout', LAYOUTS)
-def test_an_emptied_parent_program_can_itself_be_saved_and_reloaded(layout):
+def test_an_emptied_parent_saves_as_a_plain_empty_dictionary(layout):
     tree = _make(layout, 'dictionary')
     parent = _parent(tree, layout)
     parent['part'].remove()
     fragment = merge(parent)
     assert _reuse(fragment) == {}
     saved = fragment.to_source()
+    assert saved == '{}\n'
     restored = parse(saved)
     assert restored.to_source() == saved
     assert _reuse(restored) == {}
@@ -85,45 +85,45 @@ def test_an_emptied_parent_program_can_itself_be_saved_and_reloaded(layout):
     '{}', 'a: 1', 'part<base>: {}', 'part<base>:= {}',
     'part<base>: {} | {}', '[] | {a: 1}',
 ])
-def test_literal_parent_controls_do_not_acquire_unrelated_history(text):
+def test_all_emptied_parent_spellings_have_the_same_override_identity(text):
     tree = parse(text)
     restored = parse(tree.to_source())
     for candidate in (tree, restored):
         for key in list(candidate.keys()):
             candidate[key].remove()
-        assert _reuse(candidate) == 7
+        assert _reuse(candidate) == {}
 
 
-def test_reading_and_saving_a_single_slot_does_not_change_its_parents_identity():
+def test_reading_and_saving_a_single_slot_does_not_change_its_parent():
     tree = parse('part<base>: {config: "reset"}')
     assert tree['part'].label == ('base',)
     tree['part'].overrides.to_source()
     tree.to_source()
     tree['part'].remove()
-    assert _reuse(tree) == 7
+    assert _reuse(tree) == {}
 
 
 @pytest.mark.parametrize('action', ACTIONS)
-def test_whole_parent_replacement_discards_its_former_operation_history(action):
+def test_whole_parent_replacement_is_an_empty_override_identity(action):
     tree = _make('root', action)
     tree.root.replace(parse('{}'))
     assert tree.to_source() == '{}\n'
-    assert _reuse(tree) == 7
+    assert _reuse(tree) == {}
 
 
 @pytest.mark.parametrize('layout', ['mapping', 'sequence'])
-def test_only_the_containing_mapping_keeps_the_lifted_program_not_unrelated_ancestors(layout):
+def test_removing_a_changed_parent_does_not_leave_operations_in_its_ancestors(layout):
     tree = _make(layout, 'dictionary')
     if layout == 'mapping':
         tree['branch'].remove()
         assert tree.to_source() == '{}\n'
-        assert _reuse(tree) == 7
+        assert _reuse(tree) == {}
     else:
         tree[0].remove()
         assert tree.resolve() == []
 
 
-def test_copies_retain_parent_history_without_aliasing_the_original_slot():
+def test_copying_and_emptying_a_parent_does_not_alias_its_original_slot():
     tree = _make('root', 'dictionary')
     copied = merge(tree)
     copied['part'].remove()
@@ -132,7 +132,7 @@ def test_copies_retain_parent_history_without_aliasing_the_original_slot():
     assert copied.to_source() == parse(copied.to_source()).to_source()
 
 
-def test_pending_key_locations_survive_until_their_corresponding_removals():
+def test_removed_pending_key_locations_do_not_leave_hidden_overrides():
     tree = parse('part<base>: {}\ny"{missing}": 1')
     tree['part'].merge(parse('config: 2'))
     restored = parse(tree.to_source())
@@ -142,20 +142,20 @@ def test_pending_key_locations_survive_until_their_corresponding_removals():
         assert _reuse(candidate) == {}
 
 
-def test_parent_history_does_not_erase_a_completed_fills_abstract_obligation():
+def test_empty_override_handling_does_not_erase_a_completed_fills_abstract_obligation():
     tree = _make('root', 'dictionary')
     tree['part'].fill(parse('name: "x"\ny"need_{name}"<>: {}'))
     with pytest.raises(AkanError, match='undecided abstract-slot obligation'):
         tree.to_source()
 
 
-def test_retained_parent_saving_does_not_evaluate_or_mutate_the_input(monkeypatch):
+def test_parent_saving_does_not_evaluate_or_mutate_the_input(monkeypatch):
     tree = _make('root', 'dictionary')
     handle = tree['part']
     before = handle.where, handle.label, list(tree.warnings)
 
     def forbidden(*args, **kwargs):
-        pytest.fail('parent-history source writing evaluated unfinished data')
+        pytest.fail('source writing evaluated unfinished data')
 
     for target in ('yapyon.tree.resolve', 'yapyon.tree.environment',
                    'yapyon.resolver.Resolver._lookup', 'yapyon.resolver.Resolver._call',
@@ -176,11 +176,11 @@ def test_replacing_a_field_with_a_deep_slot_free_value_does_not_project_it(opera
     assert receiver.to_source() == '{}\n'
 
 
-def test_finished_data_export_does_not_inherit_unresolved_program_history():
+def test_finished_empty_data_and_emptied_source_have_the_same_override_identity():
     tree = _make('root', 'dictionary')
     tree['part'].remove()
     data = tree.resolve()
     assert data == {}
     fresh = parse(yapyon.dumps(data))
     assert fresh.to_source() == '{}\n'
-    assert _reuse(fresh) == 7
+    assert _reuse(fresh) == _reuse(tree) == {}

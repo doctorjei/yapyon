@@ -2,7 +2,7 @@
 
 import copy
 
-from .assembly import MergedMapping, empty_overrides, project, selected_slot
+from .assembly import MergedMapping, project, selected_slot
 from .lexer import AkanError
 from .parser import (Expression, Mapping, Merge, MultiMap, Sequence, Slot,
                      children)
@@ -22,18 +22,9 @@ def _check_fills(node):
 
 
 def _chain(earlier, later):
-    if (empty_overrides(later) and isinstance(earlier, Merge)
-            and empty_overrides(earlier.args[1])):
-        return earlier
     node = Merge(earlier.line, earlier.col, earlier, later, authored=False)
     node.source = earlier.source
     return node
-
-
-def _marked(node):
-    empty = Mapping(node.line, node.col, [])
-    empty.source = node.source
-    return _chain(node, empty)
 
 
 def _slot_program(node):
@@ -79,17 +70,18 @@ def _has_history(node, memo):
 
 
 def _collapse(node, history):
-    if not isinstance(node, (MergedMapping, Merge)) or _has_history(node, history):
+    if not isinstance(node, (MergedMapping, Merge)):
         return node
     view = project(node)
     if isinstance(view, MergedMapping):
         if view.pending_key() is not None:
             return node
         view.finish()
+        if _has_history(view, history):
+            return view
         out = Mapping(view.line, view.col, list(view.pairs))
         out.source = view.source
-        # A dictionary program emptied by later edits is not literal slot overrides.
-        return _marked(out)
+        return out
     return view
 
 
@@ -125,7 +117,7 @@ def _prepare(node, history):
         out = node
         for layer in tails:
             out = _chain(out, layer)
-        return _marked(out) if tails or node.retained_program else out
+        return out
     if isinstance(node, Slot):
         node.layers = [_prepare(layer, history) for layer in node.layers]
     elif isinstance(node, Sequence):

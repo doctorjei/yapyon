@@ -25,10 +25,10 @@ def test_a_fill_is_the_filler_under_the_overrides():
         "name": "llamacpp", "mind": {"endpoint": "local", "model": "q4"}}}
 
 
-def test_empty_overrides_leave_the_filler_as_it_is():
+def test_empty_dictionary_overrides_replace_an_incompatible_filler():
     tree = parse("harness<claude>: {}\n")
     tree["harness"].fill(parse('"just a string"'))
-    assert tree.resolve() == {"harness": "just a string"}
+    assert tree.resolve() == {"harness": {}}
 
 
 def test_one_filler_may_fill_many_slots_each_its_own():

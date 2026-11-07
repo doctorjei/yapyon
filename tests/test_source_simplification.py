@@ -36,8 +36,6 @@ SIMPLIFIED_DIALECT = '''dialect:
     key_header: "Authorization: Bearer"
     headers: ["anthropic-version: 2023-06-01"]
     body: ""
-    | {}
-  | {}
 '''
 
 
@@ -62,22 +60,22 @@ def test_complete_dialect_collapses_without_rendering_its_expressions():
 
 
 @pytest.mark.parametrize('text,expected', [
-    ('{} | {}', '{}\n| {}\n'),
-    ('{a: 0x1} | {b: y"{later}"}', 'a: 0x1\nb: y"{later}"\n| {}\n'),
-    ('name: "base"\n|\nname: "chosen"', 'name: "chosen"\n| {}\n'),
-    ('value: BAD()\n|\nvalue: y"{later}"', 'value: y"{later}"\n| {}\n'),
-    ('value: y"{missing}"\n|\nvalue: None', 'value: None\n| {}\n'),
-    ('value: y"{missing}"\n|\nvalue:= {}', 'value:= {}\n| {}\n'),
+    ('{} | {}', '{}\n'),
+    ('{a: 0x1} | {b: y"{later}"}', 'a: 0x1\nb: y"{later}"\n'),
+    ('name: "base"\n|\nname: "chosen"', 'name: "chosen"\n'),
+    ('value: BAD()\n|\nvalue: y"{later}"', 'value: y"{later}"\n'),
+    ('value: y"{missing}"\n|\nvalue: None', 'value: None\n'),
+    ('value: y"{missing}"\n|\nvalue:= {}', 'value:= {}\n'),
     ('[] | [y"{later}"]', '[y"{later}"]\n'),
     ('[y"{later}"] | []', '[y"{later}"]\n'),
     ('{+} | {+ a: y"{later}"}', '+ a: y"{later}"\n'),
     ('{+ a: y"{later}"} | {+}', '+ a: y"{later}"\n'),
     ('None | {a: y"{later}"}', 'a: y"{later}"\n'),
-    ('{a: y"{later}"} | None', 'a: y"{later}"\n'),
+    ('{a: y"{later}"} | None', 'None\n'),
     ('[1] | {}', '{}\n'),
     ('{} | []', '[]\n'),
-    ('[1] | None', '[1]\n'),
-    ('{a: {old: 1}} | {a: "reset"} | {a: {new: 2}}', 'a:\n  new: 2\n| {}\n'),
+    ('[1] | None', 'None\n'),
+    ('{a: {old: 1}} | {a: "reset"} | {a: {new: 2}}', 'a:\n  new: 2\n'),
 ])
 def test_structurally_proven_winners_and_identities_have_no_redundant_pipe(text, expected):
     tree = parse(text)
@@ -147,8 +145,8 @@ def test_dialect_effective_field_edits_survive_normalization(key, operation):
 
 
 @pytest.mark.parametrize('text,expected', [
-    ('x: {old: 1}\n|\nx:= {new: 2}', 'x:=\n  new: 2\n| {}\n'),
-    ('x:= 1\n|\nx: 2', 'x:= 2\n| {}\n'),
+    ('x: {old: 1}\n|\nx:= {new: 2}', 'x:=\n  new: 2\n'),
+    ('x:= 1\n|\nx: 2', 'x:= 2\n'),
 ])
 def test_explicit_replacement_intent_survives_collapse_and_later_edits(text, expected):
     tree = parse(text)
@@ -161,7 +159,7 @@ def test_explicit_replacement_intent_survives_collapse_and_later_edits(text, exp
 
 def test_an_ordinary_reset_does_not_invent_a_replacement_annotation():
     tree = merge(parse('x: "reset"'), parse('x: {new: 2}'))
-    assert tree.to_source() == 'x:\n  new: 2\n| {}\n'
+    assert tree.to_source() == 'x:\n  new: 2\n'
     assert ':=' not in tree.to_source()
     lower = parse('x: {seed: 0}')
     for candidate in (tree, _reload(tree)):
@@ -171,7 +169,7 @@ def test_an_ordinary_reset_does_not_invent_a_replacement_annotation():
 def test_first_key_spelling_visibility_order_and_winning_lexeme_survive():
     tree = merge(parse('box: {"a": 0x1, ｘ: 3.10}'),
                  parse('box: {a: 0b10, z: r"text"}'))
-    assert tree.to_source() == 'box:\n  "a": 0b10\n  ｘ: 3.10\n  z: r"text"\n  | {}\n| {}\n'
+    assert tree.to_source() == 'box:\n  "a": 0b10\n  ｘ: 3.10\n  z: r"text"\n'
     for candidate in (tree, _reload(tree)):
         assert candidate['box'].keys() == ['a', 'x', 'z']
         assert candidate['box']['a'].key_lexeme() == '"a"'
@@ -226,17 +224,17 @@ def test_sequential_slot_overrides_are_not_combined_into_one_rhs(filler, expecte
         assert candidate.resolve() == expected
 
 
-@pytest.mark.parametrize('filler,expected', [('7', None), ('[]', []), ('{}', {})])
-def test_pending_none_after_a_named_slot_depends_on_the_eventual_filler(filler, expected):
+def test_higher_none_discards_a_named_slot_without_needing_its_filler():
     tree = parse('part<base>: {}\n|\npart: None')
     for candidate in (tree, _reload(tree)):
-        candidate['part'].fill(parse(filler))
-        assert candidate.resolve() == {'part': expected}
+        assert candidate.slots() == []
+        assert candidate.to_source() == 'part: None\n'
+        assert candidate.resolve() == {'part': None}
 
 
 def test_disjoint_slot_and_symbolic_fields_can_share_a_simplified_dictionary():
     tree = merge(parse('seed: "s"\na: y"{seed}"'), parse('b<base>: {x: 1}'))
-    assert tree.to_source().count('| {}') == 1
+    assert '|' not in tree.to_source()
     for candidate in (tree, _reload(tree)):
         candidate['seed'].replace(parse('"later"'))
         candidate['b'].fill(parse('y: 2'))
@@ -338,7 +336,7 @@ def test_empty_collection_identity_materialization_still_meets_the_work_ceiling(
 
 
 @pytest.mark.parametrize('filler', ['7', 'None', '[]', '{+ a: 1}'])
-def test_empty_dictionary_program_is_not_a_harmless_literal_slot_override(filler):
+def test_empty_dictionary_program_applies_ordinary_merging_as_slot_overrides(filler):
     tree = parse('part<base>: {} | {}')
     restored = _reload(tree)
     for candidate in (tree, restored):
@@ -346,15 +344,10 @@ def test_empty_dictionary_program_is_not_a_harmless_literal_slot_override(filler
         assert candidate.resolve() == {'part': {}}
 
 
-@pytest.mark.parametrize('text,program', [
-    ('{} | {}', True),
-    ('{a: 1} | {b: 2}', True),
-    ('[] | {}', False),
-    ('None | {}', False),
-    ('{} | None', False),
-    ('[] | {a: 1}', False),
+@pytest.mark.parametrize('text', [
+    '{} | {}', '{a: 1} | {b: 2}', '[] | {}', 'None | {}', '[] | {a: 1}',
 ])
-def test_dictionary_program_identity_survives_edits_and_later_slot_reuse(text, program):
+def test_emptied_dictionaries_apply_ordinary_merging_after_edits_and_slot_reuse(text):
     tree = parse(text)
     restored = _reload(tree)
     for candidate in (tree, restored):
@@ -363,10 +356,10 @@ def test_dictionary_program_identity_survives_edits_and_later_slot_reuse(text, p
         host = parse('part<base>: {}')
         host['part'].merge(candidate)
         host['part'].fill(parse('7'))
-        assert host.resolve() == {'part': {} if program else 7}
+        assert host.resolve() == {'part': {}}
 
 
-def test_a_compacted_nested_dictionary_keeps_its_identity_after_extraction_and_edits():
+def test_an_emptied_compacted_nested_dictionary_has_no_overrides_after_extraction():
     tree = parse(DIALECT)
     restored = _reload(tree)
     for candidate in (tree, restored):
@@ -392,7 +385,7 @@ def test_reduced_source_work_can_avoid_a_resource_refusal_without_relaxing_limit
     with pytest.raises(AkanError, match='work ceiling'):
         tree.resolve(max_size=64)
     restored = _reload(tree)
-    assert restored.to_source().count('| {}') == 1
+    assert '|' not in restored.to_source()
     assert restored.resolve(max_size=64) == {'key' + str(index): 0 for index in range(12)}
     limited = parse('value: y"12345"')
     with pytest.raises(AkanError, match='ceiling'):

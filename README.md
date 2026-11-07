@@ -117,7 +117,7 @@ typed elements, and multimaps match whole key/value pairs: each equal item
 keeps the larger count from either input, not the sum. Earlier positions
 stay; unmatched incoming occurrences append, and matches take the complete
 higher representation. `True`, `1`, and `1.0` are distinct for this comparison.
-`None` yields to containers in either order; explicit `:= None` forces it.
+`None` follows ordinary scalar precedence: higher wins, even against a container.
 Quoted/computed keys never become names through merging.
 
 A pipe has the lowest value-operator precedence and associates left to right.
@@ -130,9 +130,9 @@ existing reference/call grammar, without pipes.
 resolving anything. Unfinished expressions, necessary contribution boundaries,
 replacement intent, and meaningful grouping survive. Unknown keys, collection
 comparisons, and sequential slot operations stay layered where needed; saving
-never freezes one current result. A minimal `| {}` may remain to preserve a
-dictionary program's behavior after later edits or slot reuse. The normalized
-text may have a lower tier
+never freezes one current result. Literal and composed empty dictionaries
+use the same merge rule, including as slot overrides; no history marker is
+needed just to distinguish them. The normalized text may have a lower tier
 and less resource cost than its input. Save it and parse it again to continue
 filling slots and composing.
 Historical fill obligations that still need computed-key comparisons and

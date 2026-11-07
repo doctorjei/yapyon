@@ -110,12 +110,12 @@ HIGHER = (
 MATRIX = (
     "R R R R R R R R R",
     "R R R R R R R R R",
-    "L R R R R R R R R",
-    "L R L D R R R R R",
-    "L R R R R R R R R",
-    "L R R R L S R R R",
-    "L R R R R R R R R",
-    "L R R R R R L M R",
+    "R R R R R R R R R",
+    "R R L D R R R R R",
+    "R R R R R R R R R",
+    "R R R R L S R R R",
+    "R R R R R R R R R",
+    "R R R R R R L M R",
     "R R R R R R R R R",
 )
 COMBINED = {
@@ -356,8 +356,8 @@ def test_replacement_with_labels_and_flow_newlines_replaces_with_a_fresh_slot(ke
         labels = [("old",), ("new",)] if key.startswith(("y", "ry")) else [("new",)]
         assert [slot.label for slot in slots] == labels
         for slot in slots:
-            slot.fill(parse("42"))
-        _assert_value(candidate.resolve(), {"field": 42})
+            slot.fill(parse("fresh: 42"))
+        _assert_value(candidate.resolve(), {"field": {"fresh": 42}})
 
 
 @pytest.mark.parametrize("rhs,expected", [
@@ -519,9 +519,8 @@ def test_discarded_dictionary_bodies_do_not_run(lower, upper, expected):
     '[{bad: (missing)}] | [{bad: 1}]',
     '{+ a: (missing)} | {+ a: 1}',
     'value: {bad: (missing)}\nout: (value) | {bad:= 1}',
-    'rows: {bad: (missing)} | None',
 ])
-def test_required_comparisons_copies_and_none_do_not_hide_missing_values(text):
+def test_required_comparisons_and_copies_do_not_hide_missing_values(text):
     tree = parse(text, source="missing.yap")
     for candidate in (tree, _reload(tree)):
         with pytest.raises(AkanError):
@@ -583,12 +582,12 @@ def make_contract():
 @pytest.mark.parametrize("runtime,other,expected", [
     (None, "None", None),
     (42, "None", None),
-    ({}, "None", {}),
-    ({"a": 1}, "None", {"a": 1}),
-    ([], "None", []),
-    ([1], "None", [1]),
-    (_mm(), "None", _mm()),
-    (_mm(("a", 1)), "None", _mm(("a", 1))),
+    ({}, "None", None),
+    ({"a": 1}, "None", None),
+    ([], "None", None),
+    ([1], "None", None),
+    (_mm(), "None", None),
+    (_mm(("a", 1)), "None", None),
     ({"a": 1}, "{b: 2}", {"a": 1, "b": 2}),
     ([1, 1], "[1, 2]", [1, 1, 2]),
     (_mm(("a", 1)), "{+ a: 1, a: 2}", _mm(("a", 1), ("a", 2))),
@@ -615,15 +614,15 @@ def test_runtime_call_and_copy_kinds_join_the_same_matrix(origin, runtime, other
     for candidate in (tree, restored):
         result = candidate.resolve(contract=make_contract, provide={"make": make})
         _assert_value(result["value"], expected)
-    assert bool(calls) is (origin == "call")
+    assert bool(calls) is (origin == "call" and other != "None")
 
 
 @pytest.mark.parametrize("runtime,lower,expected", [
     ({"b": 2}, "{a: 1}", {"a": 1, "b": 2}),
     ([2, 2], "[1, 2]", [1, 2, 2]),
     (_mm(("a", 2)), "{+ a: 1}", _mm(("a", 1), ("a", 2))),
-    (None, "{a: 1}", {"a": 1}),
-    (None, "[1]", [1]),
+    (None, "{a: 1}", None),
+    (None, "[1]", None),
 ])
 def test_incoming_call_results_are_not_classified_by_their_parse_node(
         runtime, lower, expected, make_contract):
@@ -663,7 +662,7 @@ def test_saved_pending_comparisons_read_the_later_environment_after_runtime_fill
     for candidate in (tree, restored):
         candidate["part"].fill(parse("None"))
         _assert_value(candidate.resolve(env={"HOME": home}, env_allow={"HOME"}),
-                      {"items": expected, "part": None})
+                      {"items": expected, "part": {}})
 
 
 def test_inline_bodies_use_final_scope_but_a_copy_is_finished_data():
@@ -681,22 +680,18 @@ def test_a_known_dominating_value_discards_a_call_without_invoking_it(make_contr
     def forbidden():
         pytest.fail("discarded call was evaluated")
 
-    for upper in ('value: "done"', 'value:= None', 'value:= {}'):
+    for upper in ('value: "done"', 'value: None', 'value:= None', 'value:= {}'):
         tree = merge(parse("value: MAKE()"), parse(upper))
         for candidate in (tree, _reload(tree)):
             candidate.resolve(contract=make_contract, provide={"make": forbidden})
 
 
 @pytest.mark.parametrize("filler,later,expected", [
-    ("None", "None", None), ("42", "None", None),
-    ("{}", "None", {}), ("{value: 1}", "None", {"value": 1}),
-    ("[]", "None", []), ("[1]", "None", [1]),
-    ("{+}", "None", _mm()), ("{+ a: 1}", "None", _mm(("a", 1))),
-    ("[1]", "[2]", [1, 2]), ("[1, 1]", "[1, 2]", [1, 1, 2]),
-    ("[1]", "[]", [1]), ("[]", "[2]", [2]),
+    ("[1]", "[2]", [2]), ("[1, 1]", "[1, 2]", [1, 2]),
+    ("[1]", "[]", []), ("[]", "[2]", [2]),
     ("{value: 1}", "[2]", [2]), ("42", "[2]", [2]),
     ("{+ a: 1}", "{+ a: 1, a: 2}", _mm(("a", 1), ("a", 2))),
-    ("{+ a: 1}", "{+}", _mm(("a", 1))),
+    ("{+ a: 1}", "{+}", _mm()),
     ("{+}", "{+ a: 2}", _mm(("a", 2))),
     ("[1]", "{+ a: 2}", _mm(("a", 2))),
 ])
@@ -722,17 +717,15 @@ def test_named_slot_pending_kind_matches_merging_after_the_equivalent_fill(fille
     assert handle.value == 99
 
 
-@pytest.mark.parametrize("filler,expected", [
-    ("None", None), ("42", 42), ('""', ""), ("False", False),
-    ("[]", []), ("[1, 1]", [1, 1]), ("{}", {}),
-    ("{+ a: 1, a: 1}", _mm(("a", 1), ("a", 1))),
+@pytest.mark.parametrize("filler", [
+    "None", "42", '""', "False", "[]", "[1, 1]", "{}", "{+ a: 1, a: 1}",
 ])
 @pytest.mark.parametrize("separator", [":", ":="])
-def test_literal_empty_slot_overrides_are_identity_for_every_filler_kind(filler, expected, separator):
+def test_literal_empty_slot_overrides_use_ordinary_dictionary_merging(filler, separator):
     tree = parse("part<base>" + separator + " {}")
     for candidate in (tree, _reload(tree)):
         candidate["part"].fill(parse(filler))
-        _assert_value(candidate.resolve(), {"part": expected})
+        _assert_value(candidate.resolve(), {"part": {}})
 
 
 def test_unmaterialized_comprehension_overrides_are_not_mistaken_for_literal_empty_overrides():
@@ -937,7 +930,7 @@ def test_source_save_performs_no_resolution_lookup_call_iteration_render_or_envi
               'home: y"{$HOME}"\ncall: MAKE()\ncast: __int__("3")\n'
               'encoded: name.__as_json__()\ntemplate: yt"{name}"\npart<base>: {}',
               source="original.yap"),
-        parse('rows: {"extra": 1}\ndata: {x: 2}\nitems: ["x", "x"]\npart: None'),
+        parse('rows: {"extra": 1}\ndata: {x: 2}\nitems: ["x", "x"]\npart: [1]'),
     )
     handle = tree["part"]
     before = (handle.label, handle.where, handle.key, list(tree.warnings))
@@ -969,7 +962,7 @@ def test_reloaded_pending_layers_use_saved_locations_without_mutating_original_e
     ("{field:\n =\n []}", True, 1, 1),
     ("{+ a:= 1, a: 1}", True, 1, 1),
     ('text: "| :=" # | {}', True, 1, 1),
-    ("{} | {}", False, 2, 2),
+    ("{} | {}", False, 2, 1),
     ("field: [1] | [2]", False, 2, 2),
     ("True or ({} | {})", False, 2, 2),
     ('field: yt"literal"', False, 3, 3),
@@ -1002,7 +995,7 @@ def test_literal_api_record_emission_does_not_confuse_structural_merging_with_au
     authored = parse("{data: {a: 1}} | {data: {b: 2}}")
     with pytest.raises(AkanError, match="record"):
         yapyon.emit(authored)
-    assert authored.to_source() == 'data:\n  a: 1\n  b: 2\n  | {}\n| {}\n'
+    assert authored.to_source() == 'data:\n  a: 1\n  b: 2\n'
 
 
 def test_adding_a_key_to_an_explicit_pipe_edits_the_stored_program():
@@ -1027,8 +1020,8 @@ def test_expression_wrappers_do_not_hide_authored_slots(text):
     for candidate in (tree, _reload(tree)):
         slots = candidate.slots()
         assert len(slots) == 1 and slots[0].label == ('base',)
-        slots[0].fill(parse('42'))
-        assert candidate.resolve() == 42
+        slots[0].fill(parse('value: 42'))
+        assert candidate.resolve() == {'value': 42}
 
 
 def test_record_normalization_keeps_field_operations_but_finished_data_consumes_them():

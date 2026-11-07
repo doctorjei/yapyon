@@ -1,1 +1,1 @@
-{settings: {keep: 1}, empty: [], items: [1, 1], chosen: None}
+{settings: None, empty: [], items: [1, 1], chosen: None}

@@ -11,6 +11,37 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+## 0.6.2 — 2026-11-07
+
+Built to specification and grammar **v0.6**. No new syntax or public API.
+
+### Changed — breaking
+
+- **None follows ordinary scalar precedence (§15.2).** A higher `None` replaces
+  any earlier value, including a dictionary, list, or multimap. Earlier versions
+  made None yield to containers in either order. A known higher None also
+  discards pending computations and unfilled slots without evaluating or filling
+  them. Incoming copies/calls use the same rule once their value is known.
+  None remains distinct from unset and empty values; `:=` still forces complete
+  replacement, and later contributions can change the value again.
+
+- **Empty dictionary slot overrides use the shared merge rule (§15).** Literal
+  `{}` and composed empty dictionaries now agree: dictionary fillers keep their
+  contents, and non-dictionary fillers become `{}`. The former literal-empty
+  bypass is removed. Empty contents do not forbid later overrides.
+
+### Fixed
+
+- Remove dictionary-history bookkeeping and source markers needed solely to
+  distinguish literal and composed empty dictionaries. Structurally redundant
+  dictionaries save plainly, including after edits empty them. Necessary slot
+  operation order, grouping, key/comprehension validation, and historical fill
+  obligations remain; source saving still performs no evaluation.
+- Honor discarded abstract-slot obligations inside multimap fillers when a
+  dictionary override replaces the collection. Source saving also drops a
+  historical fill obligation when a proven higher value, including None,
+  discards its entire responsible branch; retained obligations still refuse.
+
 ## 0.6.1 — 2026-11-06
 
 Built to specification and grammar **v0.6**. No new syntax or public API.

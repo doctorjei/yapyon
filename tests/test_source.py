@@ -233,6 +233,25 @@ def test_completed_fill_with_deferred_obligation_has_a_separate_save_refusal():
         tree.resolve()
 
 
+@pytest.mark.parametrize('overrides', (
+    '({branch: {other: 42}} | {})',
+    '{branch: {other: 42}} | {}',
+    '{} | ({branch: {other: 42}} | {})',
+))
+def test_grouped_fills_keep_live_historical_obligations_until_the_branch_is_discarded(overrides):
+    tree = parse('part<base>: ' + overrides, source='user.yap')
+    tree['part'].fill(parse('branch: {name: "x", y"need_{name}"<>: {}}'))
+    with pytest.raises(AkanError, match='undecided abstract-slot obligation'):
+        tree.to_source()
+    unprovided = merge(tree, parse('part: {branch: {need_x: {done: True}}}'))
+    with pytest.raises(AkanError, match='overrides must give that key a value'):
+        unprovided.resolve()
+    tree.merge(parse('part: None'))
+    restored = parse(tree.to_source())
+    assert restored.to_source() == tree.to_source()
+    assert tree.resolve() == restored.resolve() == {'part': None}
+
+
 def test_native_record_emit_still_refuses_slots_and_expressions():
     for text in ('part<base>: {}', 'name: "x"\ndesc: y"{name}"'):
         tree = parse(text)

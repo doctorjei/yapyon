@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 
 from ._digits import REFUSE_DIGITS
 from ._keys import key_error, name_key
-from .assembly import (FillCheck, MergedMapping, empty_overrides, merge_nodes,
+from .assembly import (FillCheck, MergedMapping, merge_nodes,
                        project, replace_selected_slot, selected_slot)
 from .environment import STANDARD_ENV, environment
 from .lexer import AkanError, Lexer, Yakamashiwa, fold_name
@@ -271,11 +271,6 @@ class Tree:
             else:
                 pair.value = new
                 parent.reindex()
-            if type(parent) is Mapping:
-                slot = selected_slot(new)
-                if slot is not None and (len(slot.layers) > 1
-                                         or isinstance(project(new), Merge)):
-                    parent.retained_program = True
         elif isinstance(parent, Sequence):
             parent.items[_index(parent, step, path[:-1])] = new
         else:
@@ -491,8 +486,7 @@ class Handle:
             moved.source = node.source
             self.tree._replace(self.path, replace_selected_slot(original, moved))
             return
-        layers = [layer for layer in slot.layers if not empty_overrides(layer)]
-        layers = copy.deepcopy(layers)
+        layers = copy.deepcopy(slot.layers)
         checks = self._oblige(node, layers, slot)
         for layer in layers:
             node = merge_nodes(node, layer)
@@ -557,7 +551,7 @@ class Handle:
                     steps.append(pair)
                     node = pair.value
                 else:
-                    steps.append(step)
+                    steps.append(step.index if isinstance(step, _Entry) else step)
                     node = _child(node, step, ())
             check = FillCheck(steps, layers, slot)
             try:

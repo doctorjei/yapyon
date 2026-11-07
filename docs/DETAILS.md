@@ -2,12 +2,12 @@
 
 ## Status
 
-**Version `0.6.0`**, implementing specification and grammar **v0.6** for
+**Version `0.6.2`**, implementing specification and grammar **v0.6** for
 merge/source composition and unfinished persistence, with host-value record
 export. The lexer, parser, resolver, loader, emitter, four serializers,
 contracts, and trees with slots share the format's merge rules; the suite and
 **121 portable corpus cases** exercise those contracts. The validated source
-suite executes **3770 tests**, with zero skips on Python 3.11, 3.13, and 3.14
+suite executes **3962 tests**, with zero skips on Python 3.11, 3.13, and 3.14
 using the supported POSIX test filesystem. Unsupported-ACL refusal and recovery
 are tested separately as well. Python 3.11 is the minimum supported version.
 Core runtime dependencies are the standard library.
@@ -227,11 +227,24 @@ values; `:=` replaces the field with its **complete** incoming value:
   multimaps compare in order; dictionary associations ignore entry order and
   key spelling/kind. Templates compare delivered parts and hole metadata without
   rendering. Ordinary expression `==` keeps its existing numeric behavior.
-- **None** yields to a dictionary, list, or multimap in either order, including
-  empty containers. Otherwise noncombining kinds take the higher whole value.
-  Compatible empty collections do not clear data. Zero, False, and empty text
-  are values, not absence. `field:= None` or `field:= []` explicitly replaces
+- **None** follows ordinary scalar precedence: higher wins, even against a
+  dictionary, list, or multimap. Noncombining kinds take the higher whole value.
+  Compatible empty collections do not clear data. None, zero, False, and empty
+  text are values, not absence. `field:= None` or `field:= []` explicitly replaces
   instead of combining; neither deletes the field or blocks later overrides.
+
+**Changed in 0.6.2:** a higher `None` no longer yields to an earlier container.
+It also discards an earlier pending computation or unfilled slot without
+executing or filling it. A later contribution can change the value again.
+
+```python
+>>> yapyon.loads('{old: 1} | None') is None
+True
+>>> yapyon.loads('None | {new: 2}')
+{'new': 2}
+>>> yapyon.loads('{part<base>: {bad: (missing)}} | {part: None}')
+{'part': None}
+```
 
 ```python
 >>> yapyon.loads('[0x1, True] | [1.0, 1]')
@@ -299,7 +312,7 @@ place. A consumer walks it, combines trees with `merge`, and resolves once.
 ```
 
 A merge uses the value-kind rules above: dictionary unique keys recurse,
-lists/multimaps combine whole items, and `None` yields to containers. Holes
+lists/multimaps combine whole items, and `None` follows scalar precedence. Holes
 resolve where their values end up, so a layer can refer to keys another layer
 brings. Neither merging nor source saving resolves an input early.
 
@@ -339,10 +352,13 @@ filler — `agent<base.agent>` fills with `base`'s `agent` branch — and an
 empty label, `harness<>`, is abstract: whoever fills from that document must
 give `harness` a value. A retained slot still unfilled when the tree resolves
 is akan. A later dominating value or explicit replacement can discard a slot;
-`None`, a list, or a multimap may instead need to wait for the filler's kind.
-Literal empty overrides mean no operation even on a non-dictionary filler.
-`part<new>:= {}` replaces the inherited field with a fresh slot, not an empty
-dictionary that ignores its new filler. SPEC §15 has the rules.
+a list or multimap remains a pending contribution until filling. A higher
+`None` discards the slot just as any other scalar does.
+Empty dictionary overrides use ordinary merging: they preserve a dictionary
+filler but replace any non-dictionary filler with `{}`. Literal `{}` and
+composed empty dictionaries agree; neither forbids adding later overrides.
+`part<new>:= {}` selects a fresh slot whose dictionary overrides still apply
+after it is filled. SPEC §15 has the rules.
 
 A labeled field's **complete RHS is one dictionary override contribution**.
 Several sequential additions to an unfilled slot are not interchangeable with
@@ -373,7 +389,6 @@ agent:
   name: "local"
   desc: y"{name}"
   harness<chosen>: {}
-  | {}
 >>> resumed = yapyon.parse(saved, source="saved-agent.yap")
 >>> resumed["agent"]["harness"].fill(yapyon.parse('mode: "cli"'))
 >>> resumed.resolve()
@@ -387,13 +402,12 @@ empty-collection identities. It does not need to know what `name` resolves to
 in a later composition. Earlier key spelling, name/non-name kind, entry order,
 and explicit replacement intent survive.
 
-The small `| {}` marker is intentional. A dictionary program emptied by later
-edits must still behave as a program when reused as slot overrides, not become
-harmless literal `{}` that a slot skips. Keeping this distinction can require
-a marker even while the dictionary currently has fields. A plain dictionary
-selected by an incompatible-kind merge does not acquire such history. Thus
-compaction removes obsolete definitions without promising entirely pipe-free
-output.
+No marker is needed just to remember that a dictionary was composed. Empty
+dictionary contents follow the same ordinary merge rule whether literal,
+composed, or emptied by edits. Since 0.6.2, literal empty slot overrides no
+longer bypass that rule: filling `part<base>: {}` with `7`, `None`, a list,
+or a multimap gives `part: {}`. A dictionary filler keeps its contents.
+Necessary layers still survive; output is not unconditionally pipe-free.
 
 Simplification is conservative, not unconditional flattening. Computed-key
 validation domains, comprehensions combined with other nonempty dictionaries,
@@ -438,12 +452,10 @@ remain record-only and never evaluate authored pipes to make them records.
 Data expansion/serializers consume composition into finished data instead;
 source writing preserves the unfinished program.
 
-When sequential slot operations need surrounding dictionary layers, their
-immediate parent retains that program identity **in memory as well as in saved
-source**. Removing the parent's last field does not turn it back into harmless
-literal empty overrides. Whole-value replacement with a fresh literal discards
-the former program; unrelated ancestors do not acquire its history. Saving does
-not introduce or repair this distinction as a side effect:
+Sequential slot operations retain their needed surrounding dictionary layers
+while those operations exist. Removing the parent's last field leaves an empty
+dictionary, with no hidden history or marker. Reusing that empty dictionary as
+slot overrides follows ordinary merging, in memory and after saving:
 
 ```python
 >>> program = yapyon.parse('part<base>: {config: "reset"}')

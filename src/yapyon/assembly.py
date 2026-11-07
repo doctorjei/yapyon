@@ -157,17 +157,12 @@ def kind(node):
     if isinstance(node, MultiMap):
         return "multimap"
     if isinstance(node, Scalar):
-        return "none" if node.type == "none" else "atom"
+        return "atom"
     if isinstance(node, ResolvedTemplate):
         return "atom"
     if isinstance(node, YString) and not isinstance(node, Expression) and node.prefix != "(":
         return "atom"
     return None
-
-
-def empty_overrides(node):
-    return (type(node) is Mapping and not node.pairs and not node.fill_checks
-            and not node.retained_program)
 
 
 _PENDING = object()
@@ -195,11 +190,6 @@ def _combine(earlier, later, *, collections=False, charge=None, depth=1):
     a, b = kind(earlier), kind(later)
     if a == "dict" and b == "dict":
         return MergedMapping(earlier, later, budget=charge)
-    containers = ("dict", "list", "multimap")
-    if a == "none" and b in containers:
-        return later
-    if b == "none" and a in containers:
-        return earlier
     if a is not None and b is not None:
         if a == b and a in ("list", "multimap"):
             original = earlier.items if a == "list" else earlier.entries

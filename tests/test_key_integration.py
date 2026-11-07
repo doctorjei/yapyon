@@ -16,19 +16,19 @@ agent<>: {}
 '''
 AGENT = '''harness:
   name: "base_harness"
-  path: y"{runtime.agent_path}/harness"
+  path: y"{runtime.agent_path.value}/harness"
 '''
 
 
 def test_runtime_child_slots_are_filled_after_the_outer_slot():
     tree = parse(RUNTIME)
     tree["runtime"].fill(parse("{}"))
-    tree["runtime"]["agent_path"].fill(parse('"/home/example/stable_dir"'))
+    tree["runtime"]["agent_path"].fill(parse('value: "/home/example/stable_dir"'))
     tree["runtime"]["secret_backend"].fill(parse("{}"))
     tree["agent"].fill(parse(AGENT))
     assert tree.slots() == []
     result = tree.resolve()
-    assert result["runtime"] == {"agent_path": "/home/example/stable_dir", "secret_backend": {}}
+    assert result["runtime"] == {"agent_path": {"value": "/home/example/stable_dir"}, "secret_backend": {}}
     assert result["agent"]["harness"]["path"] == "/home/example/stable_dir/harness"
 
 

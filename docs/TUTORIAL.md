@@ -657,9 +657,12 @@ comparison would call them equal:
 [1, True, 1.0]
 ```
 
-`None` yields to dictionaries, lists, and multimaps in either order, including
-empty ones. Compatible empty containers do not clear existing data. Other
-noncombining kinds take the higher value. `field:= None` or `field:= []`
+`None` follows ordinary scalar precedence: a higher None replaces even a
+container, and a higher container replaces None. This changed in 0.6.2;
+0.6.1 made None yield to containers in either order. A known higher None also
+discards an earlier pending expression or unfilled slot without evaluating it.
+Compatible empty containers do not clear existing data. Other noncombining
+kinds take the higher value. `field:= None` or `field:= []`
 forces replacement, keeping the field present; a later contribution can
 still change it. Spaces may separate `:` and `=`: `field : = []` is the
 same annotation, not assignment or a new type.
@@ -722,9 +725,9 @@ comprehension iteration, template rendering, or runtime duplicate comparison.
 The source retains necessary layers, replacement intent, lexical bindings,
 and meaningful grouping. Structurally redundant layers collapse: known-key
 dictionaries can combine, proven overwritten values disappear, and compatible
-empty collections yield without comparing elements. A minimal `| {}` can remain
-because a dictionary program must not become harmless literal empty slot
-overrides after later edits. Uncertain keys, generated
+empty collections yield without comparing elements. No marker is needed solely
+to remember that a dictionary was composed: literal and composed empty
+contents follow the same ordinary merge rule. Uncertain keys, generated
 entries, and sequential slot programs retain the boundaries they need. Later
 fillers still control generated values; saving neither chooses a filler nor
 freezes one current result. Removing redundant operations can lower the saved
@@ -734,8 +737,11 @@ this program.
 
 A labeled field's complete right-hand side is **one dictionary override
 contribution**. Sequential overrides of a slot are not interchangeable with
-one premerged RHS. Literal `{}` means no overrides even for a non-dictionary
-filler; `part<new>:= {}` supplies a fresh slot that still needs its own filler.
+one premerged RHS. Literal `{}` describes empty dictionary contents and uses
+ordinary merging, just like `{} | {}`: a dictionary filler keeps its contents,
+while a non-dictionary filler is replaced with `{}`. This changed in 0.6.2;
+previously literal empty overrides skipped the merge. `part<new>:= {}` selects
+a fresh slot whose overrides apply normally after filling.
 The source writer may lift sequential slot operations into surrounding
 dictionary layers to preserve their order.
 

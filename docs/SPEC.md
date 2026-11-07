@@ -1766,11 +1766,12 @@ harness<claude>: {}                    # a slot with no overrides
 override contribution: an ordinary dictionary, a dictionary comprehension,
 or a grouped/pipe combination of those forms (`GRAMMAR §G6`–`§G7`, `§G9`).
 A scalar, list, multimap, or arbitrary reference/call as the overrides is
-akan. Literal `{}` means no overrides, even for a non-dictionary filler;
-it is not an incompatible empty dictionary applied over that filler. Only
-a proven harmless literal empty override, with no retained operation or
-validation history, may be skipped. A pending comprehension is not empty
-merely because it has no known entries yet. Whitespace may surround and
+akan. `{}` describes empty dictionary contents, not an exemption from merging
+or a prohibition on later overrides. Literal and composed empty dictionaries
+follow the same ordinary merge rule (§15.2): they preserve a dictionary filler
+but replace a non-dictionary filler with an empty dictionary. A pending
+comprehension still retains its computation and validation; no known entries
+is not proof that it is empty. Whitespace may surround and
 fill the label (`persona <llamacpp>:`);
 `persona<llamacpp>:` is the canonical spelling.
 
@@ -1820,25 +1821,25 @@ fields do not create a `None` entry.
   needs it.
 
 For **established ordinary values**, let **A** mean `str`, `bytes`, `int`,
-`float`, `bool`, or `Template`, and **D**, **L**, and **M** mean dictionary,
-list, and multimap. `Template` is not thereby a scalar literal or record
-value. Rows are earlier/lower; columns are incoming/higher:
+`float`, `bool`, `None`, or `Template`, and **D**, **L**, and **M** mean
+dictionary, list, and multimap. `Template` is not thereby a scalar literal or
+record value. Rows are earlier/lower; columns are incoming/higher:
 
-| Earlier / incoming | None | A | D | L | M |
-|---|---|---|---|---|---|
-| None | None | incoming | incoming | incoming | incoming |
-| A | incoming None | incoming | incoming | incoming | incoming |
-| D | earlier D | incoming | dictionary merge | incoming | incoming |
-| L | earlier L | incoming | incoming | list merge | incoming |
-| M | earlier M | incoming | incoming | incoming | multimap merge |
+| Earlier / incoming | A | D | L | M |
+|---|---|---|---|---|
+| A | incoming | incoming | incoming | incoming |
+| D | incoming | dictionary merge | incoming | incoming |
+| L | incoming | incoming | list merge | incoming |
+| M | incoming | incoming | incoming | multimap merge |
 
-Thus `None` yields to **every container in either order**, including an empty
-one. Against a non-container it follows higher-wins precedence. Compatible
-empty collections yield rather than clear or normalize the other's authored
-repetitions. Incompatible kinds use the incoming whole value without a cast,
-even when it is an empty container of a different kind. Zero, `False`, and
-empty text are actual values, not unset. Explicit field replacement bypasses
-this ordinary matrix.
+**None is an ordinary scalar for precedence.** An incoming `None` replaces
+any earlier value, including a container; an incoming container replaces an
+earlier `None`. None remains a distinct data value, not unset or an empty
+container. Compatible empty collections yield rather than clear or normalize
+the other's authored repetitions. Incompatible kinds use the incoming whole
+value without a cast, even when it is an empty container of a different kind.
+Zero, `False`, and empty text are actual values, not unset. Explicit field
+replacement bypasses this ordinary matrix.
 
 Unknown keys, kinds, or values stay deferred until the operation has enough
 information. Parse, merge, and source preparation must not execute expressions
@@ -1938,19 +1939,21 @@ combination:
 | Earlier | Incoming | Result |
 |---|---|---|
 | a named slot `x<a>` | a dictionary | the slot, with the complete incoming dictionary appended as its last override contribution |
-| a named slot `x<a>` | None, a list, a multimap, or a value of unknown kind | retain the slot and ordered pending combination until the filler kind is known |
+| a named slot `x<a>` | a list, a multimap, or a value of unknown kind | retain the slot and ordered pending combination until the filler and overrides are applied |
 | a named slot `x<a>` | a known A value, or a slot | the incoming value or slot |
 | `x<>` | a slot `x<b>` | `x<b>`, with both override histories, earlier first |
 | `x<>` | `x<>` | `x<>`, with both override histories, earlier first, retaining the abstract obligation |
 | `x<>` | any contribution that is not a slot | the incoming value, selecting that value for the abstract position |
 | anything not a slot | a slot | the slot |
 
-An unfilled named slot followed by `None` cannot simply be discarded: a
-container filler survives that `None`, while a scalar filler does not.
-Likewise, a later list combines with a list filler but replaces a dictionary
-filler. Retain any still-needed slot as discoverable and fillable; resolving
-without filling it remains akan. A dominating atomic value or explicit
-replacement that discards the slot also removes the need to fill it.
+A later list or multimap remains a separate contribution after the selected
+slot's dictionary override program, not part of that dictionary-only RHS.
+Retain any still-needed slot as discoverable and fillable; resolving without
+filling it remains akan. A dominating atomic value, including `None`, or
+explicit replacement that discards the slot also removes the need to fill it.
+A known incoming `None` likewise discards any earlier pending computation
+without evaluating it; an incoming copy or call of unknown kind must still
+wait for its eventual value.
 
 A labeled field's **complete RHS is one dictionary override contribution**.
 Several sequential additions to an unfilled slot are not equivalent to one
@@ -1962,9 +1965,9 @@ preserves these boundaries in saved source.
 
 **A slot filled with a tree applies its retained override program over
 that tree**: the filler first, then each override contribution in order,
-using §15.2. Literal empty overrides mean no operation (§15), not a cast to
-a dictionary. A premerged dictionary is one contribution, not a sequence
-of operations on the filler. The filler is copied in (§5.6's linearity):
+using §15.2, including empty dictionary contributions (§15). No slot-specific
+empty-override bypass changes the ordinary merge rule. A premerged dictionary
+is one contribution, not a sequence of operations on the filler. The filler is copied in (§5.6's linearity):
 one tree may fill many slots, and each receives its own.
 
 > **For the same retained assembly and fixed slot selections, equivalent
@@ -2129,21 +2132,14 @@ A proven winning value or compatible empty-collection identity may replace
 its redundant merge, retaining the selected value's source. Empty values are
 not pruned, and an ordinary kind change never invents explicit replacement.
 
-**A dictionary program is not necessarily a literal dictionary.** In particular,
-a literal empty slot override is harmless (§15), while a composed dictionary
-program that yields an empty dictionary still applies its ordinary kind.
-Preserve that distinction even for a currently nonempty dictionary: subsequent
-edits may remove its last field before it is reused as slot overrides. A
-normalized dictionary program may retain a minimal `| {}` marker for this
-reason. The immediate parent of a selected slot's sequential overrides or
-pending combination retains its enclosing program identity when the tree is
-edited, not only when it is saved. Removing its last field does not retroactively
-make that parent harmless literal empty overrides. Whole-value replacement with
-a fresh literal discards the former program; unrelated ancestors do not acquire
-its history. Original and reparsed trees must agree on this distinction.
-A merge that structurally selects a literal dictionary must not gain history
-merely because its input used a pipe. Structural projection and retained history
-together determine whether a dictionary-program marker is needed.
+**Empty dictionary contents do not retain an extra operation identity.** A
+literal `{}` and a dictionary program whose remaining structure is equivalent
+to `{}` follow the same merge rule, including when reused as slot overrides
+(§15). Removing the last field of a dictionary likewise leaves empty dictionary
+contents; its parent does not retain a hidden kind merely because that field
+once held a slot program. No `| {}` marker is needed solely to distinguish these
+empty dictionaries. This does not erase still-needed contributions, pending
+computed keys, comprehension validation, or a completed fill's obligations.
 
 **Preserve necessary operations and contribution boundaries.** Write retained
 contributions as explicit layers (`GRAMMAR §G6`, `§G9`) wherever their
@@ -2198,8 +2194,8 @@ With a filler `config: {old: 1}`, the first yields
 `part: {config: {new: 2}}`; the second yields
 `part: {config: {old: 1, new: 2}}`. The second RHS is one premerged override;
 the first retains two sequential operations on the filler. The writer must
-not interchange them. Likewise, later `None`, list, or multimap contributions
-to a retained named slot belong outside its dictionary-only overrides, lifted
+not interchange them. Likewise, later list or multimap contributions to a
+retained named slot belong outside its dictionary-only overrides, lifted
 into the nearest representable containing dictionary with grouping preserved.
 
 Explicit layers replace the former save-time refusals for potentially
@@ -2228,7 +2224,7 @@ resolution; a refused tree may still resolve in memory.
 spellings. The initial generated style uses two-space indentation, ordinary
 `key: value`, replacement `key:= value`, and pipes aligned with their contribution heads, without automatic blank
 lines around them. An empty dictionary operand may share the pipe's line as
-`| {}`, including a minimal dictionary-program marker. Input
+`| {}` when that operand is still needed. Input
 whitespace is wider (`GRAMMAR §G4.10`). A grouped operand uses valid flow
 forms inside parentheses, where indentation is not syntax. Shared expression
 spelling applies there. Layout and comments need not survive (§4.4);
