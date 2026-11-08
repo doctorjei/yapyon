@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §16.3",
+  "why": "a conditional condition accepts bool or None, not numeric truthiness"
+}

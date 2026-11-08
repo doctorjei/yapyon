@@ -145,10 +145,12 @@ def test_layout_is_section_14_1_s():
     assert emit(parse("a: [{x: 1}]\n")) == "a:\n  - x: 1\n"
 
 
-def test_a_sequence_that_does_not_fit_is_block():
+def test_a_sequence_that_does_not_fit_can_use_modified_short_form():
     long = ", ".join(f'"item{i:02}"' for i in range(12))
     out = emit(parse(f"a: [{long}]\n"))
-    assert out.startswith('a:\n  - "item00"\n')
+    assert out.startswith('a: ["item00", "item01", ')
+    assert out.endswith('    "item09", "item10", "item11"]\n')
+    assert out.count("\n") == 2
     assert emit(parse(f"a: [{long[:60]}]\n")).count("\n") == 1
 
 

@@ -11,6 +11,38 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+## 0.6.5 — 2026-11-08
+
+Built to specification and grammar **v0.6**, including conditional values and
+compact yapyon list layout. Merge rules and other format writers are unchanged.
+
+### Added
+
+- Conditional values, `x if y else z` (§16.3 / GRAMMAR §G9), use the existing
+  bool/None condition rule and evaluate only the selected typed branch.
+  They associate to the right, below logical operators and above yapyon's
+  lowest-precedence merge pipe. Source saving keeps both branches unevaluated;
+  comprehension heads support the syntax, with parentheses in iterable/filter
+  positions. Ordinary if/else keys, path segments, and named calls remain valid.
+
+### Fixed
+
+- Implicit reference atoms in expressions are checked against the reference
+  syntax even in untaken operands. Missing targets and call failures remain
+  runtime checks and are still skipped in an unselected branch. Standalone
+  bare-value diagnostics retain their existing text/copy guidance.
+
+### Changed
+
+- Yapyon lists that do not fit ordinary one-line form can use a greedily packed,
+  hanging multi-line short form (§14.1). Complete lines stay within 100 display
+  columns; at least 75% of counted lines hold two or more top-level elements,
+  excluding the final remainder and bracket-only lines. Nested one-line lists
+  stay indivisible; mappings/multimaps and multi-line scalar spellings preserve
+  the block fallback. The shared record/source/expansion/yapyon-serializer/export
+  path preserves order and spelling without evaluation. JSON, YAML, and TOML
+  writer policies are unchanged.
+
 ## 0.6.4 — 2026-11-07
 
 Built to specification and grammar **v0.6**. No new syntax or merge-matrix change.

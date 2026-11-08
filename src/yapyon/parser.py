@@ -287,7 +287,7 @@ def deferred_message(kind: str, prefix: str) -> str:
         return "a record holds no comprehensions; collection construction needs the resolver"
     if kind in ("PIPE", "BPIPE"):
         return "a record holds no merges; a merge pipe needs the resolver"
-    if kind in ("REF", "COMPARE", "AND", "OR", "NOT", "IS", "IN", "DOT", "SAFE_DOT"):
+    if kind in ("REF", "COMPARE", "AND", "OR", "NOT", "IS", "IN", "IF", "ELSE", "DOT", "SAFE_DOT"):
         return "a record holds no expressions; computation needs the resolver"
     if kind == "LPAREN":
         return ("a record admits no parentheses: they group what is computed "
@@ -316,6 +316,7 @@ _DESCRIBE = {
     "DASH": "a sequence item ('- ')", "PLUS": "a multimap's '+'",
     "COLON": "':'", "EQUAL": "'='", "COMMA": "','",
     "PIPE": "'|'", "BPIPE": "a block merge pipe ('|')",
+    "IF": "'if'", "ELSE": "'else'",
     "LBRACKET": "'['", "RBRACKET": "']'",
     "LBRACE": "'{'", "RBRACE": "'}'",
     "LPAREN": "'('", "RPAREN": "')'", "COPY": "a copy",
@@ -685,13 +686,19 @@ class Parser:
     def _flow_value(self) -> Node:
         return self._expression(allow_ref=False)
 
-    def _expression(self, *, allow_ref=True, earlier=None, pipe=None) -> Node:
-        value = self._or_expression()
+    def _expression(self, *, allow_ref=True, earlier=None, pipe=None,
+                    conditional=True) -> Node:
+        operand = self._conditional if conditional else self._or_expression
+        value = operand()
         if earlier is not None:
+            self._reference_operand(value)
             value = Merge(pipe.line, pipe.col, earlier, value)
         while self._at("PIPE"):
             op = self._advance()
-            value = Merge(op.line, op.col, value, self._or_expression())
+            self._reference_operand(value)
+            later = operand()
+            self._reference_operand(later)
+            value = Merge(op.line, op.col, value, later)
         if isinstance(value, Copy) and getattr(value, "implicit", False):
             if not allow_ref:
                 text = value.ref
@@ -722,10 +729,28 @@ class Parser:
             from ._expressions import source
             node.lexeme = source(node)
 
+    def _reference_operand(self, node):
+        if isinstance(node, Copy) and getattr(node, "implicit", False):
+            try:
+                parse_ref(node.ref)
+            except RefError as exc:
+                self._akan(str(exc), _at_node(node, self._peek()))
+
     def _expr(self, at, op, args, value=None):
+        for arg in args:
+            self._reference_operand(arg)
         node = Expression(at.line, at.col, op, args, value)
         self._set_expression_lexeme(node)
         return node
+
+    def _conditional(self):
+        value = self._or_expression()
+        if self._at("IF"):
+            at = self._advance()
+            condition = self._or_expression()
+            self._expect("ELSE", "a conditional value needs else and an alternative")
+            return self._expr(at, "conditional", [value, condition, self._conditional()])
+        return value
 
     def _or_expression(self):
         value = self._and_expression()
@@ -837,13 +862,13 @@ class Parser:
             if len(names) == 2:
                 self._akan("iteration binds one item or one key/value pair")
         self._expect("IN", "expected in after the iteration binding")
-        iterable = self._expression()
+        iterable = self._expression(conditional=False)
         if block:
             self._expect("NEWLINE", "expected end of line after the for clause")
         predicate = None
         if self._at("IF"):
             self._advance()
-            predicate = self._expression()
+            predicate = self._expression(conditional=False)
             if block:
                 self._expect("NEWLINE", "expected end of line after the if clause")
         if self._at("FOR", "IF"):

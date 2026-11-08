@@ -145,9 +145,9 @@ spec says two spellings denote the same data, the two files use
 - `name` against `ｎａｍｅ` — the same identifier after width-fold (§7), so
   the expectation is written folded, which is what a consumer receives.
 - block style against flow style — one structure, two layouts.
-- `3.140` splicing as `"3.140"` — as a value `3.140 == 3.14`, so only
-  the lexeme rule (§5.4) tells them apart, and only a case like this catches
-  a port that splices `repr(value)`.
+- `3.140` splicing as `"3.14"` — a hole uses the value (§5.4), not its
+  source spelling. The same case checks `0xFF` becoming `255`, so a port
+  that splices the source lexeme instead fails the expected result.
 
 A pair like that is an oracle precisely because the two sides are not
 identical. Where they must be identical — a multimap's entry sequence, key
@@ -168,7 +168,9 @@ inert gate look identical from outside, and only the break tells them apart.
   values, the identifier folding rule, comments, and key order. This is
   what a record-only implementation needs to pass, and it is what unblocks
   a port that has no resolver.
-- **`full/` — the core of the full tier.** The lexeme rule (§5.4),
+- **`full/` — the core of the full tier.** Conditional values (§16.3) pin
+  bool/None conditions, lazy typed branches, right association, comprehension
+  heads/filters, and lower-precedence merging. Value-based splicing (§5.4),
   nearest-wins resolution and the `__ROOT__` escape hatch (§5.2), relative
   references `__PARENT__` / `__KEY__` (§5.1.1), named and subscript
   traversal, computed keys, negative indices, and the multimap list view
@@ -181,9 +183,10 @@ inert gate look identical from outside, and only the break tells them apart.
   duplicate keys including duplicates that appear only after folding, tab
   indentation, unknown escapes, empty keys, dunder keys, computed duplicates,
   non-name keys used as names, and key dependency cycles,
-  unbound holes, a serializer on a bare anchor, a multimap in a
-  serializer, `None` in TOML, bytes in JSON, a `yt` in `__as_yapyon__()`,
-  and a full document refused by `loads_record`.
+  unbound holes, an argument containing the call site, a serializer on a bare
+  anchor, a non-table argument to TOML, a `yt` in `__as_yapyon__()`, and a full
+  document refused by `loads_record`. Multimaps, TOML None values, and JSON bytes
+  use the specified approximations and are successful cases, not refusals.
 - **The environment (§5.1.3, §5.1.4)** — `{$NAME}`, `__env__` with and
   without a fallback, an empty value, a `$` reference as a receiver and as
   a bracket key, a variable that is not exposed, a widened exposure; and as

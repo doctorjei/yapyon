@@ -2,15 +2,16 @@
 
 ## Status
 
-**Version `0.6.4`**, implementing specification and grammar **v0.6** for
+**Version `0.6.5`**, implementing specification and grammar **v0.6** for
 merge/source composition and unfinished persistence, with host-value record
-export. The lexer, parser, resolver, loader, emitter, four serializers,
-contracts, and trees with slots share the format's merge rules; the suite and
-**121 portable corpus cases** exercise those contracts. The validated source
-suite executes **4112 tests**, with zero skips on Python 3.11, 3.13, and 3.14
-using the supported POSIX test filesystem. Unsupported-ACL refusal and recovery
-are tested separately as well. Python 3.11 is the minimum supported version.
-Core runtime dependencies are the standard library.
+export, compact yapyon list layout, and conditional values. The lexer, parser,
+resolver, loader, emitter, four serializers, contracts, and trees with slots
+share the format's merge rules. The suite contains **4247 tests**, including
+**126 portable corpus cases**. Release validation checks source and extracted-sdist
+suites on Python 3.11, 3.13, and 3.14, plus isolated wheel workflows. Safe-file
+checks use the supported POSIX test filesystem and separately exercise
+unsupported-ACL refusal/recovery. Python 3.11 remains the minimum supported
+version. Core runtime dependencies are the standard library.
 
 **The normative specification is published, in two documents under
 [`docs/`](./):**
@@ -140,6 +141,34 @@ The lookup is a hole's, the value is resolved where it is written and then
 copied, and the copy is a separate object. Parentheses around a literal only
 group it, as in Python. SPEC §5.6 has the rules.
 
+## Conditional values
+
+`x if y else z` selects a typed value. It evaluates the condition first and only
+the selected branch; an unused branch does not perform calls or lookups.
+
+```python
+>>> d = yapyon.loads('enabled: True\nprimary: {port: 443}\nfallback: {port: 80}\nchosen: primary if enabled else fallback\n')
+>>> d["chosen"]
+{'port': 443}
+>>> d["chosen"] is d["primary"]
+False
+>>> yapyon.loads('out: 1 if True else missing\n')["out"]
+1
+```
+
+Conditions use yapyon's existing rule: `True`, `False`, or `None` only, with None
+counting as false. Numbers, strings, and containers do not gain implicit truthiness.
+The branches may return different types; False, zero, None, and empty values stay
+as themselves. A named branch is copied rather than aliased.
+
+Chained conditionals associate to the right. Logical operators bind more tightly;
+yapyon's merge pipe remains the lowest-precedence operator. Use `(a | b) if flag
+else c` when the merged value belongs inside the selected branch. Comprehension
+heads may use conditionals directly; parenthesize them in an iterable or filter.
+Holes and reference-call arguments retain their existing grammar. This requires
+at least a ledger, and `Tree.to_source()` preserves both branches unevaluated.
+SPEC §16.3 has the rules.
+
 ## Casts and the getter
 
 Four built-ins convert one value to another type, with Python's names and
@@ -191,6 +220,32 @@ function spelling; it takes no keywords. SPEC §5.1.6 has the rules.
 Use `foo.__not_none__().__as_toml__()`, `.__as_yaml__()`, or `.__as_yapyon__()`
 for other formats. Without an explicit transformation, serializers keep their
 usual behavior; host-value `dump`/`dumps`/`dump_safe` are unchanged.
+
+## Compact list output
+
+Yapyon output keeps a short list on one line when the entire line fits within
+100 display columns. A longer eligible list can use a modified short form:
+
+```python
+>>> print(yapyon.dumps({"numbers": list(range(1, 31))}), end="")
+numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+          26, 27, 28, 29, 30]
+```
+
+Elements pack greedily, with continuation lines aligned beneath the first
+element. Every complete line fits 100 columns, including indentation, keys,
+brackets, and commas. Mappings or multimaps anywhere inside a list disqualify
+it; each nested list must fit on one line as an indivisible element. A scalar
+with a multi-line spelling stays in block layout rather than being respelled.
+
+At least 75% of the counted lines must hold two or more top-level elements.
+Bracket-only lines are ignored, and the final remainder line is exempt so a
+single leftover element does not force block layout. Nested lists count as
+one element each. If the requirements fail, normal block layout is used.
+
+This is the shared yapyon policy for `emit`, `Tree.to_source`, `expand_record`,
+`__as_yapyon__`, and `dump`/`dumps`/`dump_safe`. JSON, YAML, and TOML writer
+layouts are unchanged. SPEC §14.1 defines the exact rules.
 
 ## String keys
 

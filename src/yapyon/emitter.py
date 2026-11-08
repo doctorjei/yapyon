@@ -28,8 +28,9 @@ inside one token and dedent against their own first line (GRAMMAR §G4.4), so
 shifting them all by one amount changes no value. Layout is the writer's;
 the spelling is the author's.
 
-Block containers throughout, except that an empty one has no block form and
-so is written flow (`[]`, `{}`). The property that matters is
+Lists use ordinary one-line flow first, then density-gated hanging flow
+(SPEC §14.1), otherwise block layout. Mappings and multimaps stay block;
+empty containers use flow. The property that matters is
 `loads_record(emit(parse(s))) == loads_record(s)`, which the tests assert
 over the whole corpus, plus that a second emit changes nothing.
 """
@@ -427,15 +428,11 @@ def _flow(node: Node, source: str | None, *, unresolved=False, limit=None):
             pending.append(("items", (iter(value.items), True)))
         elif isinstance(value, (Mapping, MultiMap)):
             return None
-        elif isinstance(value, Scalar):
-            text = _flow_scalar(value, WIDTH - width, limit)
+        else:
+            text = _flow_item(value, WIDTH - width, source,
+                              unresolved=unresolved, limit=limit)
             if text is None:
                 return None
-        else:
-            lines = _inline(value, 0, source, unresolved=unresolved, limit=limit)
-            if lines is None or len(lines) != 1:
-                return None
-            text = lines[0]
         width += text_width(text)
         if width > WIDTH:
             return None
@@ -445,6 +442,70 @@ def _flow(node: Node, source: str | None, *, unresolved=False, limit=None):
                 return None
         parts.append(text)
     return _join(parts, limit)
+
+
+def _flow_item(node, width, source, *, unresolved=False, limit=None):
+    if isinstance(node, (Mapping, MultiMap)):
+        return None
+    if isinstance(node, Scalar):
+        text = _flow_scalar(node, width, limit)
+    elif isinstance(node, Sequence):
+        text = _flow(node, source, unresolved=unresolved, limit=limit)
+    else:
+        lines = _inline(node, 0, source, unresolved=unresolved, limit=limit)
+        text = lines[0] if lines is not None and len(lines) == 1 else None
+    return text if text is not None and text_width(text) <= width else None
+
+
+def _sequence_lines(node, prefix, source, *, unresolved=False, limit=None):
+    """Ordinary flow first, then §14.1's density-gated hanging layout."""
+    if not isinstance(node, Sequence) or not node.items:
+        return None
+    flow = _flow(node, source, unresolved=unresolved, limit=limit)
+    if flow is not None and _fits(_join((prefix, flow), limit)):
+        return [_join((prefix, flow), limit)]
+    column = text_width(prefix) + 1
+    available = WIDTH - column - 1
+    if len(node.items) < 2 or available < 1:
+        return None
+    continuation = " " * column
+    rows, parts = [], [prefix, "["]
+    width, count = column, 0
+    size = len(prefix.encode("utf-8")) + 1 if limit is not None else 0
+    total, counted, dense = 0, 0, 0
+    for item in node.items:
+        text = _flow_item(item, available, source,
+                          unresolved=unresolved, limit=limit)
+        if text is None:
+            return None
+        item_width = text_width(text)
+        if count and width + 2 + item_width + 1 > WIDTH:
+            total += size + 2
+            if rows is not None:
+                rows.append(parts + [","])
+            counted += 1
+            dense += count >= 2
+            parts = [continuation] if rows is not None else []
+            width, size, count = column, column, 0
+        separator = ", " if count else ""
+        width += len(separator) + item_width
+        if limit is not None:
+            size += len(separator) + limit.length(text)
+            # A rejected candidate may be larger than its valid block fallback.
+            if total + size + 2 > limit.maximum - limit.used:
+                rows, parts = None, []
+        if rows is not None:
+            parts.extend((separator, text))
+        count += 1
+    total += size + 2
+    if not counted or 4 * dense < 3 * counted:
+        return None
+    if limit is not None:
+        limit.check(total)
+    if rows is None:
+        raise Yakamashiwa("compact output exceeded its budget without refusal")
+    rows.append(parts + ["]"])
+    return [_join(parts, limit) for parts in rows]
 
 
 def _fits(line: str) -> bool:
@@ -539,7 +600,11 @@ def _plan_lines(node, level, source, unresolved, limit):
             head = pad + ("+ " if node.kind == "multimap" else "") + expression_source(key)
             head += ":=" if getattr(node, "replace", False) else ":"
             inline = _inline(body, level, source, unresolved=True, limit=limit)
-            if inline is None:
+            layout = _sequence_lines(body, head + " ", source,
+                                     unresolved=True, limit=limit)
+            if layout is not None:
+                yield from layout
+            elif inline is None:
                 yield head
                 yield _At(body, level + (2 if node.kind == "multimap" else 1))
             else:
@@ -554,9 +619,10 @@ def _plan_lines(node, level, source, unresolved, limit):
         yield _join((pad, inline[0]), limit)
         yield from inline[1:]
         return
-    flow = _flow(node, source, unresolved=unresolved, limit=limit)
-    if flow is not None and _fits(_join((pad, flow), limit)):
-        yield _join((pad, flow), limit)
+    layout = _sequence_lines(node, _join((pad,), limit), source,
+                             unresolved=unresolved, limit=limit)
+    if layout is not None:
+        yield from layout
     elif _is_empty(node):
         yield _join((pad, _empty(node)), limit)
     elif isinstance(node, (Mapping, MultiMap)):
@@ -594,10 +660,11 @@ def _pair_plan(pairs, pad, level, source, marker, unresolved, limit):
             head = _join((key_lines[-1], label, separator), limit)
         else:
             head = _join((pad, marker, key_lines[0], label, separator), limit)
-        flow = _flow(value, source, unresolved=unresolved, limit=limit)
-        if flow is not None and _fits(_join((head, " ", flow), limit)):
-            inline = [flow]
-        if inline is None:
+        layout = _sequence_lines(value, _join((head, " "), limit), source,
+                                 unresolved=unresolved, limit=limit)
+        if layout is not None:
+            yield from layout
+        elif inline is None:
             yield head
             yield _At(value, level + (2 if marker else 1))
         else:
@@ -607,10 +674,11 @@ def _pair_plan(pairs, pad, level, source, marker, unresolved, limit):
 
 def _marked_plan(item, pad, level, source, marker, unresolved, limit):
     inline = _inline(item, level, source, unresolved=unresolved, limit=limit)
-    flow = _flow(item, source, unresolved=unresolved, limit=limit)
-    if flow is not None and _fits(_join((pad, marker, flow), limit)):
-        inline = [flow]
-    if inline is not None:
+    layout = _sequence_lines(item, _join((pad, marker), limit), source,
+                             unresolved=unresolved, limit=limit)
+    if layout is not None:
+        yield from layout
+    elif inline is not None:
         yield _join((pad, marker, inline[0]), limit)
         yield from inline[1:]
     else:

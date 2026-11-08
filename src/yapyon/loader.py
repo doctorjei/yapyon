@@ -178,7 +178,7 @@ def load(fp, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
 _DEFERRED_KINDS = frozenset({"YSTR", "YBSTR", "YTSTR", "COPY", "LPAREN",
                              "LABEL", "YKEY", "REF", "LCOMP", "DCOMP",
                              "MCOMP", "BCOMP", "FOR", "COMPARE", "AND", "OR",
-                             "NOT", "IS", "IN", "DOT", "SAFE_DOT", "PIPE", "BPIPE"})
+                             "NOT", "IS", "IN", "IF", "ELSE", "DOT", "SAFE_DOT", "PIPE", "BPIPE"})
 
 
 def _name_of(fp, source: str | None) -> str | None:

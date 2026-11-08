@@ -117,7 +117,7 @@ RAW_PREFIXES = {"r", "rb", "ry"}
 BYTES_PREFIXES = {"b", "rb", "yb"}          # b64 handled separately
 Y_PREFIXES = {"y", "yb", "yt", "ry"}
 KEYWORDS = {"True": True, "False": False, "None": None}
-_EXPRESSION_WORDS = frozenset({"for", "if", "in", "is", "not", "and", "or"})
+_EXPRESSION_WORDS = frozenset({"for", "if", "else", "in", "is", "not", "and", "or"})
 
 _TOKEN_KIND_FOR_PREFIX = {
     "": "STRING", "r": "STRING",
@@ -1392,6 +1392,15 @@ class Lexer:
             j += 1
         return self.text[j:j + 1]
 
+    def _after_value(self):
+        if not self.tokens:
+            return False
+        tok = self.tokens[-1]
+        return (tok.kind in ("STRING", "BYTES", "INT", "FLOAT", "KEYWORD",
+                             "YSTR", "YBSTR", "YTSTR", "COPY", "REF",
+                             "RPAREN", "RBRACKET", "RBRACE")
+                or tok.kind == "NAME" and tok.lexeme not in _EXPRESSION_WORDS)
+
     def _after_for(self):
         depth = 0
         for i in range(len(self.tokens) - 1, -1, -1):
@@ -1505,11 +1514,13 @@ class Lexer:
             elif (name in ("not", "and", "or", "in", "is")
                   and self._after_space() in ("(", "[")
                   and (not self.tokens or self.tokens[-1].kind not in ("DOT", "SAFE_DOT"))
-                  or name == "if" and self._after_space() == "(" and self._after_for()
-                  and self.tokens[-1].lexeme not in ("in", "for", "if", "and", "or", "not", "is")):
+                  or name in ("if", "else") and self._after_space() in ("(", "[")
+                  and (self._after_value()
+                       or name == "if" and self.tokens
+                       and self.tokens[-1].kind == "NEWLINE" and self._after_for())):
                 self._emit("NAME", name, line, col, lexeme=name)
             elif (self._after_space() in (".", "(", "[", "?")
-                  and not (name in _EXPRESSION_WORDS
+                  and not (name in _EXPRESSION_WORDS and name not in ("if", "else")
                            and self._peek() in (" ", "\t"))):
                 self._lex_bare_call(self.pos - len(name), line, col)
             else:
@@ -1592,7 +1603,7 @@ class Lexer:
             ref = parse_ref(text)
         except RefError as e:
             if (_has_merge_pipe(text)
-                    or _re.search(r"\b(?:and|or|not|is|in)\b|[=!<>]", text)
+                    or _re.search(r"\b(?:and|or|not|is|in|if|else)\b|[=!<>]", text)
                     or "cannot be indexed or traversed" in str(e)):
                 self.depth += 1
                 self.brackets.append("(")

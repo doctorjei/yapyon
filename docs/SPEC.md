@@ -268,8 +268,9 @@ of a call — the writer uses its **canonical form**:
 Whatever the source, **layout is the writer's**, since comments, blank lines,
 indentation, and the choice of flow or block are not tokens and carry no
 lexeme: a sequence that holds no mapping or multimap is written on one line if
-it fits, and every other container in block form (§14.1); an empty container
-has no block spelling and is written flow (`[]`, `{}`, `{+}`).
+it fits, otherwise in the modified short form when eligible (§14.1), with block
+layout as the fallback. Mappings and multimaps stay in block form; an empty
+container has no block spelling and is written flow (`[]`, `{}`, `{+}`).
 
 Normalization therefore **keeps every spelling and every value, and loses
 only layout and comments**. The property an implementation must satisfy is
@@ -1578,9 +1579,9 @@ the Unicode 14.0.0 database (the same pin as identifiers, §7):
 A container **fits** if its one-line form, on its line — indentation,
 key, and any trailing comma included — has width **at most 100**.
 Layout goes **outermost first**: a container that fits is written on one
-line; one that does not is written one member per line, indented two
-spaces deeper than its opening line, and each member is judged the same
-way.
+line. A yapyon list that does not fit may use the modified short form below;
+otherwise a container is written one member per line, indented two spaces
+deeper than its opening line, and each member is judged the same way.
 
 Which containers may take a one-line form depends on the format:
 
@@ -1589,6 +1590,35 @@ Which containers may take a one-line form depends on the format:
 | JSON | every array and object | — |
 | TOML | arrays | tables (sections); an inline table is always one line, at any width |
 | YAML, yapyon | a sequence holding no mapping or multimap | mappings, multimaps |
+
+**Modified short form — yapyon only.** When the ordinary one-line list does
+not fit at its position, try a bracketed, greedily packed multi-line form before
+falling back to block layout:
+
+- No mapping or multimap may occur in the list or its nested lists. Every
+  top-level element must have an ordinary single-line spelling at its actual
+  output column. A nested list is one indivisible element and must itself fit
+  ordinary one-line form; it is not split across lines of its parent. Multi-line
+  scalar spellings do not qualify. Preserve element order and spelling; never
+  evaluate or respell an element to make it fit.
+- Keep the opening bracket with the first element and the closing bracket with
+  the last. Greedily place as many consecutive elements as fit, separated by
+  comma-space. A continued line ends with its separating comma; the last has
+  no trailing comma. All complete lines, including their indentation, key/marker,
+  brackets, and commas, must have width at most 100.
+- Align continuation lines beneath the first element by display column. Do not
+  pad individual elements into a rectangular grid.
+- Count top-level elements per line containing elements. Ignore bracket-only
+  lines and exempt the final remainder line. At least one counted line must
+  remain, and **at least 75% of counted lines must hold two or more elements**.
+  A nested one-line list counts once, not once per descendant. This is a density
+  criterion, not permission for any line to exceed the width bound.
+- If any prerequisite fails, use the established block layout, applying these
+  layout rules independently at each subsequent value position.
+
+The same policy governs record emission, unfinished-source saving, expansion,
+yapyon serialization, and host-value export. It does not change the layout
+policies of the JSON, YAML, or TOML writers.
 
 ### 14.2 Lexemes beside values — `@_lexemes` (JSON, TOML)
 
@@ -1745,7 +1775,8 @@ in its lexeme as written, or in its canonical form when it has none
 (§4.4): a string as a double-quoted literal, a number in decimal, a float
 as JSON writes it, bytes as `b"..."`, `True` / `False` / `None` as
 themselves. Layout is §14.1's: a sequence holding no mapping or multimap
-is one line if it fits; mappings and multimaps are block, a multimap's
+is one line if it fits, otherwise uses the modified short form when eligible,
+with block layout as the fallback. Mappings and multimaps are block, a multimap's
 entries marked `+ `.
 
 ### 14.7 Reading output back
@@ -2422,7 +2453,8 @@ introduces unique-key matching for multimap entries (§15.2.3).
 
 ### 16.3 Conditions and operators
 
-A condition accepts **True** (include), **False** or **None** (exclude).
+A condition accepts **True**, **False**, or **None**; None counts as false.
+For a comprehension filter, true includes the item and false excludes it.
 Every other type is akan, including numeric 0/1, strings, bytes, and containers.
 There is no implicit caster call or Python truthiness. The explicit __bool__
 caster (§5.1.5) is unchanged and continues to refuse None and containers.
@@ -2431,6 +2463,40 @@ caster (§5.1.5) is unchanged and continues to refuse None and containers.
 `and` stops at a false left operand; `or` stops at a true left operand.
 Unevaluated operands are not type-checked or executed. These are logical
 operators, not Python's operand-returning fallback selectors.
+
+**Conditional values:** `x if y else z` evaluates `y` first under the same
+condition rule, then evaluates and returns **only** `x` when true, or **only**
+`z` when false/None. It returns the selected typed value, not a boolean; the
+branches need not have the same type. The unselected branch is neither executed
+nor runtime-type-checked. Syntax/static validity and lexical tier classification
+still apply to both branches. Missing references, calls, environment accesses,
+cycles, or unfilled slots in an unselected branch are not evaluated merely
+because they are written there.
+
+Selected values follow existing expression ownership, lookup, and scope rules:
+a named branch takes fresh data as a copy does, preserving resolved meaning,
+lexemes, and key visibility. Constructed values stay typed; None, False, zero,
+and empty values are not pruned or coerced. Conditions and selected work join
+the ordinary dependency/fixpoint/resource paths. Saving source preserves the
+condition and both branches without evaluation.
+
+```yapyon
+enabled: True
+primary: {port: 443}
+fallback: {port: 80}
+chosen: primary if enabled else fallback
+```
+
+`chosen` is a separate dictionary containing `port: 443`.
+
+Conditional chains associate **right to left**: `a if b else c if d else e`
+means `a if b else (c if d else e)`. Logical/comparison/postfix operators bind
+more tightly; the merge pipe remains lower precedence. Thus `a | b if flag
+else c` means `a | (b if flag else c)`; write `(a | b) if flag else c` to select
+between the merged value and c. Parenthesize a conditional used as another
+conditional's condition or as a comprehension iterable/filter, as required by
+`GRAMMAR §G9`. A comprehension head may use it directly. This is value-expression
+syntax, not an expansion of the hole/reference/call-argument grammar (§5.1).
 
 Equality and inequality compare data values, not source lexemes or key kind.
 Numbers use ordinary numeric comparison, including bool as 0/1; strings and
@@ -2492,7 +2558,8 @@ must bound generated work rather than allocate an unbounded result first.
 ### 16.5 Explicit value composition
 
 **Syntax: `GRAMMAR §G6`, `§G9`.** A merge pipe composes complete values using
-§15.2, at the **lowest value-operator precedence**, below logical `or`.
+§15.2, at the **lowest value-operator precedence**, below conditional selection
+and logical `or`.
 Existing logical, comparison, and postfix operators keep their relative
 precedence. Unparenthesized pipes associate **left to right**, including
 chains mixing block and flow operands. Parentheses make one contributed

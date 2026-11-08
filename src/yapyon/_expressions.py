@@ -38,6 +38,9 @@ def source(node):
         if node.op == "group":
             text = source(node.args[0])
             return text if isinstance(node.args[0], Merge) else "(" + text + ")"
+        if node.op == "conditional":
+            yes, condition, no = node.args
+            return "(" + source(yes) + " if " + source(condition) + " else " + source(no) + ")"
         if node.op == "not":
             return "(not " + source(node.args[0]) + ")"
         if node.op in ("and", "or"):
@@ -369,6 +372,10 @@ def _evaluate(resolver, site):
         return _merge(resolver, node, site)
     if isinstance(node, Comprehension):
         return _comprehend(resolver, node, site)
+    if node.op == "conditional":
+        condition = _ready(resolver, node, 1, site)
+        selected = 0 if _condition(resolver, condition, node.args[1]) else 2
+        return _result(resolver, node, _ready(resolver, node, selected, site))
     if node.op == "group":
         from .assembly import project
         view = project(node.args[0])

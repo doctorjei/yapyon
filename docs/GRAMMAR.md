@@ -406,7 +406,8 @@ Inside a `YSTR`, `YBSTR`, or `YTSTR` literal, braces delimit **holes**.
 Outside a string literal, `(` opens a copy or a grouping parenthesis.
 Classify the whole parenthesized run lexically, skipping whitespace,
 newlines included. An interior that is a complete expression rather than
-one `copy_ref` — including a name-leading merge such as `(a | b)` — uses
+one `copy_ref` — including a name-leading merge `(a | b)` or conditional
+`(a if flag else b)` — uses
 `LPAREN`/`RPAREN` and §G9, not a `COPY` token. Actual copies use the one
 reference grammar (§G5), not a second reference parser:
 
@@ -867,9 +868,12 @@ In addition to §G4's tokens:
 
 - `COMPARE` is `==`, `!=`, `<`, `<=`, `>`, or `>=`.
 - `DOT` is `.`, and `SAFE_DOT` is the single token `?.`.
-- The contextual words `for`, `if`, `in`, `is`, `not`, `and`, and `or`
-  yield `FOR`, `IF`, `IN`, `IS`, `NOT`, `AND`, and `OR`. They remain names
-  as ordinary mapping keys and path segments; strings never become operators.
+- The contextual words `for`, `if`, `else`, `in`, `is`, `not`, `and`, and `or`
+  yield `FOR`, `IF`, `ELSE`, `IN`, `IS`, `NOT`, `AND`, and `OR`. They remain
+  names as ordinary mapping keys and path segments; strings never become operators.
+  Before a grouped or bracketed value, conditional `if`/`else` follow an operand;
+  a block filter `if` follows its for clause. In a call position instead, `if(...)`
+  and `else(...)` remain ordinary named calls. This distinction is lexical.
 - A reference chain that does not end in a call may be a `REF` token in an
   expression. Its text must satisfy §G5. A bare `REF` is not an ordinary
   value by itself (§G7); it is an operand or comprehension expression.
@@ -884,7 +888,8 @@ In addition to §G4's tokens:
   enclosing head.
 
 A comprehension has exactly one head item or pair, one `FOR`, and at most
-one `IF`. More head entries, more clauses, and `else` are not generated.
+one filter `IF`. More head entries or clauses are not generated. A conditional
+expression in the head has its own `IF`/`ELSE`; it is not a filter clause.
 Whitespace may separate tokens, as elsewhere; block indentation still
 identifies nesting. For/if clauses in a block align with the head's initial
 key, dash, or plus marker, not with a marker's inner frame.
@@ -893,7 +898,9 @@ key, dash, or plus marker, not with a marker's inner frame.
 
 ```ebnf
 expression  ::= inline_chain
-inline_chain ::= disjunction (PIPE disjunction)*
+inline_chain ::= conditional (PIPE conditional)*
+conditional ::= disjunction [IF disjunction ELSE conditional]
+clause_expression ::= disjunction (PIPE disjunction)*
 disjunction ::= conjunction (OR conjunction)*
 conjunction ::= negation (AND negation)*
 negation    ::= NOT negation | comparison
@@ -907,7 +914,7 @@ reference_tail ::= a name-led ref from §G5, without an anchor or ENV
 applied_tail   ::= a reference_tail ending in a call
 ```
 
-`PIPE` is the lowest-precedence value operator, below `OR`. Fold an
+`PIPE` is the lowest-precedence value operator, below conditionals and `OR`. Fold an
 unparenthesized chain from left to right, including mixed inline/block
 chains (§G6). Parentheses make one operand: `a | (b | c)` retains its right
 group and is not flattened to `a | b | c`. Thus `True or False | False`
@@ -916,6 +923,15 @@ Existing logical, comparison, and postfix operators keep their relative
 precedence. A bare name/path may be an operand of an actual merge expression;
 it remains invalid as a standalone ordinary value. Neither pipe form is
 admitted by §G5 inside a hole or call argument.
+
+A conditional is `value IF condition ELSE alternative`, right-associated and
+below logical operators but above `PIPE`. Both branches are required. Group a
+nested conditional in the condition, or a merge inside either branch/condition.
+Comprehension iterables and filters use `clause_expression`; a conditional there
+must be parenthesized, so its `IF` cannot be mistaken for the filter's `IF`.
+Conditional branches may name values directly, as other expression operands do;
+a bare path alone remains invalid as an ordinary value. This syntax does not
+widen the hole/reference production in §G5.
 
 `IS` and `IS NOT` require `None` on the right; grouping that literal is
 allowed, but an arbitrary reference or call is not an identity test. An
@@ -938,16 +954,16 @@ values are not function objects.
 flow_comp   ::= LCOMP expression for_clause [if_clause] RBRACKET
               | DCOMP expression separator expression for_clause [if_clause] RBRACE
               | MCOMP PLUS expression separator expression for_clause [if_clause] RBRACE
-for_clause  ::= FOR binding IN expression
+for_clause  ::= FOR binding IN clause_expression
 binding     ::= NAME [COMMA NAME]
-if_clause   ::= IF expression
+if_clause   ::= IF clause_expression
 
-block_comp  ::= BCOMP(dict) comp_pair FOR binding IN expression NEWLINE
-                [IF expression NEWLINE]
+block_comp  ::= BCOMP(dict) comp_pair FOR binding IN clause_expression NEWLINE
+                [IF clause_expression NEWLINE]
               | BCOMP(list) DASH INDENT [NEWLINE] comp_item DEDENT
-                FOR binding IN expression NEWLINE [IF expression NEWLINE]
+                FOR binding IN clause_expression NEWLINE [IF clause_expression NEWLINE]
               | BCOMP(multimap) PLUS INDENT [NEWLINE] comp_pair DEDENT
-                FOR binding IN expression NEWLINE [IF expression NEWLINE]
+                FOR binding IN clause_expression NEWLINE [IF clause_expression NEWLINE]
 comp_pair   ::= expression separator ( expression NEWLINE
                                     | NEWLINE INDENT block_value DEDENT )
 comp_item   ::= block_value | INDENT block_value DEDENT

@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "GRAMMAR §G9.2",
+  "why": "a conditional value requires else and an alternative branch"
+}
