@@ -9,7 +9,7 @@ implements the reviewed YamlPlus format/diagnostics and full-validity record
 predicate; standalone YamlPlus packaging remains a subsequent design step. The
 lexer, parser, resolver, loader, emitter, four serializers, contracts, and
 trees with slots share the format's merge rules. The current suite contains
-**4850 tests**, including **136 corpus cases**, with migrated profile oracles
+**4878 tests**, including **136 corpus cases**, with migrated profile oracles
 for values, diagnostics, and comment-preserving formatting. Release validation
 checks source and extracted-sdist
 suites on Python 3.11, 3.13, and 3.14, plus isolated wheel workflows. Safe-file

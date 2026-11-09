@@ -13,6 +13,10 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ### Reviewed YamlPlus standard and implementation
 
+- YAML-view implicit keys, including keys emerging inside byte/raw literals,
+  obey the same-line and 1,024-source-character limit. This corrects a missed
+  syntax check without adding a new profile restriction or changing Yapyon data.
+
 - `docs/YAMLPLUS.md` now defines membership as validity in both Yapyon records
   and YAML 1.1/1.2, subject to explicit justified exclusions and source constraints.
   Differing scalar interpretation is not automatically invalid YAML. Numeric

@@ -237,6 +237,42 @@ def test_yaml_indicators_inside_byte_literals_are_checked_in_yaml_context(source
         assert yamlplus.loads(yamlplus.normalize(source)) == yapyon.loads_record(source)
 
 
+@pytest.mark.parametrize('layout', ['[%s]\n', '- %s\n', 'outer:\n  - %s\n'])
+@pytest.mark.parametrize('prefix', ['b', 'r'])
+@pytest.mark.parametrize('length,valid', [(1021, True), (1022, True), (1023, False), (1030, False)])
+def test_yaml_view_implicit_keys_obey_the_source_character_limit(layout, prefix, length, valid):
+    source = layout % (prefix + '"' + 'a' * length + ': x"')
+    assert yapyon.is_record(source)
+    if valid:
+        list(yaml.parse(source))
+        yamlplus.check(source)
+    else:
+        with pytest.raises(yaml.YAMLError):
+            list(yaml.parse(source))
+        with pytest.raises(AkanError, match='1,024'):
+            yamlplus.check(source)
+    assert yamlplus.is_yamlplus(source) is valid
+
+
+@pytest.mark.parametrize('length,valid', [(600, True), (1022, True), (1023, False)])
+def test_yaml_view_key_limit_counts_characters_not_utf8_bytes(length, valid):
+    source = '[r"' + 'é' * length + ': x"]\n'
+    assert yamlplus.is_yamlplus(source) is valid
+    if valid:
+        list(yaml.parse(source))
+    else:
+        with pytest.raises(yaml.YAMLError):
+            list(yaml.parse(source))
+
+
+def test_yaml_view_implicit_keys_must_not_cross_physical_lines():
+    source = '[b"""a\n  b: c"""]\n'
+    assert yapyon.is_record(source)
+    with pytest.raises(yaml.YAMLError):
+        list(yaml.parse(source))
+    assert not yamlplus.is_yamlplus(source)
+
+
 def test_checking_does_not_construct_values_or_resolve(monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail('membership checking must not resolve or build loaded values')

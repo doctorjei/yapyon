@@ -229,6 +229,10 @@ class _Reader:
         if not self.take(kind):
             self.fail(self.peek().start, f"expected {kind!r}")
 
+    def implicit_key(self, key, colon):
+        if key.line != colon.line or colon.start - key.start > 1024:
+            self.fail(key.start, "an implicit key and ':' must be on the same line within 1,024 source characters")
+
     def flow_node(self, depth):
         if depth > 128:
             self.fail(self.peek().start, "flow nesting exceeds this implementation's ceiling of 128")
@@ -257,11 +261,15 @@ class _Reader:
             if self.peek().kind in (",", end):
                 self.fail(self.peek().start, "empty flow entry")
             explicit = self.take("?")
+            key = self.peek()
             if self.peek().kind == ":" and not explicit:
                 self.fail(self.peek().start, "an empty flow key requires '?'")
             if self.peek().kind not in (":", ",", end):
                 self.flow_node(depth + 1)
+            colon = self.peek()
             if self.take(":"):
+                if not explicit:
+                    self.implicit_key(key, colon)
                 if self.peek().kind not in (",", end):
                     self.flow_node(depth + 1)
             elif not mapping and self.peek().kind not in (",", end):
@@ -294,6 +302,7 @@ class _Reader:
                 colon = self.tokens[self.i + 1]
                 if colon.kind != ":" or colon.line != key.line:
                     break
+                self.implicit_key(key, colon)
                 self.i += 2
                 nxt = self.peek()
                 if nxt.kind != "eof" and (nxt.line == colon.line or nxt.col > indent):
