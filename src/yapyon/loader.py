@@ -201,16 +201,21 @@ def _refuse_deferred(tokens, source: str | None = None) -> None:
 
 
 def is_record(text: str, *, source: str | None = None) -> bool:
-    """True if every leaf element of `text` has a literal value.
+    """Whether text is a valid literal record, without resolving or loading it.
 
-    Lexes and looks; no parse. So this answers the *record* question only —
-    text that lexes but does not parse still gets an answer here, and the
-    parse error surfaces when it is loaded. Text that does not lex raises,
-    there being no document to answer about — hence `source`, which names it
-    in that akan.
+    Malformed, empty, and non-record source returns False. API misuse still
+    raises; `source` names diagnostics in the shared lexer/parser path.
     """
-    return not any(tok.kind in _DEFERRED_KINDS
-                   for tok in Lexer(text, source=source).tokenize())
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+    try:
+        lexer = Lexer(text, source=source)
+        tokens = lexer.tokenize()
+        Parser(tokens, lexer.warnings, source=source).parse()
+        _refuse_deferred(tokens, source)
+    except (AkanError, RecursionError):
+        return False
+    return True
 
 
 def _reaches_out(ref) -> bool:
@@ -253,8 +258,8 @@ def tier_of(text: str, *, source: str | None = None) -> int:
     rather than merely declared — a loader can check a claimed tier instead
     of trusting one.
 
-    Same discipline as `is_record`: this reads the token stream and does not
-    parse, so text that lexes but does not parse still gets a tier here,
+    Unlike `is_record`, this reads the token stream and does not parse,
+    so text that lexes but does not parse still gets a tier here,
     and the parse error surfaces when it is loaded. Text that does not lex
     raises, there being no document to answer about — hence `source`.
     """

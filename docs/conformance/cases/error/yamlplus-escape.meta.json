@@ -1,0 +1,1 @@
+{"loader": "yamlplus", "rule": "YAMLPLUS §4.2", "why": "A double-quoted octal escape beginning with 1 is not valid YAML syntax."}

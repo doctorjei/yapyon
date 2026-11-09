@@ -1,0 +1,5 @@
+yes: "first"
+on: "second"
+null: "third"
+n: "fourth"
+"123": "numeric-looking string"

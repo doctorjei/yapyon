@@ -1,0 +1,1 @@
+{"profile": "yamlplus", "warnings": 1, "rule": "YAMLPLUS §4.1", "why": "1e5 is admitted with shiran and a shared float alternative, not an integer replacement."}

@@ -268,11 +268,15 @@ def dump(value, fp, *, max_digits=REFUSE_DIGITS, max_depth=MAX_DEPTH,
     Do not close or flush the stream. Input/options are validated before writing;
     caller truncation and native I/O failures are not atomic file replacement.
     """
-    options = _options(max_digits, max_depth, max_size, warn)
+    _dump(value, fp, _options(max_digits, max_depth, max_size, warn),
+          prepare=_prepare)
+
+
+def _dump(value, fp, options, *, prepare):
     write = getattr(fp, "write", None)
     if not callable(write):
         raise TypeError("fp must have a callable text write method")
-    text = _prepare(value, options)
+    text = prepare(value, options)
     count = write(text)
     if count is None:
         return

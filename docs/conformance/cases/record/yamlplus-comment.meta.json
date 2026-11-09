@@ -1,0 +1,1 @@
+{"profile": "yamlplus", "warnings": 1, "formatted": "number: 1 # YAML would include this text in the scalar\n", "rule": "YAMLPLUS §2.2", "why": "The valid-in-both comment boundary warns; formatting inserts separation and retains the explanation."}

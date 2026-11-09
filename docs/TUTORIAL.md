@@ -36,13 +36,21 @@ Traceback (most recent call last):
 yapyon.lexer.AkanError: akan: line 1, col 7: bare word 'no' in value position; write False for the value or "no" for the string
 ```
 
-That message shows the format's three-step diagnostics register (§10):
+That message uses the error register. The working standard distinguishes
+four diagnostic registers (§10):
 
 | Register | Means |
 |---|---|
-| `shiran:` | legal, but probably a mistake or costly; loading continues |
+| `hora:` | accepted compatibility information, not a warning; no validity/status effect |
+| `shiran:` | legal, but probably a mistake, costly, or a specified avoidable ambiguity |
 | `akan:` | an error, with a line, a column, and the fix when there is one |
 | `yakamashiwa:` | a bug in yapyon itself, not in your document |
+
+The optional [YamlPlus standard](YAMLPLUS.md) uses hora for unavoidable bytes/
+None differences and requires comment-preserving source formatting. This
+tutorial teaches ordinary Yapyon, not just the profile. The
+[guide's support notes](DETAILS.md#yamlplus-readable-as-yaml-and-yapyon)
+describe the unreleased in-tree support and still-pending standalone packaging.
 
 ## 2. Values
 

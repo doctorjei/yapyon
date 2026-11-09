@@ -2,28 +2,34 @@
 
 ## Status
 
-**Version `0.6.5`**, implementing specification and grammar **v0.6** for
-merge/source composition and unfinished persistence, with host-value record
-export, compact yapyon list layout, and conditional values. The lexer, parser,
-resolver, loader, emitter, four serializers, contracts, and trees with slots
-share the format's merge rules. The suite contains **4247 tests**, including
-**126 portable corpus cases**. Release validation checks source and extracted-sdist
+**Published baseline `0.6.5`**, implementing specification and grammar **v0.6**
+for merge/source composition and unfinished persistence, with host-value record
+export, compact yapyon list layout, and conditional values. Unreleased source
+implements the reviewed YamlPlus format/diagnostics and full-validity record
+predicate; standalone YamlPlus packaging remains a subsequent design step. The
+lexer, parser, resolver, loader, emitter, four serializers, contracts, and
+trees with slots share the format's merge rules. The current suite contains
+**4850 tests**, including **136 corpus cases**, with migrated profile oracles
+for values, diagnostics, and comment-preserving formatting. Release validation
+checks source and extracted-sdist
 suites on Python 3.11, 3.13, and 3.14, plus isolated wheel workflows. Safe-file
 checks use the supported POSIX test filesystem and separately exercise
 unsupported-ACL refusal/recovery. Python 3.11 remains the minimum supported
 version. Core runtime dependencies are the standard library.
 
-**The normative specification is published, in two documents under
-[`docs/`](./):**
+**The core language specification is published in two documents under
+[`docs/`](./); the opt-in yamlplus profile has its own normative definition:**
 
 | | |
 |---|---|
 | [`docs/GRAMMAR.md`](GRAMMAR.md) | *are these bytes well-formed yapyon?* — self-contained, normative for syntax |
 | [`docs/SPEC.md`](SPEC.md) | *what do well-formed bytes mean?* — normative for meaning |
+| [`docs/YAMLPLUS.md`](YAMLPLUS.md) | *which records are YAML-readable, and how are they read and written?* — normative for the optional profile |
 | [`docs/conformance/`](conformance/) | *does an implementation agree?* — portable cases; the directory's own README is the protocol |
 
-The corpus is not a third normative document: it is **derived from** the
-other two, and where they disagree the spec wins and the case is wrong. What
+The corpus is not another normative document: it is **derived from** the
+language specification and optional profile, and where they disagree the
+normative text wins and the case is wrong. What
 it adds is a check rather than a definition — every case is data, not code
 in a language, so a second implementation runs the same files against its
 own loader and gets a yes or no.
@@ -658,9 +664,18 @@ literals; a y-string defers its value (load with yapyon.loads for the full form)
 
 `loads_record` / `load_record` are the whole pipeline minus the resolver, and
 a separate function rather than a keyword argument — the safe path should not
-be one typo away from the unsafe one. `is_record` answers the question by
-lexing, without loading. A replacement annotation is field intent, not
-computation; an explicit pipe is computation even with literal operands:
+be one typo away from the unsafe one. The working standard requires `is_record`
+to check syntax and the record rule without resolution or building values.
+It must return false for malformed, empty, or non-record input.
+
+**Unreleased correction:** the current source implements this full-validity
+predicate. Published 0.6.5 used a lexical-only test that could return true for
+broken or empty input and raised on lexical errors. `is_record` now returns
+false for those inputs; API misuse still raises. `tier_of` remains a lexical
+tier classification, not a syntax validator, and has not changed.
+
+A replacement annotation is field intent, not computation; an explicit pipe
+is computation even with literal operands:
 
 ```python
 >>> yapyon.is_record('items:= []\n')
@@ -691,6 +706,98 @@ normalization. **Comments do not survive**, so this is a normalizer rather
 than a round-tripper. `yapyon.emit` is the same thing as a function. A
 non-record is refused at the offending computation, with the record rule
 as the reason; authored pipes are not silently evaluated.
+
+## Yamlplus: readable as YAML and yapyon
+
+The reviewed [YamlPlus standard](YAMLPLUS.md) starts from valid Yapyon records
+that are also valid YAML 1.1 and YAML 1.2. Different interpretation is not by
+itself invalid syntax. Explicit exclusions need a reason; multimaps are excluded
+for now because their structure and repeated entries are not ordinary mappings.
+YamlPlus is not a general YAML converter. Its independent-library boundary is
+still to be designed; the format standard does not mandate the prototype's
+import paths.
+
+### Required behavior
+
+- Keys remain strings. YAML-sensitive unquoted keys warn about conversion and
+  possible collisions; writing warns and quotes them. Quoted keys retain exact
+  non-name semantics and are never promoted to names. Quoting a former name
+  preserves text but changes its later name visibility.
+- Numeric variants such as `0b101`, `0o17`, `1_000`, `1e5`, `00`, and `01.5`
+  remain admitted when valid in both. Non-shared interpretations with a shared
+  typed alternative draw shiran; already-shared forms do not warn merely for
+  their style. Fixes must preserve int versus float and negative zero.
+- Ambiguous colons and selected string/escape differences are shiran, not
+  blanket refusals. Double quotes provide a shared newline spelling. Active
+  numeric-zero escapes followed by a digit warn, including `\08`/`\09`.
+- Valid-in-both byte/stream literals are admitted. Their unavoidable YAML
+  text-versus-bytes difference is hora. Bare `None` stays unquoted null and
+  also draws hora; quoted `"None"` is text. Bare `null` remains invalid Yapyon.
+- Source formatting must preserve comments, typed data, order, and field intent.
+  Ordinary Yapyon emitter comment loss is not the profile formatter contract.
+  Host-value writing has no original comments or lexemes to preserve and must
+  not stringify non-string keys or silently change collection kind.
+
+**Hora** uses a separate `info=` callback, default `None`; shiran uses `warn=`.
+The CLI shows shiran by default and hora only with `--info`, on stderr. Hora
+summarizes bytes and bare None separately, once per kind per operation, with
+count/first location when available. Neither diagnostic changes successful
+status or membership. The normative document contains measured PyYAML results
+separately from the YAML reference interpretations.
+
+### Current implementation and package boundary
+
+**The unreleased in-tree binding implements the reviewed format, formatting,
+and diagnostic contracts.** Package restructuring is still pending: it is
+accessed through Yapyon, not yet an independently installable YamlPlus library.
+The independent-library requirement remains in force; these import paths are
+not the selected final standalone namespace.
+
+Checking uses the shared Yapyon lexer/parser plus a standard-library-only YAML
+surface recognizer. It does not load YAML objects or infer Yapyon types from
+them. YAML flow/block syntax recognition has a nesting refusal ceiling of128;
+the shared recursive Yapyon parser may refuse stack exhaustion earlier. Host
+writing keeps the ordinary export bounds/options; source formatting bounds its
+complete UTF-8 output, including retained comments, with `max_size`.
+
+The APIs retain exact types and string keys. Bytes in host output use safe b64
+literals as an implementation choice. Other writers and ordinary Yapyon's
+comment-dropping emitter are unchanged.
+
+For example:
+
+```python
+>>> from yapyon import yamlplus
+>>> yapyon.is_yamlplus('name: "example"\nmissing: None\n')
+True
+>>> yamlplus.loads('missing: None\nword: "None"\n')
+{'missing': None, 'word': 'None'}
+>>> warnings = []
+>>> text = yamlplus.dumps({"yes": "hello", "missing": None}, warn=warnings.append)
+>>> print(text, end="")
+"yes": "hello"
+missing: None
+>>> len(warnings)
+1
+```
+
+Operations are `yamlplus.check`, `is_yamlplus`, `load`/`loads`, `normalize`, and
+`dump`/`dumps`. Each accepts separate optional `warn=` and `info=` callbacks;
+callback exceptions propagate. Current in-tree CLI entry points are:
+
+```sh
+python -m yapyon yamlplus settings.yaml
+python -m yapyon yamlplus --write settings.yaml
+python -m yapyon yamlplus --info settings.yaml
+```
+
+The first validates without payload output; the second writes formatted source
+to stdout. Formatting applies only the selected key, colon/comment-boundary,
+and active-zero-escape fixes, preserving comments and their association, field
+intent, other layout, and other admitted scalar spellings. It is idempotent and
+never evaluates. CRLF source is normalized to LF, and output ends in a newline.
+Shiran goes to stderr by default; `--info` additionally shows summarized hora.
+Neither affects successful status. No version or release vehicle is selected.
 
 ## Exporting Python values
 

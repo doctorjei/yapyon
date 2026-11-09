@@ -117,12 +117,12 @@ def test_a_lexical_error_still_reports_itself():
 
 
 # --------------------------------------------------------------------------- #
-# is_record — checkable by lexing alone
+# is_record — syntax validity and literal membership without loading
 # --------------------------------------------------------------------------- #
 def test_is_record_is_true_for_literal_leaves():
     assert is_record('a: "x"\nb: 1\nxs: [1, 2]\n')
     assert is_record('a: "{foo}"\n')
-    assert is_record("")
+    assert not is_record("")
 
 
 def test_is_record_is_false_for_each_y_family_prefix():
@@ -132,17 +132,30 @@ def test_is_record_is_false_for_each_y_family_prefix():
     assert not is_record('a: yt"x"\n')
 
 
-def test_is_record_answers_the_record_question_only():
-    # lexes but does not parse: still a record, and the parse error waits
-    # until it is loaded
-    assert is_record("a: no\n")
-    with pytest.raises(AkanError):
-        loads_record("a: no\n")
+@pytest.mark.parametrize('text', ['a: no\n', 'ports: [8080 8443]\n', '',
+                                 '# comment only\n', 'a:\n', 'a: 1\na: 2\n',
+                                 'a: f"x"\n', 'a: [1\n'])
+def test_is_record_returns_false_for_malformed_or_empty_source(text):
+    assert not is_record(text)
 
 
-def test_is_record_raises_when_there_is_no_document_to_answer_about():
-    with pytest.raises(AkanError):
-        is_record('a: f"x"\n')
+def test_is_record_never_resolves_or_builds_loaded_values(monkeypatch):
+    import yapyon.loader as loader
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('record predicate must not resolve or build values')
+
+    monkeypatch.setattr(loader, 'build', forbidden)
+    monkeypatch.setattr(loader, 'resolve', forbidden)
+    assert is_record('ports: [8080, 8443]\n')
+    assert not is_record('a: y"{missing}"\n')
+    assert not is_record('ports: [8080 8443]\n')
+
+
+@pytest.mark.parametrize('text', [None, 123, b'a: 1\n', []])
+def test_is_record_does_not_conflate_api_misuse_with_invalid_source(text):
+    with pytest.raises(TypeError, match='text must be a string'):
+        is_record(text)
 
 
 # --------------------------------------------------------------------------- #

@@ -19,7 +19,7 @@ RECORDS = [
     'a: 1\nb: 3.10\nc: None\n',
     'a:\n  - 1\n  - 2\n',
     'a: b"\\x89PNG"\n',
-    'a: "x"\na: "y"\n',          # a multimap is plain keyed data
+    '+ a: "x"\n+ a: "y"\n',
 ]
 
 LEDGERS = [
@@ -83,8 +83,7 @@ def test_calling_a_declared_function_makes_an_assembly():
         assert tier_of(text) == 4, text
 
 
-def test_tier_1_is_exactly_is_record():
-    # Two functions, one question. A divergence here would be trap 5's shape.
+def test_tier_1_matches_is_record_for_valid_documents():
     for text in RECORDS + LEDGERS + TEMPLATES + ASSEMBLIES:
         assert (tier_of(text) == 1) == is_record(text), text
 
@@ -107,6 +106,9 @@ def test_an_empty_document_is_tier_1():
 # --------------------------------------------------------------------------- #
 def test_text_that_lexes_but_does_not_parse_still_gets_a_tier():
     assert tier_of('a: "x"\n- 1\n') == 1
+    assert not is_record('a: "x"\n- 1\n')
+    assert tier_of('a: "x"\na: "y"\n') == 1
+    assert not is_record('a: "x"\na: "y"\n')
 
 
 def test_text_that_does_not_lex_raises_and_names_the_source():

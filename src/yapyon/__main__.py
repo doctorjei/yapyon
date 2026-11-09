@@ -7,6 +7,8 @@
                                     #   --env-allow NAME, --env-all, --no-env
     python -m yapyon tier   FILE    # the tier: 1 record, 2 ledger,
                                     #   3 template, 4 assembly
+    python -m yapyon yamlplus FILE  # validate the YAML-readable record profile
+                                    #   --write normalizes and quotes sensitive keys
 
 Prefer this spelling over `python -m yapyon.lexer`. Both work, but the
 per-module form re-executes a module the package has already imported, which
@@ -22,7 +24,7 @@ from __future__ import annotations
 
 import sys
 
-STAGES = ("lexer", "parser", "record", "expand", "tier")
+STAGES = ("lexer", "parser", "record", "expand", "tier", "yamlplus")
 
 
 def main(argv: list[str]) -> int:

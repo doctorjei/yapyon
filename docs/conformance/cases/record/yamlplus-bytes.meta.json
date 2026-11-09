@@ -1,0 +1,1 @@
+{"profile": "yamlplus", "warnings": 0, "info": ["1 bytes value(s)"], "rule": "YAMLPLUS §4.3", "why": "Admitted bytes retain their type; YAML sees text, reported through hora."}

@@ -88,7 +88,10 @@ def discover(corpus_dir: Path) -> list[Case]:
             expected = input_path.with_name(input_path.stem + ".expected.yap")
             if not expected.exists():
                 raise SystemExit(f"{input_path}: no {expected.name} beside it")
-            cases.append(Case(kind, input_path, expected))
+            meta_path = input_path.with_name(input_path.stem + ".meta.json")
+            meta = (json.loads(meta_path.read_text(encoding="utf-8"))
+                    if meta_path.exists() else None)
+            cases.append(Case(kind, input_path, expected, meta))
 
     for input_path in sorted((cases_dir / "error").glob("*.yap")):
         meta_path = input_path.with_name(input_path.stem + ".meta.json")
@@ -162,8 +165,9 @@ def _run_case(case: Case) -> tuple[bool, str]:
     src = case.input_path.read_text(encoding="utf-8")
 
     if case.kind == "error":
-        loader = (yapyon.loads_record if case.meta.get("loader") == "record"
-                  else yapyon.loads)
+        loader = {"record": yapyon.loads_record,
+                  "yamlplus": yapyon.yamlplus.loads}.get(
+                      case.meta.get("loader"), yapyon.loads)
         try:
             kw = case.env_args() if loader is yapyon.loads else {}
             value = loader(src, source=case.name, **kw)
@@ -182,6 +186,28 @@ def _run_case(case: Case) -> tuple[bool, str]:
             return False, ("filed under record/ but tier_of says "
                           f"{yapyon.tier_of(src)} — it is not a record")
         got = yapyon.loads_record(src, source=case.name)
+        if case.meta.get("profile") == "yamlplus":
+            warnings, notices = [], []
+            profile = yapyon.yamlplus.loads(src, source=case.name,
+                                           warn=warnings.append, info=notices.append)
+            ok, why = same_data(profile, got)
+            if not ok:
+                return False, f"yamlplus/record disagreement: {why}"
+            if len(warnings) != case.meta.get("warnings", 0):
+                return False, (f"yamlplus warnings: got {len(warnings)}, "
+                               f"expected {case.meta.get('warnings', 0)}")
+            expected_info = case.meta.get("info", [])
+            if (len(notices) != len(expected_info) or
+                    any(fragment not in message for fragment, message in zip(expected_info, notices))):
+                return False, f"yamlplus info: got {notices!r}, expected fragments {expected_info!r}"
+            output = yapyon.yamlplus.normalize(src, source=case.name)
+            if "formatted" in case.meta and output != case.meta["formatted"]:
+                return False, f"yamlplus formatting: got {output!r}, expected {case.meta['formatted']!r}"
+            ok, why = same_data(yapyon.yamlplus.loads(output), profile)
+            if not ok:
+                return False, f"yamlplus formatting changed data: {why}"
+            if yapyon.yamlplus.normalize(output) != output:
+                return False, "yamlplus formatting is not idempotent"
     else:
         if yapyon.tier_of(src) == 1:
             return False, ("filed under full/ but tier_of says 1 — it is a "

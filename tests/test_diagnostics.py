@@ -67,10 +67,8 @@ def test_a_shiran_carries_the_source_too():
     assert seen[0].startswith("shiran: sh.yap:3:3: ")  # resolved at the y-string
 
 
-def test_is_record_names_the_source_when_the_text_will_not_lex():
-    with pytest.raises(AkanError) as e:
-        is_record('a: f"x"\n', source="probe.yap")
-    assert e.value.source == "probe.yap"
+def test_is_record_returns_false_for_lexical_errors_even_with_a_source():
+    assert not is_record('a: f"x"\n', source="probe.yap")
 
 
 def test_load_defaults_the_source_to_the_file_name(tmp_path):

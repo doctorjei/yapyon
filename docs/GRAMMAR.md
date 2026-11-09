@@ -27,7 +27,10 @@ offending character**, and are never warnings and never silent
 reinterpretations. Where a fix is mechanical, an implementation should name it
 in the message. A second register, **shiran**, marks input that is well-formed
 but suspicious; shiran never changes whether a document is accepted. This
-document specifies exactly one shiran (§G5.4).
+document specifies exactly one shiran (§G5.4). **Hora** (`hora:`) is a distinct
+informational register for accepted compatibility facts, not a warning or
+syntax error; it also has no effect on acceptance. This grammar does not
+require an informational message merely for successful syntax recognition.
 
 Grammar fragments are EBNF: `::=` defines, `|` alternates, `?` optional, `*`
 zero or more, `+` one or more, `( )` groups, `" "` quotes a literal. Names in

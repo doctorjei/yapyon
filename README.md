@@ -72,6 +72,11 @@ $ python -m yapyon expand examples/bridge.yap    # a ledger in, a record out
 
 ## Read More
 
+- [YamlPlus standard](docs/YAMLPLUS.md) — the YAML-readable record profile,
+  with compatibility warnings, `hora` notices, and comment-preserving formatting.
+  The [guide](docs/DETAILS.md#yamlplus-readable-as-yaml-and-yapyon) distinguishes
+  current in-tree support from the still-pending standalone package boundary.
+
 - [Tutorial](https://github.com/doctorjei/yapyon/blob/main/docs/TUTORIAL.md) — learn the format by example
 - [Details](https://github.com/doctorjei/yapyon/blob/main/docs/DETAILS.md) — the long-form guide: every feature, the API, and the CLI
 - [Specification](https://github.com/doctorjei/yapyon/blob/main/docs/SPEC.md) — what yapyon bytes mean (normative)
@@ -83,8 +88,12 @@ $ python -m yapyon expand examples/bridge.yap    # a ledger in, a record out
 
 ## Diagnostic Terminology
 
-`shiran:` (warning) → `akan:` (error) → `yakamashiwa:` (internal bug).
-Verbose success prints `ええやん`.
+The working standard distinguishes `hora:` (information), `shiran:` (warning),
+`akan:` (error), and `yakamashiwa:` (internal bug). Hora is not a warning;
+its selected YamlPlus delivery is separate `info=` and opt-in CLI `--info`.
+These are available in the unreleased in-tree binding; see the
+[guide's support and package-boundary notes](docs/DETAILS.md#yamlplus-readable-as-yaml-and-yapyon).
+The specified verbose-success marker `ええやん` is not the information channel.
 
 ## Document Variants
 

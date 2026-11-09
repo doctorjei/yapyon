@@ -1,10 +1,12 @@
 # yapyon conformance corpus
 
-*A second implementation passes this corpus or it does not conform.*
+*Every case checks its declared current conformance scope. Profile cases follow
+the reviewed YamlPlus standard, not obsolete prototype refusals.*
 
 `docs/SPEC.md` says what yapyon bytes mean and `docs/GRAMMAR.md` says which
 bytes are well-formed. This directory is where those words get **checked**.
-Every case here is data, not code in a language — a port in Mojo, Rust or
+[YAMLPLUS.md](../YAMLPLUS.md) defines the optional YAML-readable record
+profile checked by its marked cases. Every case here is data, not code in a language — a port in Mojo, Rust or
 anything else runs the same files against its own loader and gets a yes or
 no.
 
@@ -46,6 +48,26 @@ that crossing **is** the test.
 | `record/` | `loads_record` | `loads_record` | both load to equal data, same key order |
 | `full/` | `loads` | `loads_record` | resolved input equals the record |
 | `error/` | `loads`, or `loads_record` if `meta.loader == "record"` | — | the loader raises `akan` |
+
+A successful record case may have a metadata sidecar, such as
+`cases/record/yamlplus-values.meta.json`, with
+`{"profile": "yamlplus", "warnings": 0}`. The runner also loads it through
+its profile implementation and checks that warning count. Expectations remain
+ordinary records. An error case with `meta.loader == "yamlplus"` exercises
+that profile implementation, not a new general Yapyon refusal.
+
+**Profile diagnostics and formatting:** optional `info` is an ordered array of
+hora message fragments, one per expected kind summary (for example,
+`["2 bytes value(s)", "1 None value(s)"]`). The runner checks the number and
+content fragments, not the entire diagnostic wording. Optional `formatted` is
+the exact expected source after selected compatibility fixes; it pins comment
+preservation and unselected spellings where present. The runner also reloads
+that output and checks typed data/order and formatter idempotence.
+
+The former bytes, comment-boundary, exponent, and folded-key refusal fixtures
+now live under `record/`, with reviewed value and diagnostic expectations.
+Profile-only errors cover invalid YAML escapes and the explicit multimap
+exclusion. Core Yapyon case meanings are unchanged.
 
 Two self-checks run on the corpus itself, so a case cannot be quietly
 misfiled: a `record/` input must report `tier_of == 1`, and a `full/` input

@@ -7,9 +7,15 @@ yapyon (やぴょん) is a data format combining Python-style typed literals wit
 YAML-like block structure. Its design goal, in one sentence: **the same bytes
 mean the same data, to every parser, on every machine, always.**
 
+**Unreleased contract updates:** this working specification includes the
+full-validity `is_record` contract and the informational `hora` register.
+These are requirements of the working standard, not claims about published
+0.6.5. Implementation availability and the pending standalone package boundary
+is described in [DETAILS.md](DETAILS.md).
+
 ## How this document relates to the grammar
 
-yapyon is specified in **two documents**:
+The yapyon language is specified in **two documents**:
 
 | | answers | status |
 |---|---|---|
@@ -278,8 +284,10 @@ that **reloading its output yields data equal to reloading its input.**
 
 **Comments do not survive**, and a conforming emitter is not required to
 preserve them: comment-preserving round-trip is not specified in v0.6. An
-emitter is a normalizer, not a round-tripper. *(Reserved: comment retention —
-see §9.)*
+emitter is a normalizer, not a round-tripper. *(Reserved: comment retention for
+this ordinary Yapyon emission contract — see §9.)* The separate optional
+[YamlPlus source-formatting contract](YAMLPLUS.md#5-formatting-and-diagnostics)
+requires comment preservation; it must not inherit comment loss from this path.
 
 **Record normalization and unfinished-source saving are different contracts.**
 A replacement separator (§15.2; syntax in `GRAMMAR §G6`) annotates a field,
@@ -1118,8 +1126,9 @@ specs and conversions in holes; list interpolation; **default and variadic
 parameters** for declared functions (§13.7); positional access to a multimap's entries
 (`{mm[0]}`);
 `---` multi-document streams; r-combos beyond `rb`/`ry`; timestamp and date
-literal prefixes; **comment retention across an emit** (§4.4 normalizes, and a
-round-tripper needs a design v0.6 does not have); **filling slots from
+literal prefixes; **comment retention across ordinary Yapyon emission**
+(§4.4 normalizes; the separate YamlPlus formatter must preserve comments);
+**filling slots from
 files** (§15.1 leaves finding a filler to the consumer); slot labels with
 subscripts (`<base.items[0]>`); slots in multimap entries.
 
@@ -1143,30 +1152,42 @@ key convention, not anything the format needed.*
 
 | Register | Meaning | Example |
 |---|---|---|
-| `shiran:` | legal but suspicious; parsing continues | a bracket where a dot would do, `{a["bar"]}` (`GRAMMAR §G5.4`) |
-| `akan:` | error; the document does not parse/resolve | bare word in value position |
+| `hora:` | accepted informational compatibility fact, not a warning | an unavoidable bytes/None interpretation gap in YamlPlus |
+| `shiran:` | legal but suspicious, costly, or a specified avoidable compatibility ambiguity; processing continues | a bracket where a dot would do, `{a["bar"]}` (`GRAMMAR §G5.4`) |
+| `akan:` | error; the document does not parse/resolve or is refused | bare word in value position |
 | `yakamashiwa:` | internal invariant violated — a bug in the implementation, not the document | indent stack underflow |
+
+**Hora** is ほら, roughly "look/see": something to note, not a claim that the
+author made a mistake. It never affects validity or a successful exit status.
+The selected uses and delivery rules are in
+[YAMLPLUS.md, section 5](YAMLPLUS.md#5-formatting-and-diagnostics): separate
+optional `info=` and `warn=` channels, CLI hora opt-in with `--info` on stderr,
+and a summary per unavoidable-difference kind per operation. Ordinary Yapyon
+loading does not acquire YAML compatibility notices merely because this
+register exists. Existing serializer policies are unchanged.
 
 Every akan carries a line and column and, wherever a fix is mechanical, names
 it in the message ("write `{{` for a literal brace"; "use rb").
 
-**Shiran must fire only where something is probably a mistake**, not merely
-where it is unusual, and shiran whose suggested fix would change what a
-document means is not a warning but a trap.
+**Shiran must identify a probable mistake, a specified resource concern, or
+an avoidable compatibility ambiguity**, not merely something unusual. A core
+warning's suggested fix must not change what the document means. A profile
+must disclose a selected source-provenance change, such as quoting a name key,
+rather than pretending it preserves all later lookup behavior. Accepted
+unavoidable compatibility differences belong to hora, not shiran.
 
-v0.6 specifies **five**, and none of their fixes changes what a document
-means. The avoidable bracket is about spelling alone. §5.3's two warn
-thresholds and §3.1's long decimal assert nothing about what the author
-intended — they report that a document is costly and may be refused
-elsewhere, which is true whatever was meant — and their fixes (shorten the
-chain or the number, or raise the consumer's ceiling) leave the resolved
-value identical. The fifth reports that JSON output has no place for a
-lexeme (§14.3); its fix, `lexemes=False`, says that only the values were
-wanted, and the values are the same either way.
+The core rules specify **five warnings**. The avoidable bracket is about
+spelling alone. §5.3's two warn thresholds and §3.1's long decimal assert
+nothing about the author's intent: they report cost and possible implementation
+refusal, and their fixes leave the resolved value identical. The fifth reports
+that JSON output has no place for a lexeme (§14.3); `lexemes=False` says only
+the values were wanted, leaving those values unchanged. The optional YamlPlus
+profile specifies its additional compatibility warnings separately; it does
+not turn every non-decimal or unusual spelling into a warning.
 
-*The grammar states the akan and shiran registers too (`GRAMMAR §G1`), because
-it must be readable alone. That overlap is the concept only; this table is
-authoritative for the three registers.*
+*The grammar states the applicable diagnostic concepts too (`GRAMMAR §G1`),
+because it must be readable alone. That overlap is conceptual; this table is
+authoritative for the four registers.*
 
 ---
 
@@ -1253,9 +1274,27 @@ inside literals do not count as computation. Neither does a replacement
 separator's optional equals token. A nonempty literal flow multimap (§7.1)
 and a literal field annotated for replacement remain record-compatible.
 
-An implementation can test those lexical kinds without resolving anything:
-**a record is identifiable by lexing alone.** As always, subset membership
-does not replace the grammar's validity checks.
+For an already well-formed document, those lexical kinds decide record
+membership without resolution. The private lexical filter is not a complete
+validity predicate: it cannot establish required commas, values, or nonempty
+input.
+
+**The public `is_record(text)` contract checks syntax validity and the record
+rule.** It returns `True` only for a valid record, and `False` for malformed
+source, an empty/comment-only document, or a valid non-record. It uses the
+ordinary lexer/parser and the record filter, without resolving references or
+building loaded values. A lexer error is invalid source for this predicate,
+not a reason to report `True`. API misuse is not document invalidity.
+
+| Input | Required `is_record` result |
+|---|---|
+| `ports: [8080, 8443]` | `True` |
+| `ports: [8080 8443]` | `False` — a comma is missing |
+| Empty or comment-only input | `False` |
+| `name: y"hello"` | `False` — valid Yapyon, not a record |
+
+This corrects the earlier lexical-only API contract; it does not require an
+evaluator or change which documents are records.
 
 ### 12.3 Being a record is a property, not a declaration
 
@@ -1334,8 +1373,26 @@ In the same way, a ledger implementation meeting a `yt` literal, a slot, or an
 environment reference is akan there, saying that it needs a template
 implementation.
 
-*Reference implementation: `yapyon.loads_record` and `yapyon.load_record` load
-a record; `yapyon.is_record` performs the §12.2 test without loading.*
+*Python binding: `yapyon.loads_record` and `yapyon.load_record` load a record;
+`yapyon.is_record` is required to perform the full-validity test in §12.2
+without loading. The current source implements this correction; published
+0.6.5 retains the earlier lexical-only behavior.*
+
+**YamlPlus** is an optional YAML-readable profile of records, not another tier.
+Its normative definition is [YAMLPLUS.md](YAMLPLUS.md). Validity in both formats
+is the default; differing interpretation is not itself invalid YAML. Explicit
+exclusions need a reason, including the profile's current multimap exclusion.
+It keeps Yapyon's string keys, ordinary literal meanings, and unquoted `None`.
+Avoidable differences draw the specified shiran; accepted unavoidable bytes/
+None gaps draw hora. Quoted `"None"` remains text. Profile formatting preserves
+comments, rather than inheriting ordinary record-emitter comment loss.
+
+The profile does not change ordinary Yapyon meanings or the §14 writers.
+YamlPlus must be independently usable without requiring Yapyon; package layout
+and shared-component boundaries are outside this format definition. The current
+in-tree binding implements the reviewed format and diagnostics but is not yet
+standalone; [DETAILS.md](DETAILS.md#yamlplus-readable-as-yaml-and-yapyon) states
+its support and implementation limits.
 
 ---
 

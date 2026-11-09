@@ -1,0 +1,1 @@
+{"loader": "yamlplus", "rule": "YAMLPLUS §1", "why": "Multimaps are an explicit profile exclusion, without changing ordinary Yapyon records."}

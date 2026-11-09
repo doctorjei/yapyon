@@ -11,6 +11,46 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+### Reviewed YamlPlus standard and implementation
+
+- `docs/YAMLPLUS.md` now defines membership as validity in both Yapyon records
+  and YAML 1.1/1.2, subject to explicit justified exclusions and source constraints.
+  Differing scalar interpretation is not automatically invalid YAML. Numeric
+  variants remain admitted; avoidable differences have shiran and a shared,
+  type-preserving alternative. Raw and single-quoted escape differences are
+  warnings when the document remains valid in both. Multimaps are akan in the
+  profile for now, without changing ordinary Yapyon multimaps.
+- `hora:` is the informational register for accepted unavoidable bytes/None
+  compatibility differences. Its delivery contract is separate `info=`, default
+  `None`; CLI notices are opt-in with `--info` on stderr and summarized per kind
+  per operation. Warnings remain separate and default-visible. Neither severity
+  changes successful status or document validity.
+- Profile source formatting must preserve comments and typed values. Selected
+  key quotation, colon separation, and clear numeric-zero escape repairs must
+  not erase user information. Bare `None` stays unquoted null; quoted `"None"`
+  stays text. Active `\0` followed by a decimal digit is shiran, including
+  `\08`/`\09`; removing octal escapes from ordinary Yapyon is not selected.
+- `is_record` is required to validate syntax as well as the record rule,
+  returning false for malformed, empty, or non-record source without resolution.
+  The current implementation uses the shared parser/filter without loading or
+  resolving. This corrects the earlier lexical-only predicate's empty/malformed
+  true results and lexical exceptions; API misuse still raises.
+- YamlPlus must be independently usable without Yapyon. Package boundaries and
+  shared-component placement are a separate design step, not implemented here.
+
+- `yapyon.is_yamlplus` and `yapyon.yamlplus` provide current-standard checking,
+  loading, source formatting, and host output. The CLI supports validation,
+  `--write`, and opt-in `--info`. Source formatting uses located edits to retain
+  comments, field association/intent, and other admitted literal spellings.
+  Host bytes use safe b64 literals; None stays unquoted null, never guessed from
+  loaded YAML text. No non-string key coercion or quoted-key promotion is added.
+- Independent test-only YAML1.1/1.2-core schema checks use PyYAML's syntax
+  reader, not a second independent YAML syntax parser. Profile corpus cases now
+  check the reviewed admission rules, separate hora summaries, and formatting;
+  the four obsolete refusal cases have been migrated to successful records.
+  The runtime stays stdlib-only, with a non-evaluating YAML surface recognizer.
+  No existing JSON/YAML/TOML writer or ordinary Yapyon emission policy changes.
+
 ## 0.6.5 — 2026-11-08
 
 Built to specification and grammar **v0.6**, including conditional values and
