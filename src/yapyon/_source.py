@@ -75,7 +75,7 @@ def _collapse(node, history):
         return node
     view = project(node)
     if isinstance(view, MergedMapping):
-        if view.pending_key() is not None:
+        if view.pending_key() is not None or view.presence_pairs():
             if view.layers and not _has_history(view, history):
                 earlier, later = view.layers
                 if type(earlier) is Mapping and not earlier.pairs:

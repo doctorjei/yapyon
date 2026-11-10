@@ -11,6 +11,38 @@ before it needed `pip install yapyon --pre` to be seen.
 
 ## Unreleased
 
+## 0.6.6 — 2026-11-10
+
+Add reference-only propagate-Unset and the reviewed YamlPlus contracts and output
+APIs. The core remains stdlib-only; standalone YamlPlus publication is separate.
+
+### Reference-only propagate-Unset
+
+- Add postfix `!` (§5.7): explicitly guarded absence cancels the receiving
+  field, multimap entry, or list item, without a stored sentinel or None
+  conversion. Present None, False, zero, and empty data remain values.
+- Propagate cancellation through expressions and nested calls without dropping
+  arguments or executing the outer call. Guard an indirect selector separately,
+  as `foo[selector!]!`. Ordinary errors and pending/cyclic dependencies keep
+  their own behavior. A canceled root is akan under the empty-document rule.
+- Preserve lower surviving merge contributions, including under conditional
+  replacement, and retain the necessary programs in non-evaluating source saving.
+  Records, YamlPlus membership, and ordinary merge/value policies are unchanged.
+
+### YamlPlus output from resolved constructs
+
+- Add `__as_yamlplus__` (§14.9), using resolved AST data and shared profile
+  preparation/emission. Completed output is validated; templates and multimaps
+  refuse instead of being wrapped, joined, or pruned.
+- Add `expand_yamlplus`, `Tree.to_yamlplus`, and CLI expansion with `--yamlplus`
+  and optional `--info`. They use the existing resolver and private tree copies;
+  ordinary record expansion and non-evaluating source saving are unchanged.
+- Preserve existing typed YamlPlus reading/checking/formatting/host output and
+  the stdlib-only Yapyon runtime. The independent YAML-side source project uses
+  PyYAML native reading and constrained conforming output, with no full Yapyon
+  runtime. Both readers identify profile problems; both writers check completed
+  output. The standalone project is not included in this Yapyon distribution.
+
 ### Reviewed YamlPlus standard and implementation
 
 - YAML-view implicit keys, including keys emerging inside byte/raw literals,
@@ -39,8 +71,9 @@ before it needed `pip install yapyon --pre` to be seen.
   The current implementation uses the shared parser/filter without loading or
   resolving. This corrects the earlier lexical-only predicate's empty/malformed
   true results and lexical exceptions; API misuse still raises.
-- YamlPlus must be independently usable without Yapyon. Package boundaries and
-  shared-component placement are a separate design step, not implemented here.
+- YamlPlus must be independently usable without Yapyon. The separate YAML-side
+  source project now uses native PyYAML I/O and independent profile validation;
+  installed-package verification remains separate from these source changes.
 
 - `yapyon.is_yamlplus` and `yapyon.yamlplus` provide current-standard checking,
   loading, source formatting, and host output. The CLI supports validation,

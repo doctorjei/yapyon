@@ -2,14 +2,15 @@
 
 ## Status
 
-**Published baseline `0.6.5`**, implementing specification and grammar **v0.6**
-for merge/source composition and unfinished persistence, with host-value record
-export, compact yapyon list layout, and conditional values. Unreleased source
-implements the reviewed YamlPlus format/diagnostics and full-validity record
-predicate; standalone YamlPlus packaging remains a subsequent design step. The
-lexer, parser, resolver, loader, emitter, four serializers, contracts, and
-trees with slots share the format's merge rules. The current suite contains
-**4878 tests**, including **136 corpus cases**, with migrated profile oracles
+**Version `0.6.6`** implements specification and grammar **v0.6**, including
+merge/source composition, unfinished persistence, host-value record export,
+compact yapyon list layout, and conditional values. This version adds the reviewed
+YamlPlus format/diagnostics and full-validity record predicate, resolved-AST
+profile output, and reference-only `!` cancellation. A separate standalone binding uses
+native safe PyYAML I/O and independent validation; it is not a core runtime
+dependency. The lexer, parser, resolver, loader, emitter, five serializers,
+contracts, and trees with slots share the format's merge rules. The current suite contains
+**5209 tests**, including **141 corpus cases**, with migrated profile oracles
 for values, diagnostics, and comment-preserving formatting. Release validation
 checks source and extracted-sdist
 suites on Python 3.11, 3.13, and 3.14, plus isolated wheel workflows. Safe-file
@@ -174,6 +175,37 @@ heads may use conditionals directly; parenthesize them in an iterable or filter.
 Holes and reference-call arguments retain their existing grammar. This requires
 at least a ledger, and `Tree.to_source()` preserves both branches unevaluated.
 SPEC §16.3 has the rules.
+
+## Optional contributions with `!`
+
+Postfix `!` explicitly guards a reference. A missing reference cancels the
+receiving field or collection item; it does not supply None or delete a lower
+merge contribution. A present None, False, zero, or empty value stays data.
+
+```python
+>>> yapyon.loads('foo: {}\nitems: [1, (foo.missing!), 3]\n')
+{'foo': {}, 'items': [1, 3]}
+>>> yapyon.loads('foo: {}\nx: "alpha"\n|\nx:= (foo.missing!)\n')
+{'foo': {}, 'x': 'alpha'}
+>>> yapyon.loads('foo: {value: None}\nx: (foo.value!)\n')
+{'foo': {'value': None}, 'x': None}
+```
+
+A canceled field inside a mapping list item removes only that field. Empty
+containers are not pruned. In an expression or nested call, cancellation skips
+that value's remaining computation and propagates to its receiving field/item;
+it neither supplies a boolean nor silently removes a required argument.
+
+`foo[selector]!` guards the selected entry, not evaluation of `selector`.
+Use `foo[selector!]!` to guard both. Pending dependencies wait, and cycles,
+wrong container/index types, failed functions, and disabled environment access
+remain errors. None returned by `__get__` is still a present value, not absence.
+Unlike `?.`, cancellation never passes None into an outer call.
+
+Use `(reference!)` for a guarded copy; `(reference)!` is not a reference operand.
+A canceled whole document is akan because an empty document is not accepted.
+Source saving preserves the guards and necessary fallback layers without
+resolution. This is full Yapyon, not a record or YamlPlus feature.
 
 ## Casts and the getter
 
@@ -713,9 +745,9 @@ The reviewed [YamlPlus standard](YAMLPLUS.md) starts from valid Yapyon records
 that are also valid YAML 1.1 and YAML 1.2. Different interpretation is not by
 itself invalid syntax. Explicit exclusions need a reason; multimaps are excluded
 for now because their structure and repeated entries are not ordinary mappings.
-YamlPlus is not a general YAML converter. Its independent-library boundary is
-still to be designed; the format standard does not mandate the prototype's
-import paths.
+YamlPlus is not a general YAML converter. The standalone binding uses native
+safe PyYAML values; Yapyon's binding retains typed literal values. Their explicit
+boundary is described below, not mandated by the format standard's import paths.
 
 ### Required behavior
 
@@ -747,11 +779,21 @@ separately from the YAML reference interpretations.
 
 ### Current implementation and package boundary
 
-**The unreleased in-tree binding implements the reviewed format, formatting,
-and diagnostic contracts.** Package restructuring is still pending: it is
-accessed through Yapyon, not yet an independently installable YamlPlus library.
-The independent-library requirement remains in force; these import paths are
-not the selected final standalone namespace.
+**The two bindings have different, explicit reading roles.** This Yapyon release
+includes `yapyon.is_yamlplus` and `yapyon.yamlplus` with typed literal
+values, key provenance, and its stdlib-only runtime. The separate `yamlplus`
+project has independent check/validation and native safe YAML reading/writing
+through PyYAML, without Yapyon language machinery. Both must validate input and
+emit profile-conformant documents. Native YAML strings `None` and byte-literal
+text are not guessed into typed null/bytes.
+
+Local verification covers both complete source suites on Python 3.11, 3.13, and
+3.14, an exact standalone source distribution and fresh standalone wheel installs,
+independent admission/formatting/output comparisons, and the held gates. Edge
+review corrected legal-tab handling in the standalone private loader and located
+stack-exhaustion refusal in Yapyon's profile validator. This bounded verification
+is not a proof of every possible input, a standalone publication, or a release
+announcement.
 
 Checking uses the shared Yapyon lexer/parser plus a standard-library-only YAML
 surface recognizer. It does not load YAML objects or infer Yapyon types from
@@ -798,6 +840,47 @@ intent, other layout, and other admitted scalar spellings. It is idempotent and
 never evaluates. CRLF source is normalized to LF, and output ends in a newline.
 Shiran goes to stderr by default; `--info` additionally shows summarized hora.
 Neither affects successful status. No version or release vehicle is selected.
+
+### Output from full Yapyon constructs
+
+The new `__as_yamlplus__()` serializer writes resolved data as conforming profile
+source. References, calls, copies, comprehensions, conditionals, and composition
+use the ordinary resolver; no second evaluator is added. Text/numbers/bytes are
+written with profile-safe spellings, and susceptible name keys are quoted with
+a warning about their changed visibility. Multimaps and unjoined templates
+refuse instead of being wrapped, pruned, or implicitly rendered.
+
+```python
+>>> import yapyon
+>>> from yapyon import yamlplus
+>>> doc = 'name: "gw"\nmessage: y"hi {name}"\n'
+>>> profile = yapyon.expand_yamlplus(doc, env={})
+>>> yapyon.is_yamlplus(profile)
+True
+>>> yamlplus.loads(profile)
+{'name': 'gw', 'message': 'hi gw'}
+>>> draft = yapyon.parse(doc)
+>>> draft.to_yamlplus(env={}) == profile
+True
+>>> 'y"hi {name}"' in draft.to_source()
+True
+```
+
+`expand_yamlplus` accepts the full expansion environment/contract/resource
+options plus separate `warn=` and `info=` callbacks. `Tree.to_yamlplus` uses the
+same resolution options on a private working copy; it does not change the tree.
+`Tree.to_source` stays non-evaluating. Existing `expand_record`, JSON/YAML/TOML,
+and ordinary Yapyon output remain distinct and unchanged.
+
+```sh
+python -m yapyon expand --yamlplus --info settings.yap
+```
+
+Generated data is checked for profile validity before it is returned or written.
+Comments belong to source formatting, not this resolved-data export. None and
+bytes retain their documented unavoidable interpretation gaps for native YAML
+readers. The standalone writer uses PyYAML with profile-safe representers, not
+an unconstrained dump; its conventional diagnostic labels do not change validity.
 
 ## Exporting Python values
 
@@ -962,8 +1045,9 @@ and a resolver with no ceiling is a denial-of-service in anything that parses
 configuration it did not write. The spec declines to fix one ceiling for every
 implementation; it does not suggest having none.
 
-Both tiers are about cost alone. A **cycle or a missing target is always
-akan** at any depth, because it can never resolve. Composition also charges
+Both tiers are about cost alone. A **cycle or an unguarded missing target is
+akan** at any depth. Explicit `!` guards cancel their receiving contribution;
+they do not suppress cycles or other errors. Composition also charges
 materialization and duplicate-comparison work before unbounded allocation;
 a small deduplicated result does not make arbitrarily large inputs free.
 `max_size` also bounds merge work units: visits to projection/key-readiness

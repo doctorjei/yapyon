@@ -78,7 +78,7 @@ def source(node):
 
 def _ready(resolver, owner, index, site):
     """Resolve an operand locally, retaining successful work across fixpoint passes."""
-    from .resolver import _Site, _collect, _unfilled, unfilled_message
+    from .resolver import _Cancel, _Site, _collect, _unfilled, unfilled_message
 
     holder = [owner.args[index]]
     while True:
@@ -99,7 +99,14 @@ def _ready(resolver, owner, index, site):
         for local in sites:
             if site.key:
                 local.key = True
-            value = resolver._try(local)
+            try:
+                value = resolver._try(local)
+            except _Cancel:
+                if local.cancel is None:
+                    raise
+                local.cancel()
+                progress = True
+                break
             if value is not None:
                 local.replace(value)
                 if local.key and local.reads:
@@ -222,7 +229,7 @@ def _comprehend(resolver, node, site):
         node._input, node._index, node._predicate = items, 0, None
         cls = {"list": Sequence, "dict": Mapping, "multimap": MultiMap}[node.kind]
         node._output = cls(node.line, node.col, [])
-    from .resolver import _Site, _key_slot
+    from .resolver import _Cancel, _Site, _key_slot
 
     while node._index < len(node._input):
         item = node._input[node._index]
@@ -240,10 +247,14 @@ def _comprehend(resolver, node, site):
                                                  [copy.deepcopy(node.args[2])])
                     _bind(node._predicate.args[0], bindings)
                 local = _Site(node, site.chain, None, key=site.key, bindings=bindings)
-                tested = _ready(resolver, node._predicate, 0, local)
-                if local.reads:
-                    resolver._key_reads.append(local)
-                include = _condition(resolver, tested, node.args[2])
+                try:
+                    tested = _ready(resolver, node._predicate, 0, local)
+                except _Cancel:
+                    include = False
+                else:
+                    if local.reads:
+                        resolver._key_reads.append(local)
+                    include = _condition(resolver, tested, node.args[2])
             else:
                 include = True
             if not include:
@@ -275,24 +286,32 @@ def _comprehend(resolver, node, site):
         chain = ([(key_scope, current.pair)] + site.chain
                  if node.kind == "dict" else site.chain)
         local = _Site(node, chain, None, bindings=bindings)
-        if current.pair is not None and not current.key_done:
-            local.key = True
-            key = _ready(resolver, current, 1, local)
-            _key_slot(node._output, current.pair)(key)
-            if local.reads:
-                resolver._key_reads.append(local)
-            current.key_done = True
-            local.key = False
-        if site.key and not site.contribution:
-            local.key = True
-        body = (current.args[0] if site.contribution
-                else _ready(resolver, current, 0, local))
-        if current.pair is None:
-            node._output.items[-1] = body
-        else:
-            current.pair.value = body
+        try:
+            if current.pair is not None and not current.key_done:
+                local.key = True
+                key = _ready(resolver, current, 1, local)
+                _key_slot(node._output, current.pair)(key)
+                if local.reads:
+                    resolver._key_reads.append(local)
+                current.key_done = True
+                local.key = False
+            if site.key and not site.contribution:
+                local.key = True
+            body = (current.args[0] if site.contribution
+                    else _ready(resolver, current, 0, local))
+        except _Cancel:
+            target = (node._output.items if current.pair is None else
+                      node._output.pairs if node.kind == "dict" else node._output.entries)
+            target.pop()
             if isinstance(node._output, Mapping):
                 node._output.reindex()
+        else:
+            if current.pair is None:
+                node._output.items[-1] = body
+            else:
+                current.pair.value = body
+                if isinstance(node._output, Mapping):
+                    node._output.reindex()
         node._index += 1
         node._predicate = None
         del node._current
@@ -330,7 +349,7 @@ def _receiver(resolver, owner, site):
 
 
 def _merge(resolver, node, site):
-    from .assembly import _PENDING, _combine, kind
+    from .assembly import _PENDING, _combine, cancellable, kind
     from .resolver import _Site
 
     earlier, later = node.args
@@ -340,7 +359,7 @@ def _merge(resolver, node, site):
         return _result(resolver, node, out)
     for index in (1, 0):
         operand = node.args[index]
-        if kind(operand) is not None:
+        if kind(operand) is not None and not cancellable(operand):
             continue
         if not isinstance(operand, YString):
             raise _Waiting

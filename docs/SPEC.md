@@ -7,11 +7,12 @@ yapyon (やぴょん) is a data format combining Python-style typed literals wit
 YAML-like block structure. Its design goal, in one sentence: **the same bytes
 mean the same data, to every parser, on every machine, always.**
 
-**Unreleased contract updates:** this working specification includes the
-full-validity `is_record` contract and the informational `hora` register.
-These are requirements of the working standard, not claims about published
-0.6.5. Implementation availability and the pending standalone package boundary
-is described in [DETAILS.md](DETAILS.md).
+**Contract updates implemented in 0.6.6:** this specification includes the
+full-validity `is_record` contract, the informational `hora` register,
+YamlPlus output from resolved constructs through `__as_yamlplus__`, and
+reference-only propagate-Unset (`!`, §5.7). The independent standalone package
+boundary is described in [DETAILS.md](DETAILS.md); that package's publication
+is separate from the Yapyon release.
 
 ## How this document relates to the grammar
 
@@ -325,7 +326,8 @@ section and §5.2.
   in where the key comes from. A quoted literal *is* the key. An integer is a
   list position, and a **negative** one counts from the end as in Python —
   `{xs[-1]}` is the last element, `{xs[-0]}` is `{xs[0]}`. A position outside
-  the list, at either end, is akan. A **reference** names the key: `{d[p]}` is "the value of `d`
+  the list, at either end, is akan unless explicitly guarded (§5.7).
+  A **reference** names the key: `{d[p]}` is "the value of `d`
   at the key stored in `p`".
 - **An inner reference resolves in the scope of the y-string's own position**
   (§5.2), *not* in the scope of the node being indexed. So
@@ -338,8 +340,9 @@ section and §5.2.
 - A **call** applies a function to the values its arguments name — a
   built-in such as a serializer (§5.1.2), or a function a contract declares
   (§13).
-- Holes contain **references, calls, and literal arguments**, and nothing
-  else: no arithmetic, no operators, and no way to reach outside the
+- Holes contain **references (optionally guarded by !, §5.7), calls, and literal
+  arguments**, and nothing else: no arithmetic or general expressions, and no
+  way to reach outside the
   document except the loading process's own environment (§5.1.3) and a
   declared function. The grammar admits nothing
   more, which is why it is small enough to be implemented identically twice.
@@ -408,7 +411,7 @@ by the format, under a dunder name, and is called exactly as a declared
 function is (§13): its argument is type-checked before the call, it waits
 for that argument to resolve, and its result is placed by §5.5. No
 contract declares a serializer. Every implementation that resolves holes
-provides all four; a records-only implementation (§12) has no holes to
+provides all five; a records-only implementation (§12) has no holes to
 call one from. The format defines:
 
 | name | signature |
@@ -417,6 +420,7 @@ call one from. The format defines:
 | `__as_toml__` | `(dict[str, Any] \| multimap[str, Any]) -> str` — a TOML document is a table, with no top-level form for a list or a single value |
 | `__as_yaml__` | `(Any) -> str` |
 | `__as_yapyon__` | `(Any) -> str` |
+| `__as_yamlplus__` | `(Any) -> str` — profile exclusions, including multimaps, remain refusals |
 
 `__as_json__` and `__as_toml__` take one keyword argument, `lexemes`
 (default `True`); `lexemes=False` writes no `@_lexemes` (§14.2). A
@@ -428,7 +432,7 @@ both are legal (§13.1). A result is a `str`, and a chain is checked like
 any call: `{a.__as_json__().__as_yaml__()}` writes the JSON text as a YAML
 string, while `{a.__as_json__().__as_toml__()}` is a type error at the
 second link, since `__as_toml__` takes a table. **A dunder call that names
-no built-in — these four, `__env__` (§5.1.3), the casters and
+no built-in — these five, `__env__` (§5.1.3), the casters and
 `__get__` (§5.1.5), or `__not_none__` (§5.1.6) — is akan** at the call,
 naming the built-ins that exist: a dunder call names a built-in or
 nothing.
@@ -472,11 +476,14 @@ naming every stuck reference.
 
 **Every encoding is deterministic.** This section and §14 fix the output
 exactly — layout included — so the same argument gives the same text from
-every implementation. In all four, **keys are in document order and never
+every implementation. In all five, **keys are in document order and never
 sorted** (order is data), and non-ASCII is left as itself.
 
-**Where a format cannot carry a value directly, the serializer
-approximates it — never refuses, and never guesses.** Each approximation
+**Where JSON, YAML, or TOML cannot carry a value directly, its serializer
+approximates it — never refuses, and never guesses.** The YamlPlus serializer
+instead obeys the profile's explicit exclusions (§14.9): a multimap cannot be
+silently replaced by a different collection kind merely to enter the profile.
+Each approximation
 is fixed by §14, so it is the same everywhere. A reader that knows §14
 recovers the yapyon value exactly; a reader that does not still receives
 correct plain data in that format — never an error, and never a stream
@@ -794,8 +801,10 @@ would name an entry's value while discarding its key.
 
 References resolve over the completed tree to a fixpoint (chaining is
 supported; forward references work). A pass that makes no progress while
-references remain means a missing target or a cycle: akan, listing the stuck
-references with positions.
+references remain means a cycle: akan, listing the stuck references with
+positions. Missing unguarded targets are akan; guarded absence follows §5.7.
+A lookup whose binding or collection positions can still change through
+cancellation must wait for that presence decision before selecting a value.
 
 **Expansion limits come in two parts, and they are different numbers.**
 
@@ -818,8 +827,9 @@ declines to fix one ceiling for every implementation — it does not suggest
 having none.
 
 *Both limits are about resource cost only. They are unrelated to the cycle rule
-above, which stays akan: a cycle or a missing target can never resolve, so
-the document is wrong and ehmon 7 puts the error at the point of the mistake.*
+above, which stays akan: a cycle or an unguarded missing target cannot resolve,
+so ehmon 7 puts the error at the point of the mistake. Explicit guarded absence
+is cancellation (§5.7), not a cycle or permission to suppress other errors.*
 
 **Depth is measured as the dependency chain**, not as a count of fixpoint
 passes. A pass counter makes the answer depend on the order keys happen to
@@ -922,6 +932,69 @@ is — a list stays a list, a mapping a mapping.
 `1`, `("x")` is `"x"`, and `((a))` is `(a)`. There are no tuples, so `()`
 and a comma inside parentheses are akan. Parentheses are not literal
 syntax: a document using them, even as `(1)`, is not a record (§12).
+
+---
+
+### 5.7 Propagate-Unset: `!`
+
+**Syntax: `GRAMMAR §G5`.** Postfix `!` guards a reference. If that reference
+exists, it supplies its ordinary value. If it does not exist, it propagates
+**cancellation**, not a data value. Unset is neither None nor a new literal,
+public sentinel, deletion marker, or false value.
+
+- **Absence:** a missing starting name, missing dictionary key, out-of-range
+  list index, or unset exposed environment variable. A pending dependency must
+  wait rather than be judged missing. Cycles, wrong container/index types,
+  failed functions, disabled environment access, and resource refusals retain
+  their ordinary errors. A function returning None, including __get__, has
+  returned a value. A multimap's total empty list view is also present.
+- **Guard the selected reference, not its dependencies.** In `foo[selector]!`,
+  the guard covers absence along the outer path, not an absent `selector`.
+  Write `foo[selector!]!` to guard both. An unguarded missing argument inside a
+  call remains an error even if the call's result has a guard.
+- **Cancel the receiving construction item.** A dictionary field or multimap
+  entry contributes no pair; a list item contributes no element. A canceled
+  computed key cancels its whole pair without evaluating its value. A canceled
+  field inside a mapping list item does not cancel that containing mapping.
+  Empty containers stay ordinary data; cancellation does not recursively prune.
+- **Propagate through unfinished computation.** A canceled operand does not
+  produce a boolean, None, or a partial result. A canceled argument cancels
+  the outer call without calling it or silently removing the argument; this
+  continues through nested calls to the receiving field/item. The remaining
+  work of that value is skipped, and sibling construction items continue.
+  Existing `?.` still finishes its own receiver chain as None (§13.1);
+  cancellation never supplies None to an outer call.
+- **Comprehensions:** a canceled generated key, value, or filter skips that
+  iteration's output item. A canceled field inside a constructed body mapping
+  only removes that field. Cancellation of the iterable cancels the receiving
+  collection value. Existing laziness, source order, validation domains, and
+  deferred dictionary-contribution rules remain in force (§16).
+- **Merging:** cancellation removes only the evaluated assignment's own
+  contribution. Any lower surviving contribution remains, under the ordinary
+  merge/replacement rules (§15.2). A potentially canceling higher replacement
+  must not irreversibly discard its lower fallback. A wholly discarded value
+  body need not be evaluated just because it contains a guard; its matched
+  key retains the ordinary identity/order rule. Saving unfinished source keeps
+  conditional contributions without evaluating them (§15.8).
+- **No root value:** a canceled root is akan for producing no document value,
+  consistently with the empty-document refusal (`GRAMMAR §G7`). A public lookup
+  that cancels likewise reports no lookup value rather than exposing control
+  state. An empty mapping or list produced by local omission is still a value.
+
+For example:
+
+```yapyon
+foo: {bar: {baz: "zot"}}
+fot: {pik: {qik: "alpha", tok: "beta"}}
+|
+fot: {pik: {qik: (foo.bar.zot!), tok: (foo.bar.baz!)}}
+```
+
+The result retains foo and has fot.pik equal to
+`{qik: "alpha", tok: "zot"}`. Present None, False, zero, and empty values do
+not cancel. Copies still require their existing ownership syntax:
+`(foo.bar.baz!)` guards inside the copy; `(foo.bar.baz)!` is not a reference
+operand. This facility requires resolution and is outside records and YamlPlus.
 
 ---
 
@@ -1138,7 +1211,7 @@ and nothing should be inferred to be wanted because it sits beside something
 that is.
 
 *Built and therefore no longer reserved: `__PARENT__` and `__KEY__` (§5.1.1);
-the four serializers (§5.1.2), which now take a single value as well as a
+the five serializers (§5.1.2), which take a single value as well as a
 container; escapes in a hole's string literals (`GRAMMAR §G5.1`); quoted hole segments (`{a."b.c"}` → `{a["b.c"]}`)
 and interior addressing of lists and multimaps (`{xs.0}` → `{xs[0]}`,
 `{mm.key}` → a list view), both subsumed by the subscript rather than added
@@ -1387,12 +1460,17 @@ Avoidable differences draw the specified shiran; accepted unavoidable bytes/
 None gaps draw hora. Quoted `"None"` remains text. Profile formatting preserves
 comments, rather than inheriting ordinary record-emitter comment loss.
 
-The profile does not change ordinary Yapyon meanings or the §14 writers.
-YamlPlus must be independently usable without requiring Yapyon; package layout
-and shared-component boundaries are outside this format definition. The current
-in-tree binding implements the reviewed format and diagnostics but is not yet
-standalone; [DETAILS.md](DETAILS.md#yamlplus-readable-as-yaml-and-yapyon) states
-its support and implementation limits.
+The profile does not change ordinary Yapyon meanings or the existing JSON,
+YAML, TOML, and Yapyon writers. The separate `__as_yamlplus__` writer (§14.9)
+emits conforming profile source from resolved constructs.
+
+YamlPlus is independently usable without requiring Yapyon. Both bindings check
+profile membership and produce conforming output, but reading interpretation is
+explicit: the standalone Python package uses PyYAML's native safe YAML values;
+Yapyon's binding keeps typed-record values and key provenance. Loaded YAML
+strings are never guessed back into None or bytes. Package layout is outside
+the format definition. [DETAILS.md](DETAILS.md#yamlplus-readable-as-yaml-and-yapyon)
+states current availability and implementation limits.
 
 ---
 
@@ -1869,6 +1947,38 @@ handles from the token stream, before a loader discards them.
   as base64url text, a non-decimal integer in decimal, a multimap as a
   tagged list. That is the design: correct plain data for every reader,
   and the exact value for a reader that knows §14.
+
+### 14.9 YamlPlus
+
+`__as_yamlplus__()` writes a resolved argument as a document conforming to
+[YAMLPLUS.md](YAMLPLUS.md). References, copies, calls, expressions, and
+comprehensions resolve through the ordinary resolver before writing. No second
+evaluator, implicit pruning, or template joining is introduced. A multimap is
+akan, including an empty one; a `yt` retains §5.1.2's common refusal.
+
+The writer reads the resolved AST and emits finished literal data, not unfinished
+source. Text uses shared double-quoted escapes, integers use decimal, finite
+floats use shared dotted spellings, booleans use True/False, None stays bare,
+and bytes use an admitted b64 literal. String keys and document order survive;
+a quoted/computed key stays non-name. Bare keys susceptible to YAML conversion
+are quoted with shiran explaining the visibility change. Replacement operations
+are consumed, not saved as future operations. Layout follows the shared record
+emitter (§14.1); original literal/key lexemes and comments are not promised by
+this resolved-data serializer. Source formatting remains YAMLPLUS §5's distinct
+comment-preserving operation.
+
+Completed output must pass profile validation before return. Invalid keys,
+unsupported data, or implementation resource excess refuse; accepted bytes/None
+interpretation gaps are not coerced away. The optional information channel
+reports those gaps where the binding exposes one; ordinary warnings do not
+carry informational notices.
+
+*Python binding: `expand_yamlplus(text, ...)` uses the full-document expansion
+pipeline and this writer. `Tree.to_yamlplus(...)` resolves a private working
+copy using the same options as `Tree.resolve`, then uses the same writer; the
+original tree is unchanged. Both accept separate `warn=` and `info=` callbacks.
+CLI: `python -m yapyon expand --yamlplus [--info] FILE`. `Tree.to_source()` remains
+non-evaluating, and the existing `expand_record` output is unchanged.*
 
 ---
 
@@ -2482,8 +2592,9 @@ model_rows:
 Evaluate in source order: bind the item, test its predicate if present,
 then evaluate its key (if keyed) and value body. An excluded item's output
 key/body is not evaluated. Syntax and static validity still apply to the
-whole document. Missing references, failed calls, and other errors are
-never silently interpreted as false or as omission.
+whole document. Unguarded missing references, failed calls, and other errors
+are never silently interpreted as false or as omission. Explicit guarded
+absence follows §5.7's construction-item cancellation.
 
 Each included item constructs fresh typed data under §5.6's observable
 linearity. Containers, None, empty values, zero, and False are not pruned.

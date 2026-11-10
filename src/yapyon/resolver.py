@@ -45,7 +45,7 @@ from typing import NamedTuple
 
 from ._digits import REFUSE_DIGITS, decimal_text, int_from_decimal
 from ._keys import key_error, name_key
-from .assembly import MergedMapping, project
+from .assembly import MergedMapping, cancellable, project
 from .contract import (BindError, Declared, Lender, ResultError,
                        float_misfit, result_node)
 from .environment import (ACCESS_OFF, NOT_FOUND, STANDARD_ENV, EnvValueError,
@@ -103,23 +103,41 @@ class _At(NamedTuple):
 # Sites: an unresolved y-string, its scope chain, and how to replace it
 # --------------------------------------------------------------------------- #
 class _Site:
-    __slots__ = ("node", "chain", "replace", "key", "reads", "bindings", "contribution", "key_scope")
+    __slots__ = ("node", "chain", "replace", "key", "reads", "bindings", "contribution", "key_scope", "cancel")
 
     def __init__(self, node: YString, chain: list, replace, *, key=False,
-                 bindings=None, contribution=False, key_scope=None):
+                 bindings=None, contribution=False, key_scope=None, cancel=None):
         self.node, self.chain, self.replace = node, chain, replace
         self.key, self.reads = key, []
         self.bindings = (getattr(node, "_bindings", {}) if bindings is None
                          else bindings)
         self.contribution = contribution
         self.key_scope = key_scope
+        self.cancel = cancel
 
 
-def _collect(node: Node, chain: list, sites: list, replace, bindings=None) -> None:
+def _remove_pair(container, pair, program=None):
+    def remove():
+        pairs = container.pairs if isinstance(container, Mapping) else container.entries
+        pairs[:] = [entry for entry in pairs if entry is not pair]
+        if isinstance(container, Mapping):
+            container.reindex()
+        if program is not None:
+            program._invalidate()
+    return remove
+
+
+def _remove_item(container, item):
+    def remove():
+        container.items[:] = [entry for entry in container.items if entry is not item]
+    return remove
+
+
+def _collect(node: Node, chain: list, sites: list, replace, bindings=None, cancel=None) -> None:
     """Record pending sites with ordinary document scope and lexical bindings."""
     bindings = getattr(node, "_bindings", bindings or {})
     if isinstance(node, YString):
-        sites.append(_Site(node, chain, replace, bindings=bindings))
+        sites.append(_Site(node, chain, replace, bindings=bindings, cancel=cancel))
         return
     if isinstance(node, MergedMapping):
         node.finish()
@@ -141,11 +159,19 @@ def _collect(node: Node, chain: list, sites: list, replace, bindings=None) -> No
                     if isinstance(pair.key, YString):
                         sites.append(_Site(pair.key, [(node, pair)] + chain,
                                            _key_slot(layer, pair), key=True,
-                                           bindings=bindings))
+                                           bindings=bindings,
+                                           cancel=_remove_pair(layer, pair, node)))
+            presence = node.presence_pairs()
             for pair in node.visible_pairs():
-                if pair.named and node.waiting_for_name(pair.key) is None:
+                if pair.key in presence:
+                    layer, original = presence[pair.key]
+                    _collect(original.value, [(node, pair)] + chain, sites,
+                             _pair_slot(layer, original), bindings,
+                             _remove_pair(layer, original, node))
+                elif pair.named and node.waiting_for_name(pair.key) is None:
                     _collect(pair.value, [(node, pair)] + chain, sites,
-                             _pair_slot(node, pair), bindings)
+                             _pair_slot(node, pair), bindings,
+                             _remove_pair(node, pair))
             return
     if isinstance(node, (Mapping, MultiMap)):
         pairs = node.pairs if isinstance(node, Mapping) else node.entries
@@ -153,14 +179,15 @@ def _collect(node: Node, chain: list, sites: list, replace, bindings=None) -> No
             scope = [(node, pair)] + chain if isinstance(node, Mapping) else chain
             if isinstance(pair.key, YString):
                 sites.append(_Site(pair.key, scope, _key_slot(node, pair), key=True,
-                                   bindings=bindings))
+                                   bindings=bindings, cancel=_remove_pair(node, pair)))
             _collect(pair.value, scope, sites,
                      _pair_slot(node, pair) if isinstance(node, Mapping)
-                     else _entry_slot(pair), bindings)
+                     else _entry_slot(pair), bindings, _remove_pair(node, pair))
         return
     if isinstance(node, Sequence):
         for index, item in enumerate(node.items):
-            _collect(item, chain, sites, _index_slot(node, index), bindings)
+            _collect(item, chain, sites, _index_slot(node, index), bindings,
+                     _remove_item(node, item))
         return
 
 
@@ -326,7 +353,14 @@ class Resolver:
                 break
             deferred, progress = [], False
             for site in sites:
-                value = self._try(site)
+                try:
+                    value = self._try(site)
+                except _Cancel:
+                    if site.cancel is None:
+                        self._akan("cancellation produced no document value; an empty document is akan", site.node)
+                    site.cancel()
+                    progress = True
+                    break
                 if value is None:
                     deferred.append(site)
                 else:
@@ -356,8 +390,8 @@ class Resolver:
             pending = False
             for parsed, ref, previous in site.reads:
                 try:
-                    current = self._lookup_parsed(parsed, ref, probe)
-                except AkanError:
+                    current = self._reference(parsed, ref, probe)
+                except (AkanError, _Cancel):
                     current = None
                 if isinstance(current, YString):
                     pending = True
@@ -419,6 +453,12 @@ class Resolver:
 
     # -- one site ------------------------------------------------------------
     def _try(self, site: _Site):
+        try:
+            return self._try_value(site)
+        except _Absent as exc:
+            self._akan(exc.message, exc.at)
+
+    def _try_value(self, site: _Site):
         """Resolve one y-string, or None to defer it to a later pass."""
         node = site.node
         if isinstance(node, Expression):
@@ -627,12 +667,22 @@ class Resolver:
         """Walk a parsed reference (GRAMMAR §G5) from its anchor to its target.
         Dot and subscript steps share traversal, but differ in key visibility.
         """
-        parsed = parse_ref(ref)
-        if parsed.key:                               # §5.1.1: names a position
-            return self._key_of(parsed, ref, site)
-        if parsed.call is not None:                  # §13.1: a call
-            return self._call(parsed.call, ref, site)
-        return self._lookup_parsed(parsed, ref, site)
+        return self._reference(parse_ref(ref), ref, site)
+
+    def _reference(self, parsed, ref, site):
+        try:
+            if parsed.key:
+                return self._key_of(parsed, ref, site)
+            if parsed.call is not None:
+                return self._call(parsed.call, ref, site)
+            return self._lookup_parsed(parsed, ref, site)
+        except _Absent as exc:
+            if parsed.guard:
+                raise _Cancel from None
+            self._akan(exc.message, exc.at)
+
+    def _missing(self, message, at):
+        raise _Absent(message, at)
 
     def _lookup_parsed(self, parsed: Ref, ref: str, site: _Site) -> Node:
         """The anchor-then-steps walk, given an already-parsed reference.
@@ -664,7 +714,7 @@ class Resolver:
                 return current
             current = self._step(current, step, ref, site, trace)
         if site.key and not isinstance(current, YString):
-            frozen = Ref(parsed.root, trace, ref, parents=parsed.parents)
+            frozen = Ref(parsed.root, trace, ref, parents=parsed.parents, guard=parsed.guard)
             site.reads.append((frozen, ref, current))
         return current
 
@@ -1009,7 +1059,7 @@ class Resolver:
             self._akan(f"{{{ref}}}: {exc}", site.node)
         if value is None:
             if strict:
-                self._akan(f"{{{ref}}}: ${name} {NOT_FOUND}", site.node)
+                self._missing(f"{{{ref}}}: ${name} {NOT_FOUND}", site.node)
             return None
         return Scalar(site.node.line, site.node.col, "str", value)
 
@@ -1101,7 +1151,7 @@ class Resolver:
             return self._call(arg.call, ref, site)
         if arg.key:
             return self._key_of(arg, ref, site)
-        node = self._lookup_parsed(arg, ref, site)
+        node = self._reference(arg, ref, site)
         if _contains(node, site.node):
             # §13.1: an argument may not contain the call site. For an anchor
             # the grammar already refuses it; any other reference is checked
@@ -1208,13 +1258,16 @@ class Resolver:
         if not isinstance(node, Sequence):
             self._akan(f"{{{ref}}}: cannot index {i}, because the value "
                        f"named before it is not a list", at)
+        pending = next((item for item in node.items if cancellable(item)), None)
+        if pending is not None:
+            return pending
         # A negative index counts from the end, as in Python. The range check
         # covers both ends, since a subscript reference can deliver any int.
         if i >= len(node.items):
-            self._akan(f"{{{ref}}}: index {i} is past the end of a list of "
+            self._missing(f"{{{ref}}}: index {i} is past the end of a list of "
                        f"{len(node.items)}", at)
         if i < -len(node.items):
-            self._akan(f"{{{ref}}}: index {i} is before the start of a list "
+            self._missing(f"{{{ref}}}: index {i} is before the start of a list "
                        f"of {len(node.items)}", at)
         return node.items[i]
 
@@ -1246,7 +1299,7 @@ class Resolver:
             if pair is None:
                 hint = ("; quoted and computed keys are not names — use a "
                         "subscript through their parent" if named else "")
-                self._akan(f"{{{ref}}}: there is no key {seg!r} here{hint}", at)
+                self._missing(f"{{{ref}}}: there is no key {seg!r} here{hint}", at)
             if spelled_out and pair.named:
                 self._bracket_warning(seg, ref, at)
             return pair.value
@@ -1284,7 +1337,7 @@ class Resolver:
             hint = ("; quoted and computed keys are not names — use a "
                     "subscript through a named parent"
                     if any(not p.named for m, _ in site.chain for p in m.pairs) else "")
-            self._akan(f"no value named {name!r} is in scope here"
+            self._missing(f"no value named {name!r} is in scope here"
                        f"{_dollar_hint_for(site.node, name)}{hint}", site.node)
 
         # Nearest wins (SPEC §5.2). Shadowing an outer definition is NOT
@@ -1322,6 +1375,8 @@ def _check_fills(node: Node):
 def _unfilled(node: Node) -> Slot | None:
     """The first instantiated slot left in a tree (SPEC §15.6)."""
     if isinstance(node, Merge):
+        if cancellable(node):
+            return None
         view = project(node)
         if view is not node:
             return _unfilled(view)
@@ -1336,8 +1391,10 @@ def _unfilled(node: Node) -> Slot | None:
         return node
     if isinstance(node, MergedMapping):
         node.finish()
+        presence = node.presence_pairs()
         nested = [p.value for p in node.visible_pairs()
-                  if not node.layers or p.named and node.waiting_for_name(p.key) is None]
+                  if p.key not in presence
+                  and (not node.layers or p.named and node.waiting_for_name(p.key) is None)]
     else:
         nested = children(node)
     for child in nested:
@@ -1384,6 +1441,15 @@ def _template_in(node: Node) -> ResolvedTemplate | None:
 
 
 _SIGNATURES: dict[str, tuple] = {}
+
+
+class _Absent(Exception):
+    def __init__(self, message, at):
+        self.message, self.at = message, at
+
+
+class _Cancel(Exception):
+    """Guarded absence propagates to the receiving construction item."""
 
 
 class _Short(Exception):

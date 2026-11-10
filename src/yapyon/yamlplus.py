@@ -16,12 +16,13 @@ import sys
 from ._digits import REFUSE_DIGITS, decimal_digits, decimal_text
 from ._values import PathAkan
 from ._yaml_syntax import check_syntax
-from .emitter import _emit_prepared
-from .export import (MAX_DEPTH, MAX_SIZE, _adapt, _Budget, _dump, _key_step,
-                     _options, _Path)
+from .emitter import _emit_prepared, _record_view
+from .export import (MAX_DEPTH, MAX_SIZE, _adapt, _Budget, _dump, _key,
+                     _key_step, _options, _Path, _scalar)
 from .lexer import AkanError, Lexer, Yakamashiwa
 from .loader import _name_of, _refuse_deferred, build
-from .parser import Mapping, MultiMap, Parser, Scalar, Sequence
+from .parser import (Mapping, MultiMap, Node, Parser, ResolvedTemplate,
+                     Scalar, Sequence, Slot, YString)
 from .writers import _ydq, _yfloat
 
 
@@ -135,7 +136,11 @@ def _read(text, max_digits, source, *, writing=False):
                             "remove it or escape it inside a double-quoted string",
                             line, index - starts[line - 1], source)
     lexer = Lexer(text, source=source, max_digits=max_digits)
-    tokens = lexer.tokenize()
+    try:
+        tokens = lexer.tokenize()
+    except RecursionError:
+        raise AkanError("not yamlplus: source nesting exceeds the shared lexer's stack capacity",
+                        lexer.line, lexer.col, source) from None
     parser = Parser(tokens, lexer.warnings, source=source)
     try:
         root = parser.parse()
@@ -291,8 +296,14 @@ def normalize(text, *, warn=None, info=None, max_digits=REFUSE_DIGITS,
     return output
 
 
-def _prepare_output(root, *, warn=None, info=None):
+def _prepare_output(root, *, warn=None, info=None, located=False):
     pending, notices = [(root, _Path())], _Notices()
+
+    def fail(message, path, node):
+        if located:
+            raise AkanError(message, node.line, node.col,
+                            node.source or root.source)
+        raise PathAkan(message, str(path))
     while pending:
         node, path = pending.pop()
         if isinstance(node, Scalar):
@@ -307,7 +318,7 @@ def _prepare_output(root, *, warn=None, info=None):
                     notices.add("None", f"at {path}")
             continue
         if isinstance(node, MultiMap):
-            raise PathAkan("multimaps are not yamlplus data", str(path))
+            fail("multimaps are not yamlplus data", path, node)
         if isinstance(node, Sequence):
             pending.extend((item, path.child(f"[{i}]"))
                            for i, item in reversed(list(enumerate(node.items))))
@@ -317,7 +328,7 @@ def _prepare_output(root, *, warn=None, info=None):
         for index, pair in enumerate(node.pairs):
             child_path = path.child(_key_step(pair.key, index))
             if len(pair.key) > 1024:
-                raise PathAkan("a yamlplus key's source spelling must fit within 1,024 characters", str(child_path))
+                fail("a yamlplus key's source spelling must fit within 1,024 characters", child_path, pair)
             converted = _implicit_type(pair.key)
             if converted:
                 if warn is not None:
@@ -326,7 +337,7 @@ def _prepare_output(root, *, warn=None, info=None):
             elif not pair.named:
                 pair.lexeme = _ydq(pair.key)
             if len(pair.lexeme or pair.key) > 1024:
-                raise PathAkan("a yamlplus key's source spelling must fit within 1,024 characters", str(child_path))
+                fail("a yamlplus key's source spelling must fit within 1,024 characters", child_path, pair)
         pending.extend((pair.value, path.child(_key_step(pair.key, index)))
                        for index, pair in reversed(list(enumerate(node.pairs))))
     return list(notices.messages())
@@ -336,6 +347,66 @@ def _prepare(value, options, info):
     root = _adapt(value, options)
     notices = _prepare_output(root, warn=options.warn)
     text = _emit_prepared(root, options.max_size)
+    _read(text, options.max_digits, None)
+    _send(info, notices)
+    return text
+
+
+def _from_node(node, *, warn=None, info=None, max_digits=REFUSE_DIGITS,
+               max_size=MAX_SIZE):
+    """Write resolved data through the same profile preparation/emission path."""
+    if not isinstance(node, Node):
+        raise TypeError("profile node output needs a resolved internal node")
+    _callback_option(warn, "warn")
+    _callback_option(info, "info")
+    warnings = []
+    options = _options(max_digits, MAX_DEPTH, max_size, warnings.append)
+    source = node.source
+    try:
+        root = _record_view(node, source)
+        budget, pending = _Budget(options.max_size), [(root, _Path())]
+        while pending:
+            current, path = pending.pop()
+            if isinstance(current, ResolvedTemplate):
+                from .serializers import YEETED_YT
+                raise AkanError(YEETED_YT, current.line, current.col,
+                                current.source or source)
+            if isinstance(current, (YString, Slot)):
+                raise AkanError("yamlplus output needs resolved literal data",
+                                current.line, current.col, current.source or source)
+            if isinstance(current, Scalar):
+                try:
+                    _scalar(current.value, current.type, path, options, budget)
+                except (TypeError, ValueError) as error:
+                    raise AkanError(str(error), current.line, current.col,
+                                    current.source or source) from None
+            elif isinstance(current, MultiMap):
+                raise AkanError("multimaps are not yamlplus data", current.line,
+                                current.col, current.source or source)
+            elif isinstance(current, Mapping):
+                budget.spend(1 if current.pairs else 2, path)
+                for index, pair in enumerate(current.pairs):
+                    child = path.child(_key_step(pair.key, index))
+                    try:
+                        pair.key, pair.named = _key(pair.key, pair.named, child, budget)
+                    except (TypeError, ValueError) as error:
+                        raise AkanError(str(error), pair.line, pair.col,
+                                        pair.source or source) from None
+                    pair.lexeme, pair.replace = "", False
+                pending.extend((pair.value, path.child(_key_step(pair.key, index)))
+                               for index, pair in reversed(list(enumerate(current.pairs))))
+            elif isinstance(current, Sequence):
+                budget.spend(1 if current.items else 2, path)
+                pending.extend((item, path.child(f"[{index}]"))
+                               for index, item in reversed(list(enumerate(current.items))))
+            else:
+                raise Yakamashiwa(f"unexpected resolved node {type(current).__name__}")
+        notices = _prepare_output(root, warn=warnings.append, located=True)
+        text = _emit_prepared(root, options.max_size)
+        _read(text, options.max_digits, source)
+    except (ValueError, TypeError, RecursionError) as error:
+        raise AkanError(str(error), node.line, node.col, source) from None
+    _send(warn, warnings)
     _send(info, notices)
     return text
 

@@ -73,7 +73,7 @@ def _expand(text: str, source: str | None = None, *,
             max_depth: int = REFUSE_DEPTH, max_size: int = REFUSE_SIZE,
             max_digits: int = REFUSE_DIGITS, contract=None, provide=None,
             warn=None, env_allow=STANDARD_ENV,
-            env=os.environ) -> tuple[str, list[str]]:
+            env=os.environ, as_yamlplus=False, info=None) -> tuple[str, list[str]]:
     """Full document in; record source out, plus any shirans on the way.
 
     Shirans are reported as they happen rather than batched at the end, so
@@ -100,6 +100,17 @@ def _expand(text: str, source: str | None = None, *,
                        max_digits=max_digits,
                        functions=_functions(contract, provide),
                        environment=view, warn=report, source=source)
+    if as_yamlplus:
+        from .yamlplus import _from_node
+
+        def notice(message):
+            shirans.append(message)
+            info(message)
+
+        text = _from_node(resolved, warn=report,
+                          info=notice if info is not None else None,
+                          max_digits=max_digits, max_size=max_size)
+        return text, shirans
     return emit(resolved, source=source), shirans
 
 
@@ -127,8 +138,23 @@ def expand_record(text: str, *, env_allow=STANDARD_ENV, env=os.environ,
                    env_allow=env_allow, env=env)[0]
 
 
+def expand_yamlplus(text: str, *, env_allow=STANDARD_ENV, env=os.environ,
+                    max_depth: int = REFUSE_DEPTH, max_size: int = REFUSE_SIZE,
+                    max_digits: int = REFUSE_DIGITS, contract=None, provide=None,
+                    source: str | None = None, warn=None, info=None) -> str:
+    """Resolve a full document through the ordinary pipeline, then emit YamlPlus."""
+    from .yamlplus import _callback_option
+
+    _callback_option(warn, "warn")
+    _callback_option(info, "info")
+    return _expand(text, source=source, max_depth=max_depth, max_size=max_size,
+                   max_digits=max_digits, contract=contract, provide=provide,
+                   env_allow=env_allow, env=env, warn=warn, info=info,
+                   as_yamlplus=True)[0]
+
+
 USAGE = ("usage: python -m yapyon expand [--env-allow NAME]... [--env-all] "
-         "[--no-env] [FILE]")
+         "[--no-env] [--yamlplus [--info]] [FILE]")
 
 
 def main(argv: list[str]) -> int:
@@ -136,6 +162,7 @@ def main(argv: list[str]) -> int:
     set, `--env-all` exposes every one, and `--no-env` turns environment
     access off (SPEC §5.1.3, §5.1.4)."""
     rest, allow, env_all, no_env = [argv[0]], set(), False, False
+    profile = show_info = False
     args = iter(argv[1:])
     for arg in args:
         if arg == "--env-allow":
@@ -149,15 +176,23 @@ def main(argv: list[str]) -> int:
             env_all = True
         elif arg == "--no-env":
             no_env = True
+        elif arg == "--yamlplus":
+            profile = True
+        elif arg == "--info":
+            show_info = True
         elif arg.startswith("--"):
             print(f"akan: unknown option {arg}\n{USAGE}", file=sys.stderr)
             return 2
         else:
             rest.append(arg)
+    if show_info and not profile:
+        print(f"akan: --info requires --yamlplus\n{USAGE}", file=sys.stderr)
+        return 2
     env_allow = ENV_ALL if env_all else STANDARD_ENV | allow
     env = None if no_env else os.environ
     return run(rest, lambda text, source: _expand(
-        text, source, env_allow=env_allow, env=env))
+        text, source, env_allow=env_allow, env=env, as_yamlplus=profile,
+        info=(lambda message: None) if show_info else None))
 
 
 if __name__ == "__main__":

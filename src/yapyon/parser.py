@@ -815,6 +815,14 @@ class Parser:
                     self._akan(str(exc), tail)
                 if parsed.root or parsed.parents or parsed.key or parsed.env:
                     self._akan("an anchor or environment variable cannot follow a dot", tail)
+                receiver = parsed
+                while True:
+                    if receiver.guard:
+                        self._akan("! takes a reference, not a postfix result of a copied or constructed value", tail)
+                    call = receiver.call
+                    if call is None or not call.receiver:
+                        break
+                    receiver = call.args[0]
                 if tok.kind == "SAFE_DOT":
                     first = parsed.call
                     while first is not None and first.receiver and first.args[0].call is not None:

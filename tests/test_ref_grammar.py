@@ -47,7 +47,7 @@ def test_spec_builtins_match_code():
 def test_spec_builtins_are_actually_read_from_the_document():
     """A reader that silently found nothing would make the check above vacuous."""
     assert set(crg.builtins_from_spec()) == {
-        "__as_json__", "__as_toml__", "__as_yaml__", "__as_yapyon__",
+        "__as_json__", "__as_toml__", "__as_yaml__", "__as_yapyon__", "__as_yamlplus__",
     }
 
 
@@ -55,3 +55,26 @@ def test_every_serializer_is_exercised_by_the_corpus():
     """The corpus is derived from the code, so a new serializer joins it."""
     for name in SERIALIZER_NAMES:
         assert f".{name}()" in crg.tails
+
+
+def test_guard_comparison_detects_a_broken_grammar(monkeypatch):
+    assert crg.generates("a!")
+    original = crg.path.p
+    monkeypatch.setattr(crg.path, "p", lambda tokens, start: {
+        end for end in original(tokens, start) if tokens[end - 1][1] != "!"
+    })
+    monkeypatch.setattr(crg, "corpus", lambda: iter(["a!", "a"]))
+    assert crg.mismatches() == (2, [("a!", True, False)])
+
+
+def test_guard_comparison_detects_a_broken_parser(monkeypatch):
+    original = crg.parse_ref
+
+    def broken(text):
+        if "!" in text:
+            raise ValueError("guard deliberately disabled")
+        return original(text)
+
+    monkeypatch.setattr(crg, "parse_ref", broken)
+    monkeypatch.setattr(crg, "corpus", lambda: iter(["a!", "a"]))
+    assert crg.mismatches() == (2, [("a!", False, True)])

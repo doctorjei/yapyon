@@ -23,9 +23,12 @@ Syntactic validity is not the same as matching interpretation. A YAML schema
 resolving a spelling as text rather than a number does not make it invalid
 YAML. Such differences are not, by themselves, prohibitions.
 
-- The source has Yapyon's literal meanings, exact types, string-key model,
-  duplicate checks, name/non-name provenance, and record rules. There is no
-  second evaluator or inference from a previously loaded YAML object.
+- Admission follows the literal-record syntax, string-key model, duplicate
+  checks, and record rules. The Yapyon binding reads exact literal types and
+  name/non-name provenance. The standalone YAML-side binding instead reads
+  native safe YAML values through PyYAML after validation. These two documented
+  interpretations are not promised equal; neither guesses None or bytes from
+  a previously loaded YAML string or introduces a second evaluator.
 - Multimaps are explicitly **akan in YamlPlus for now**, including `{+}` and
   nonempty flow/block forms. Their collection kind and repeated-entry semantics
   are not ordinary YAML mapping semantics. Ordinary Yapyon multimaps are unchanged.
@@ -286,14 +289,27 @@ quotation. Host values have no original comments or literal lexemes to preserve.
 | `akan:` | Invalid input, an explicit exclusion, or an implementation refusal | Refusal |
 | `yakamashiwa:` | An internal implementation invariant failed | Implementation bug |
 
+The table names Yapyon's diagnostic register. The standalone YAML-side Python
+binding uses conventional `info:`, `warning:`, and `error:` labels for the same
+informational, warning, and refusal roles, and raises `ValidationError` rather
+than exposing Yapyon's error classes. Labels do not change profile membership.
+
+Both libraries must validate input and produce profile-conformant output. A
+PyYAML-based writer must constrain scalar spellings/layout and validate the
+completed result; an unconstrained YAML dump is not sufficient. YAML-only tags,
+aliases, bare null spellings, and document markers do not become profile syntax.
+The typed bytes/None gaps remain explicit, and text stays text rather than
+being guessed back into those types.
+
 Warnings and notices are not permission to reinterpret data silently. Reports
 identify their source location, or host-value path, where available. A proposed
 repair must retain the Yapyon value and its type; selected provenance changes
 such as key quotation must be disclosed rather than called universally equivalent.
 
-- Python delivery uses separate optional callbacks: `warn=` for shiran and
-  `info=` for hora, each defaulting to `None`. Messages are formatted strings.
-  Do not send hora through the warning channel. Callback failures propagate.
+- Both Python bindings use separate optional callbacks: `warn=` for warnings
+  and `info=` for information, each defaulting to `None`. Messages are formatted
+  strings. Yapyon uses shiran/hora labels; the YAML-side binding uses warning/info.
+  Do not send information through the warning channel. Callback failures propagate.
 - CLI shiran is shown by default on stderr. Hora is opt-in with `--info`, also
   on stderr. Payload output remains on stdout. Neither changes a successful
   exit status or document validity.
@@ -301,16 +317,19 @@ such as key quotation must be disclosed rather than called universally equivalen
   with a count and first location/path when available, not one notice per value.
 - Checking must establish syntax validity and membership without resolution.
   A predicate returns false for malformed/empty/out-of-profile source; an
-  explanatory check raises located akan. API misuse is not document invalidity.
+  explanatory check raises a located input error (akan in Yapyon,
+  `ValidationError` in the YAML-side binding). API misuse is not document invalidity.
 
-These interface behaviors do not select final package/import paths or move any
-shared components. Current binding support and its pending standalone package
-boundary are described in the guide.
+Yapyon retains these operations under `yapyon.yamlplus`, with its existing
+literal meanings and stdlib-only runtime. Standalone `yamlplus` has native
+PyYAML I/O, independent profile validation, and no full Yapyon runtime. Package
+installation/release readiness is separate from source behavior; the guide
+states current verification and remaining limits.
 
-## 6. Illustrative Python binding
+## 6. Illustrative Python bindings
 
-This common-path example uses the existing in-tree binding, not a normative
-choice of the final standalone library namespace or a claim of full conformance:
+This common-path example uses Yapyon's typed-record binding, not the standalone
+YAML-side reader or a claim of complete implementation conformance:
 
 ```python
 import yapyon
@@ -325,7 +344,18 @@ assert text == '"yes": "hello"\nmissing: None\n'
 assert len(warnings) == 1
 ```
 
+Standalone `import yamlplus` uses the same admission rules, but its `loads`
+reads through PyYAML: both `missing` and `word` in the example are the string
+`None`. Byte-prefixed values similarly remain literal text. Its PyYAML-backed
+writer still emits a profile-conformant document, not arbitrary YAML. Loaded
+strings are never guessed into bytes/null. Both source formatters preserve
+comments; writers over host values have no source comments to recover.
+
+Yapyon can also emit a conforming profile document from resolved constructs
+through `__as_yamlplus__`, `expand_yamlplus`, and `Tree.to_yamlplus` (SPEC §14.9).
+These resolve using the existing Yapyon machinery; non-evaluating source saving
+is unchanged.
+
 A binding is not a substitute for this standard. Its tests must establish the
-admission rules, comment retention, and diagnostic delivery separately from
-independent-library availability. The latter remains pending for this in-tree
-binding; package restructuring does not follow from this example.
+admission rules, conforming output, comment retention, and diagnostic delivery
+separately from installed-package and release availability.

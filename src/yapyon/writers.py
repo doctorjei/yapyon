@@ -1,4 +1,4 @@
-"""JSON, YAML, and TOML output, exactly — SPEC §14.
+"""JSON, YAML, TOML, and YamlPlus output — SPEC §14.
 
 Each writer reads the **resolved AST**, not plain values: a lexeme decides
 what a value needs beside it (`0xff` is 255 plus an `@_lexemes` entry; bytes
@@ -6,7 +6,9 @@ keep the spelling the author chose), and a value with none — a resolved
 y-string, a call's result — takes its canonical form (§4.4). The resolver
 hands a writer only a subtree with nothing pending and no template in it.
 
-**Approximate, never refuse** (§5.1.2). Where a format cannot carry a value
+**JSON/YAML/TOML approximate rather than refuse** (§5.1.2). YamlPlus uses
+canonical profile-safe spellings and retains its explicit exclusions (§14.9).
+Where another format cannot carry a value
 directly the writer uses the format's own mechanisms first — JSON-LD shapes
 and I-JSON in JSON, `%TAG` handles onto YAML's standard tags — so a reader
 that knows §14 recovers the yapyon value and one that does not still gets
@@ -378,6 +380,17 @@ class _Yaml:
                     return [one]
             return [dash.rstrip()] + self.sequence(node, indent + 2)
         return [dash + self.scalar(node, False)]
+
+
+def to_yamlplus(node: Node, *, warn=None) -> str:
+    """Conforming profile data from a resolved subtree (§14.9)."""
+    from .yamlplus import _from_node
+
+    def report(message):
+        if warn is not None:
+            warn(message.removeprefix("shiran: "))
+
+    return _from_node(node, warn=report)
 
 
 def to_yaml(node: Node, *, warn=None) -> str:

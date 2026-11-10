@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.7; GRAMMAR §G7",
+  "why": "a canceled root produces no document value, and an empty document is akan"
+}

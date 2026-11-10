@@ -10,11 +10,12 @@ belongs to the *format*, which is what makes them dunders: a contract
 declares a consumer's functions, and no contract declares these.
 
 This module is the **declaration**; the writers are `writers.py` (JSON,
-YAML, TOML, §14) and `emitter.py` (yapyon, §14.6). Every writer reads the
+YAML, TOML, and YamlPlus, §14) and `emitter.py` (yapyon, §14.6). Every writer reads the
 resolved AST, because a lexeme decides what each format records beside a
 value — and every writer is stdlib-only, by the rule the core keeps.
 
-**Approximate, never refuse** (§5.1.2): a multimap, bytes, a non-decimal
+**JSON/YAML/TOML approximate rather than refuse** (§5.1.2); YamlPlus instead
+retains its explicit profile exclusions (§14.9). A multimap, bytes, a non-decimal
 integer, TOML's `None` — each is written as plain data the target format
 can carry, with what it cannot say recorded beside it by that format's own
 means. **Serializers do not prune implicitly**: dropping a key because its
@@ -29,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .emitter import _emit_data
-from .writers import to_json, to_toml, to_yaml
+from .writers import to_json, to_toml, to_yaml, to_yamlplus
 
 
 def to_yapyon(node, *, warn=None) -> str:
@@ -67,6 +68,7 @@ SERIALIZERS = {
                                 "top-level form for a list or a single value"),
     "__as_yaml__": Builtin(to_yaml, "Any"),
     "__as_yapyon__": Builtin(to_yapyon, "Any"),
+    "__as_yamlplus__": Builtin(to_yamlplus, "Any"),
 }
 
 #: §5.1.2's one message for a `yt` reaching a record writer — every
@@ -75,7 +77,7 @@ YEETED_YT = ("yeeted yt; a record cannot hold a template's unjoined parts. "
              "Use a y-string to join them.")
 
 #: The names the grammar accepts (SPEC §5.1.2). **Derived** from `SERIALIZERS`
-#: rather than restated: the two used to be written out separately, so a fourth
+#: rather than restated: the two used to be written out separately, so a
 #: serializer could be added to one and missed in the other, and the comment
 #: promising there was no second list sat directly above one. `lexer.parse_ref`
 #: imports this rather than keeping a further list, and

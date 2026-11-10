@@ -214,17 +214,42 @@ class Tree:
         same arguments. Holes bind where their values now sit (SPEC §15.6);
         a slot still unfilled is akan. The tree itself is not changed, so
         it may be resolved again, or edited and resolved again."""
-        from .loader import _functions, build
+        from .loader import build
+        done = self._resolve_node(env_allow=env_allow, env=env, warn=warn,
+                                  max_depth=max_depth, max_size=max_size,
+                                  max_digits=max_digits, contract=contract,
+                                  provide=provide)
+        return build(done, self.source)
+
+    def _resolve_node(self, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
+                      max_depth=REFUSE_DEPTH, max_size=REFUSE_SIZE,
+                      max_digits=REFUSE_DIGITS, contract=None, provide=None):
+        from .loader import _functions
         if warn is not None:
             for message in self.warnings:
                 warn(message)
         root = copy.deepcopy(self._root)
-        done = resolve(root, warn=warn, max_depth=max_depth,
-                       max_size=max_size, max_digits=max_digits,
+        return resolve(root, warn=warn, max_depth=max_depth, max_size=max_size,
+                       max_digits=max_digits,
                        functions=_functions(contract, provide),
-                       environment=environment(env, env_allow),
-                       source=self.source)
-        return build(done, self.source)
+                       environment=environment(env, env_allow), source=self.source)
+
+    def to_yamlplus(self, *, env_allow=STANDARD_ENV, env=os.environ, warn=None,
+                    info=None, max_depth=REFUSE_DEPTH, max_size=REFUSE_SIZE,
+                    max_digits=REFUSE_DIGITS, contract=None, provide=None):
+        """Resolve a private copy and emit a validated profile document (§14.9).
+
+        This is resolved-data output, not non-evaluating unfinished-source saving.
+        """
+        from .yamlplus import _callback_option, _from_node
+        _callback_option(warn, "warn")
+        _callback_option(info, "info")
+        done = self._resolve_node(env_allow=env_allow, env=env, warn=warn,
+                                  max_depth=max_depth, max_size=max_size,
+                                  max_digits=max_digits, contract=contract,
+                                  provide=provide)
+        return _from_node(done, warn=warn, info=info,
+                          max_digits=max_digits, max_size=max_size)
 
     # -- paths ---------------------------------------------------------------
     def _node(self, path: tuple, *, raw=False) -> Node:

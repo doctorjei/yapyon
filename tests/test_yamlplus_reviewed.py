@@ -106,6 +106,20 @@ def test_hora_is_separate_summarized_and_located_per_operation(operation):
     assert all(notice.startswith('hora:') for notice in notices)
 
 
+@pytest.mark.parametrize('operation', [yamlplus.check, yamlplus.is_yamlplus,
+                                      yamlplus.loads, yamlplus.normalize])
+def test_deep_nonrecord_reference_is_a_located_refusal_not_a_stack_exception(operation):
+    source = 'value: y"{' + 'x[' * 400 + 'a' + ']' * 400 + '}"\n'
+    if operation is yamlplus.is_yamlplus:
+        assert operation(source, source='deep.yaml') is False
+    else:
+        with pytest.raises(AkanError) as caught:
+            operation(source, source='deep.yaml')
+        assert caught.value.source == 'deep.yaml'
+        assert caught.value.line == 1
+        assert caught.value.col >= 0
+
+
 def test_host_hora_has_paths_and_counts_acyclic_output_occurrences():
     shared = [b'hi', None]
     notices, warnings = [], []

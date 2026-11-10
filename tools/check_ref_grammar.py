@@ -88,7 +88,7 @@ _NUM = (r"0[xXoObBqQzZ]_?[0-9A-Za-z]+(?:_[0-9A-Za-z]+)*"     # §G4.3, no sign
 _ENV = r"\$[A-Za-z_][A-Za-z0-9_]*"
 TOK = re.compile(rf"[ \t\n]*(?:(?P<str>{_STR})|(?P<num>{_NUM})(?![A-Za-z0-9_])"
                  rf"|(?P<env>{_ENV})"
-                 rf"|(?P<name>[^\W\d]\w*)|(?P<p>\?\.|[.\[\](),=+-]))")
+                 rf"|(?P<name>[^\W\d]\w*)|(?P<p>\?\.|[.\[\](),=+!\-]))")
 
 
 # §G4.3's digit table and §G4.6's alphabet table, transcribed from the text
@@ -221,11 +221,12 @@ LITERAL = alt(kind("STRING"), kind("BYTES"),
               lit("True"), lit("False"), lit("None"))
 
 ref.p       = alt(key_ref, value_ref)
-key_ref.p   = alt(seq(parents, lit("."), lit("__KEY__")), lit("__KEY__"))
+key_ref.p   = seq(alt(seq(parents, lit("."), lit("__KEY__")), lit("__KEY__")), opt(lit("!")))
 value_ref.p = alt(path, applied)
-path.p      = alt(seq(alt(anchor, SEG), star(step)), kind("ENV"))
-applied.p   = alt(seq(receiver, plus(suffix)), seq(call, star(suffix)))
-receiver.p  = alt(seq(anchor, plus(step)), seq(SEG, star(step)), kind("ENV"))
+path.p      = seq(alt(seq(alt(anchor, SEG), star(step)), kind("ENV")), opt(lit("!")))
+applied.p   = seq(alt(seq(receiver, suffix), call), opt(lit("!")),
+                  star(seq(suffix, opt(lit("!")))))
+receiver.p  = seq(alt(seq(anchor, plus(step)), seq(SEG, star(step)), kind("ENV")), opt(lit("!")))
 suffix.p    = seq(alt(lit("."), lit("?.")), call)
 call.p      = alt(seq(callee, lit("("), opt(seq(args, opt(lit(",")))), lit(")")),
                   seq(callee, lit("("), opt(seq(args, lit(","))), kwargs,
@@ -304,6 +305,10 @@ def corpus():
     yield from (f"{c}({a}){t}" for c, a, t in
                 itertools.product(callees, arglists, calltails))
     yield from loose
+    for base in ("a", "a.b", "a[p]", "a[p!]", "$HOME", "__KEY__", "f()", "f(x!)"):
+        for tail in ("!", " ! ", "!!", "!r", "!.__str__()", "!.b", "!?.f()", "!.f()!"):
+            yield base + tail
+    yield from ("f(a!, k=b!)", "a[b!]!", "$HOME!.__str__()", "a!=b")
 
 
 def mismatches():

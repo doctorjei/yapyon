@@ -90,6 +90,11 @@ kind = "code-patterns"
   antipatterns = ['''["']__as_yapyon__["']''']
   home = ["src/yapyon/serializers.py"]
 
+  [[registry.entry]]
+  id = "__as_yamlplus__"
+  antipatterns = ['''["']__as_yamlplus__["']''']
+  home = ["src/yapyon/serializers.py"]
+
 # The declaration above against what the code actually holds. `tools/
 # check_ref_grammar.py` already checks GRAMMAR.md against SERIALIZER_NAMES;
 # this is the other side of the same fact -- it fails if a serializer is added

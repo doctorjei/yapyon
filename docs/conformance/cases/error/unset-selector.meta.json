@@ -1,0 +1,5 @@
+{
+  "expect": "akan",
+  "rule": "SPEC §5.7",
+  "why": "guarding a selected entry does not guard its missing indirect selector"
+}

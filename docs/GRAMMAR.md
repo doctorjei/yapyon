@@ -512,20 +512,15 @@ hole        ::= "{" ref "}"
 
 ref         ::= key_ref | value_ref
 
-key_ref     ::= parents "." "__KEY__"
-              | "__KEY__"
+key_ref     ::= ( parents "." "__KEY__" | "__KEY__" ) [ "!" ]
 
 value_ref   ::= path | applied
 
-path        ::= ( anchor | SEG ) step*
-              | ENV
+path        ::= ( ( anchor | SEG ) step* | ENV ) [ "!" ]
 
-applied     ::= receiver suffix+
-              | call suffix*
+applied     ::= ( receiver suffix | call ) [ "!" ] ( suffix [ "!" ] )*
 
-receiver    ::= anchor step+
-              | SEG    step*
-              | ENV
+receiver    ::= ( anchor step+ | SEG step* | ENV ) [ "!" ]
 
 suffix      ::= ( "." | "?." ) call
 
@@ -582,6 +577,16 @@ outside a string literal is akan. Inside one it is content — `{f("#x")}`.
 
 What the production says, and why:
 
+- **`!` is postfix and takes a reference, not an arbitrary expression.** A
+  complete path binds before its guard: `foo.bar!`, `xs[0]!`, and
+  `foo[selector!]!`. A guard may also follow a call or positional-key reference.
+  A guarded receiver may be followed by a call suffix: `foo.bar!.__str__()`.
+  Each reference takes at most one guard at that position; `foo!!`, `1!`, and
+  `"x"!` are not generated. Whitespace may surround `!`, as any token.
+  A copy can hold `(foo.bar!)`; `(foo.bar)!` puts a guard after a copy, which
+  neither this grammar nor §G9 admits. `!=` remains the comparison token of
+  §G9, not a guard followed by an equals sign. `!r` conversions stay reserved.
+
 - **A call is a name and a parenthesized argument list**, chained after a
   receiver or standing alone: `{a.f(x)}`, `{f(a, x)}`, `{f(x).g()}`. A
   dunder name calls a built-in and any other name a declared function; which
@@ -607,9 +612,9 @@ What the production says, and why:
   `ENVNAME` cannot spell is reached through a built-in call with a string
   argument; which variables exist and what they hold is the
   specification's business.
-- **Nothing follows a call but another call.** `suffix ::= ( "." | "?." )
-  call`, so `{f(x).g()}` chains, but `{f(x)[0]}` and `{f(x).name}` are not
-  generated.
+- **After a call, only its optional guard and further call suffixes follow.**
+  `{f(x).g()}`, `{f(x)!}`, and `{f(x)!.g()!}` are generated, but
+  `{f(x)[0]}` and `{f(x).name}` are not.
 - **`?.` is one token, and only ever precedes a call**: `{a?.f()}` and
   `{a.f()?.g()}`, never `{a?.b}`, `{a?[0]}`, or `{a? .f()}`. A `?` is
   never anything else in a reference. Its meaning is the specification's

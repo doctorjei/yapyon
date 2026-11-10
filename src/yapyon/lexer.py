@@ -254,17 +254,18 @@ class Ref:
     """
 
     __slots__ = ("root", "steps", "text", "shirans", "parents", "key", "call",
-                 "env")
+                 "env", "guard")
 
     def __init__(self, root: bool, steps: list, text: str, shirans=(),
                  parents: int = 0, key: bool = False, call: "Call | None" = None,
-                 env: "str | None" = None):
+                 env: "str | None" = None, guard: bool = False):
         self.root, self.steps, self.text = root, list(steps), text
         self.shirans: list[str] = list(shirans)   # legal, but worth a word
         self.parents = parents      # §5.1.1: how many __PARENT__ hops, 0 if none
         self.key = key              # §5.1.1: ends in __KEY__, naming a position
         self.call = call            # §13.1: a call, or None for a path
         self.env = env              # §5.1.3: an environment variable's name
+        self.guard = guard
 
     @property
     def bare_anchor(self) -> bool:
@@ -277,11 +278,12 @@ class Ref:
         return (isinstance(other, Ref) and self.root == other.root
                 and self.steps == other.steps
                 and self.parents == other.parents and self.key == other.key
-                and self.call == other.call and self.env == other.env)
+                and self.call == other.call and self.env == other.env
+                and self.guard == other.guard)
 
     def __hash__(self):
         return hash((self.root, self.parents, self.key,
-                     tuple(map(str, self.steps)), self.call, self.env))
+                     tuple(self.steps), self.call, self.env, self.guard))
 
     def __repr__(self):
         return f"Ref({self.text!r})"
@@ -466,12 +468,14 @@ def _find_chain_end(s: str, start: int) -> int:
             while j < len(s) and s[j] in " \t":
                 j += 1
             before = s[start:i].rstrip()
-            if (s[j:j + 1] and s[j:j + 1] in ".?(["
+            if (s[j:j + 1] and s[j:j + 1] in ".?([!"
+                    and not s.startswith("!=", j)
                     or before and before[-1] in ".?"):
                 i = j
                 continue
             return i
-        elif depth == 0 and not (_id_continue(ch) or ch in ".?$"):
+        elif depth == 0 and (s.startswith("!=", i)
+                             or not (_id_continue(ch) or ch in ".?$!")):
             return i
         i += 1
     return i
@@ -553,7 +557,7 @@ class _RefParser:
         start = self.i
         if not id_start(self.s[start:start + 1]):
             j = start
-            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}?":
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}:!?":
                 j += 1
             seg = self.s[start:j]
             if not seg:
@@ -574,7 +578,7 @@ class _RefParser:
             # one: judge the whole run as the name it was meant to be, so
             # the message can say *why* (invisible, too new, a `$`).
             j = self.i
-            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}?":
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}:!?":
                 j += 1
             _check_segment(self.s[start:j])
         reserved = reserved_fold(name)
@@ -594,7 +598,20 @@ class _RefParser:
         return self.peek() == "("
 
     # -- ref ::= key_ref | value_ref -----------------------------------------
+    def _guard(self, ref):
+        if self.peek() == "!" and self.s[self.i + 1:self.i + 2] != "=":
+            if ref.guard:
+                raise RefError("a reference takes only one ! guard")
+            self.i += 1
+            if id_start(self.s[self.i:self.i + 1]):
+                raise RefError("format specs and conversions are reserved; ! guards a reference")
+            ref.guard = True
+        return ref
+
     def ref(self, source: str, argument: bool = False) -> Ref:
+        return self._guard(self._ref(source, argument))
+
+    def _ref(self, source: str, argument: bool = False) -> Ref:
         """A reference: a path, `__KEY__`, or a call with its chain.
 
         `argument` is set where §G5 has `receiver | applied` rather than
@@ -668,9 +685,9 @@ class _RefParser:
                 self.i += 1
         name = self.s[start:self.i]
         glued = self.s[self.i:self.i + 1]
-        if not name or (glued and glued not in _HOLE_SPACE + ".[](),=}?"):
+        if not name or (glued and glued not in _HOLE_SPACE + ".[](),=}:!?"):
             j = self.i
-            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}?":
+            while j < len(self.s) and self.s[j] not in _HOLE_SPACE + ".[](),=}:!?":
                 j += 1
             spelled = self.s[start:j]
             raise RefError(
@@ -679,7 +696,7 @@ class _RefParser:
                 f"${spelled} is not an environment variable name: write ASCII "
                 f"letters, digits, and '_', not starting with a digit; "
                 f"{{__env__({spelled!r})}} reaches any other name")
-        ref = Ref(False, [], source, env=name)
+        ref = self._guard(Ref(False, [], source, env=name))
         safe = self._suffix()
         if safe is not None:
             call_name = self.name()
@@ -734,6 +751,14 @@ class _RefParser:
                     ref.shirans.extend(step[1].shirans)
                 ref.steps.append(step)
                 self.expect("]", "to close the subscript")
+            elif ch == "!" and self.s[self.i + 1:self.i + 2] != "=":
+                self._guard(ref)
+                safe = self._suffix()
+                if safe is None:
+                    return ref
+                name = self.name()
+                return self._chain(self._call(name, [ref], receiver=True, safe=safe),
+                                   source, ref.shirans)
             elif ch and ch in ".?":                   # trap 1
                 safe = self._suffix()
                 if safe is not None:
@@ -754,6 +779,7 @@ class _RefParser:
         """After a call, nothing but another call: `suffix ::= "." call`."""
         found = list(shirans)            # the receiver's, passed separately
         found.extend(_arg_shirans(call, skip_first=call.receiver))
+        ref = self._guard(Ref(False, [], source, found, call=call))
         while self.peek() and self.peek() in ".?":     # trap 1: "" is in any str
             safe = self._suffix()
             if safe is None:
@@ -761,14 +787,14 @@ class _RefParser:
                                ".name(); a call's result cannot be indexed "
                                "or traversed")
             name = self.name()
-            call = self._call(name, [Ref(False, [], source, call=call)],
-                              receiver=True, safe=safe)
+            call = self._call(name, [ref], receiver=True, safe=safe)
             found.extend(_arg_shirans(call, skip_first=True))
+            ref = self._guard(Ref(False, [], source, found, call=call))
         if self.peek() == "[":
             raise RefError("nothing follows a call but another call, as "
                            ".name(); a call's result cannot be indexed "
                            "or traversed")
-        return Ref(False, [], source, found, call=call)
+        return ref
 
     # -- call ::= name "(" [args] ")" ------------------------------------------
     def _call(self, name: str, args: list, receiver: bool = False,
@@ -1519,7 +1545,8 @@ class Lexer:
                        or name == "if" and self.tokens
                        and self.tokens[-1].kind == "NEWLINE" and self._after_for())):
                 self._emit("NAME", name, line, col, lexeme=name)
-            elif (self._after_space() in (".", "(", "[", "?")
+            elif (self._after_space() in (".", "(", "[", "?", "!")
+                  and not self.text[self.pos:].lstrip(" \t").startswith("!=")
                   and not (name in _EXPRESSION_WORDS and name not in ("if", "else")
                            and self._peek() in (" ", "\t"))):
                 self._lex_bare_call(self.pos - len(name), line, col)

@@ -27,12 +27,12 @@ from .tree import Handle, Key, Tree, merge, parse, parse_file
 from .emitter import emit
 from .export import dump, dump_safe, dumps
 from .yamlplus import is_yamlplus
-from .expand import expand_record
+from .expand import expand_record, expand_yamlplus
 from .contract import Contract, load_contract, loads_contract
 from .environment import (ENV_ALL, POSIX_STANDARD_ENV, STANDARD_ENV,
                           WINDOWS_STANDARD_ENV)
 
-__version__ = "0.6.5"
+__version__ = "0.6.6"
 
 #: GRAMMAR §G4.1 asks every implementation to document where its identifier
 #: tables come from. yapyon's are generated from this Unicode version by
@@ -60,7 +60,7 @@ __all__ = [
     # a record back to yapyon source (python -m yapyon record)
     "emit",
     # a full document resolved down to a record (python -m yapyon expand)
-    "expand_record",
+    "expand_record", "expand_yamlplus",
     # diagnostics
     "AkanError", "Yakamashiwa",
     # multimap internals

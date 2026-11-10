@@ -3,9 +3,40 @@
 import copy
 from collections import defaultdict, deque
 
-from .lexer import AkanError, Yakamashiwa
+from .lexer import AkanError, Ref, Yakamashiwa, parse_ref
 from .parser import (Comprehension, Expression, Mapping, Merge, MultiMap, Pair,
                      ResolvedTemplate, Scalar, Sequence, Slot, YString, children)
+
+
+def guarded(ref):
+    pending = [ref]
+    while pending:
+        ref = pending.pop()
+        if ref.guard:
+            return True
+        if ref.call is not None:
+            pending.extend(arg for arg in ref.call.args +
+                           [arg for _, arg in ref.call.kwargs] if isinstance(arg, Ref))
+        else:
+            pending.extend(value for kind, value in ref.steps if kind == "ref")
+    return False
+
+
+def cancellable(node):
+    """Whether this unfinished value can cancel its receiving construction item."""
+    pending = [node]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, Comprehension):
+            pending.append(node.args[0])
+        elif isinstance(node, Expression):
+            if node.op == "suffix" and guarded(parse_ref(node.value[0])):
+                return True
+            pending.extend(arg for arg in node.args if arg is not None)
+        elif isinstance(node, YString):
+            if any(guarded(parse_ref(text)) for kind, text in node.parts if kind == "hole"):
+                return True
+    return False
 
 
 class MergedMapping(Mapping):
@@ -51,7 +82,7 @@ class MergedMapping(Mapping):
             else:
                 pair = pairs[0] if len(pairs) == 1 else copy.copy(pairs[0])
                 for later in pairs[1:]:
-                    pair.value = (later.value if later.replace else
+                    pair.value = (later.value if later.replace and not cancellable(later.value) else
                                   merge_nodes(pair.value, later.value, budget=self._merge_budget))
                     pair.replace = pair.replace or later.replace
                 self._views[key] = (signature, pair)
@@ -132,10 +163,38 @@ class MergedMapping(Mapping):
                 return pending
         return None
 
+    def presence_pairs(self):
+        """Original assignments whose presence must settle before projection."""
+        if not self.layers:
+            return {}
+        originals = {}
+        for layer in self.key_layers():
+            for pair in layer.pairs:
+                if isinstance(pair.key, str):
+                    originals.setdefault(pair.key, []).append((layer, pair))
+        out = {}
+        for view in self.visible_pairs():
+            entries = originals.get(view.key, ())
+            if not any(cancellable(pair.value) for _, pair in entries):
+                continue
+            pending, values = [view.value], set()
+            while pending:
+                value = project(pending.pop())
+                values.add(id(value))
+                if isinstance(value, Expression) and not isinstance(value, Comprehension):
+                    pending.extend(arg for arg in value.args if arg is not None)
+            candidates = [(layer, pair) for layer, pair in entries
+                          if id(pair.value) in values]
+            if any(cancellable(pair.value) for _, pair in candidates):
+                out[view.key] = next((entry for entry in reversed(candidates)
+                                      if isinstance(entry[1].value, YString)), candidates[-1])
+        return out
+
     def finish(self, depth=1):
         if self.layers and self._merge_budget is not None:
             self._merge_budget(self, depth=depth)
-        if self.layers and self.pending_key(depth) is None:
+        if (self.layers and self.pending_key(depth) is None
+                and not self.presence_pairs()):
             for layer in self.layers:
                 if isinstance(layer, MergedMapping):
                     layer.finish(depth + 1)
@@ -170,6 +229,8 @@ _PENDING = object()
 
 def _combine(earlier, later, *, collections=False, charge=None, depth=1):
     later = project(later, budget=charge, depth=depth)
+    if cancellable(later):
+        return _PENDING
     if kind(later) == "atom":
         return later
     earlier = project(earlier, budget=charge, depth=depth)
@@ -188,6 +249,8 @@ def _combine(earlier, later, *, collections=False, charge=None, depth=1):
             return out
         return later if kind(later) == "atom" else _PENDING
     a, b = kind(earlier), kind(later)
+    if cancellable(earlier) and (a is None or a == b):
+        return _PENDING
     if a == "dict" and b == "dict":
         return MergedMapping(earlier, later, budget=charge)
     if a is not None and b is not None:

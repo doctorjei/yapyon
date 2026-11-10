@@ -54,7 +54,7 @@ from .parser import (Expression, Mapping, MultiMap, Pair, Parser, ResolvedTempla
                      deferred_message,
                      Scalar, Sequence, YString)
 from .serializers import ENV_BUILTIN
-from .resolver import (REFUSE_DEPTH, REFUSE_SIZE, Resolver, _Site, resolve,
+from .resolver import (REFUSE_DEPTH, REFUSE_SIZE, Resolver, _Cancel, _Site, resolve,
                        splice_text)
 from .template import Hole, Template
 
@@ -387,6 +387,8 @@ def lookup(tree, current, ref: str, *, env_allow=STANDARD_ENV,
             ref, _Site(probe, chain, None))
     except RefError as exc:
         raise _PathAkan(f"{{{ref}}}: {exc}", where) from None
+    except _Cancel:
+        raise _PathAkan(f"{{{ref}}}: cancellation produced no lookup value", where) from None
     return build(found)
 
 
